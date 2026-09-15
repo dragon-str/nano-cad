@@ -42,6 +42,39 @@ impl VelocityVerlet {
         positions_m: &mut [f64],
         velocities_m_per_s: &mut [f64],
     ) -> Result<(), EngineError> {
+        self.step_inner(system, positions_m, velocities_m_per_s, None)
+    }
+
+    /// Advances the system by one step with a constant external force.
+    ///
+    /// The external force is added to the interaction force at both half
+    /// kicks. It is constant over the step, so a velocity-dependent force must
+    /// stay fixed at the step start. `external_forces_n` holds
+    /// `3 * atom_count` values in newtons. A mass must be set on the system.
+    /// Every buffer must hold three values per atom and be finite. This
+    /// returns an error instead of panicking.
+    pub fn step_with_external_forces(
+        &self,
+        system: &mut System,
+        positions_m: &mut [f64],
+        velocities_m_per_s: &mut [f64],
+        external_forces_n: &[f64],
+    ) -> Result<(), EngineError> {
+        self.step_inner(
+            system,
+            positions_m,
+            velocities_m_per_s,
+            Some(external_forces_n),
+        )
+    }
+
+    fn step_inner(
+        &self,
+        system: &mut System,
+        positions_m: &mut [f64],
+        velocities_m_per_s: &mut [f64],
+        external_forces_n: Option<&[f64]>,
+    ) -> Result<(), EngineError> {
         let atom_count = system.atom_count();
         let expected = 3 * atom_count;
         if positions_m.len() != expected {
@@ -69,18 +102,32 @@ impl VelocityVerlet {
                 return Err(EngineError::NonFiniteVelocity { index });
             }
         }
+        if let Some(external_forces_n) = external_forces_n {
+            if external_forces_n.len() != expected {
+                return Err(EngineError::BufferSizeMismatch {
+                    len: external_forces_n.len(),
+                    expected,
+                });
+            }
+            for (index, value) in external_forces_n.iter().enumerate() {
+                if !value.is_finite() {
+                    return Err(EngineError::NonFiniteExternalForce { index });
+                }
+            }
+        }
 
         let masses_kg = system.masses_kg().to_vec();
         let dt_s = self.dt_s;
         let half_dt_s = 0.5 * dt_s;
+        let external = |index: usize| external_forces_n.map_or(0.0, |forces| forces[index]);
 
         let forces_n = system.forces_n(positions_m)?;
         for (atom, &mass_kg) in masses_kg.iter().enumerate() {
             let base = atom * 3;
             for axis in 0..3 {
                 let index = base + axis;
-                let half_velocity =
-                    velocities_m_per_s[index] + half_dt_s * forces_n[index] / mass_kg;
+                let half_velocity = velocities_m_per_s[index]
+                    + half_dt_s * (forces_n[index] + external(index)) / mass_kg;
                 positions_m[index] += half_velocity * dt_s;
                 velocities_m_per_s[index] = half_velocity;
             }
@@ -91,7 +138,8 @@ impl VelocityVerlet {
             let base = atom * 3;
             for axis in 0..3 {
                 let index = base + axis;
-                velocities_m_per_s[index] += half_dt_s * forces_n[index] / mass_kg;
+                velocities_m_per_s[index] +=
+                    half_dt_s * (forces_n[index] + external(index)) / mass_kg;
             }
         }
         Ok(())
@@ -200,5 +248,89 @@ mod tests {
 
         assert!(initial_energy_j.abs() > 1.0e-24);
         assert!(relative_drift < 1.0e-4, "relative drift {relative_drift:e}");
+    }
+
+    #[test]
+    fn a_constant_external_force_gives_the_exact_kinematics() {
+        let mass_kg = 2.0e-26;
+        let mut system = System::with_masses_kg(1, &[mass_kg]).expect("valid");
+        let integrator = VelocityVerlet::new(1.0e-12).expect("valid step");
+        let mut positions_m = vec![0.0; 3];
+        let mut velocities_m_per_s = vec![0.0; 3];
+        let external_forces_n = vec![1.0e-18, 0.0, 0.0];
+        let steps = 100;
+        for _ in 0..steps {
+            integrator
+                .step_with_external_forces(
+                    &mut system,
+                    &mut positions_m,
+                    &mut velocities_m_per_s,
+                    &external_forces_n,
+                )
+                .expect("valid step");
+        }
+        let time_s = steps as f64 * 1.0e-12;
+        let acceleration_m_per_s2 = external_forces_n[0] / mass_kg;
+        let expected_x_m = 0.5 * acceleration_m_per_s2 * time_s * time_s;
+        let expected_v_m_per_s = acceleration_m_per_s2 * time_s;
+        assert!((positions_m[0] - expected_x_m).abs() <= 1.0e-12 * expected_x_m.abs());
+        assert!((velocities_m_per_s[0] - expected_v_m_per_s).abs() <= 1.0e-12 * expected_v_m_per_s);
+        assert_eq!(positions_m[1], 0.0);
+        assert_eq!(velocities_m_per_s[2], 0.0);
+    }
+
+    #[test]
+    fn an_external_force_step_differs_from_a_plain_step() {
+        let mut system = System::with_masses_kg(1, &[2.0e-26]).expect("valid");
+        let integrator = VelocityVerlet::new(1.0e-12).expect("valid step");
+        let external_forces_n = vec![1.0e-18, 0.0, 0.0];
+
+        let mut plain_positions_m = vec![0.0; 3];
+        let mut plain_velocities_m_per_s = vec![0.0; 3];
+        let mut external_positions_m = vec![0.0; 3];
+        let mut external_velocities_m_per_s = vec![0.0; 3];
+        integrator
+            .step(
+                &mut system,
+                &mut plain_positions_m,
+                &mut plain_velocities_m_per_s,
+            )
+            .expect("valid step");
+        integrator
+            .step_with_external_forces(
+                &mut system,
+                &mut external_positions_m,
+                &mut external_velocities_m_per_s,
+                &external_forces_n,
+            )
+            .expect("valid step");
+        assert!(external_positions_m[0] > plain_positions_m[0]);
+        assert!(external_velocities_m_per_s[0] > plain_velocities_m_per_s[0]);
+    }
+
+    #[test]
+    fn a_bad_external_force_buffer_is_rejected() {
+        let mut system = System::with_masses_kg(1, &[2.0e-26]).expect("valid");
+        let integrator = VelocityVerlet::new(1.0e-12).expect("valid step");
+        let mut positions_m = vec![0.0; 3];
+        let mut velocities_m_per_s = vec![0.0; 3];
+        assert!(matches!(
+            integrator.step_with_external_forces(
+                &mut system,
+                &mut positions_m,
+                &mut velocities_m_per_s,
+                &[0.0; 2],
+            ),
+            Err(EngineError::BufferSizeMismatch { .. })
+        ));
+        assert!(matches!(
+            integrator.step_with_external_forces(
+                &mut system,
+                &mut positions_m,
+                &mut velocities_m_per_s,
+                &[f64::NAN, 0.0, 0.0],
+            ),
+            Err(EngineError::NonFiniteExternalForce { .. })
+        ));
     }
 }

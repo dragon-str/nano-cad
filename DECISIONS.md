@@ -243,3 +243,33 @@ Template:
 - Consequences: The first run needs network access to install maturin and
   pytest. A later run reuses the venv. The video and the written report stay
   outside the script.
+
+## ADR-0022: Velocity Verlet takes an optional external-force buffer; bonds are readable
+- Status: accepted
+- Date: 2026-09-14
+- Context: The friction extractor held its own velocity-Verlet loop to add a
+  drive spring, a load, and drag. The failure extractor required the caller to
+  build bond limits by hand, because `System` exposed no bond list.
+- Decision: `VelocityVerlet::step_with_external_forces` adds a constant
+  per-atom external force over one step. `System::bond_count`, `System::bond`,
+  `System::bond_forces_n`, and `System::bond_strains` expose the bonds and
+  their scalar quantities. `BondStretchTerm::bond_info` is the source.
+  `bond_limits_from_system` derives the failure limits from the system.
+- Consequences: The friction and failure extractors use the public engine path.
+  The external force is constant over the step, so the method is exact for it,
+  and no finite-difference test applies to that step. Bond forces are
+  magnitudes, not signed vectors.
+
+## ADR-0023: Python exposes the parameter extractors as properties, not one call
+- Status: accepted
+- Date: 2026-09-14
+- Context: M5-02 to M5-05 produce five property results. M7-01 left them out
+  of the Python surface. One `extract_parameters` call would need a config
+  object on the Python side.
+- Decision: Expose per-property functions: `extract_stiffness`,
+  `extract_friction`, `summarize_friction`, `extract_failure_stress`,
+  `extract_failure_stress_from_system`, `extract_specific_heat`,
+  `extract_thermal_conductivity`, and `extract_thermal`. Each returns a result
+  class with `Quantity` fields and provenance.
+- Consequences: The functions take many keyword arguments and no Python config
+  class exists yet. The `python` feature still gates every binding (ADR-0016).

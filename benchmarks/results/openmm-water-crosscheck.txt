@@ -1,0 +1,90 @@
+OpenMM water-box cross-check (task M2-11)
+=========================================
+
+Date: 2026-09-14
+
+Host
+----
+Machine:  Apple M4, arm64
+OS:       macOS 26.6.2 (build 25G83)
+Rust:     cargo/rustc from ~/.cargo/bin
+
+Environment
+-----------
+Python:   3.12.9 (uv venv at /tmp/openmm-venv)
+OpenMM:   8.6.1  (openmm.version.version = 8.6.1.dev-b399af4)
+numpy:    2.5.3
+Platform: Reference (double precision)
+
+Configuration (identical in nanocad and OpenMM)
+-----------------------------------------------
+Model:          flexible SPC-like water, 3 sites per molecule
+Molecules:      200
+Atoms:          600
+Box:            1.8833259369189425e-9 m per side (cubic, periodic)
+Cutoff:         6.591640779216298e-10 m
+Switch-on:      5.932476701294669e-10 m
+Skin:           1.8833259369189427e-10 m
+Seed:           0x5A17E2 (5904354)
+Temperature:    300 K (velocities only; not used by the energy)
+
+Bond O-H:       U = 0.5 * k * (r - r0)^2, k = 500 N/m, r0 = 1e-10 m
+Angle H-O-H:    U = 0.5 * k * (theta - theta0)^2,
+                k = 6e-19 J/rad^2, theta0 = 109.47 deg
+Buckingham O-O: U = A exp(-B r) - C / r^6,
+                A = 1.151e-15 J, B = 4.2e10 1/m, C = 2.6645e-78 J m^6
+                (only oxygen carries parameters; combining rules
+                 A_ij = sqrt(A_i A_j), B_ij = 0.5 (B_i + B_j),
+                 C_ij = sqrt(C_i C_j))
+Charges:        q_O = -0.82 e, q_H = +0.41 e
+Coulomb:        k_e = 8.9875517923e9 N m^2 / C^2
+Exclusions:     the 3 intra-molecular pairs per molecule
+Switching:      S(r) = (rc^2 - r^2)^2 (rc^2 + 2 r^2 - 3 ron^2)
+                       / (rc^2 - ron^2)^3, 1 below ron, 0 at rc
+Boundary:       minimum image, no long-range correction
+
+Reference platform result (declared tolerance 1e-6 relative)
+------------------------------------------------------------
+Energy nanocad:                  -2.737699062416127e-17 J
+Energy OpenMM:                   -2.7376990624161912e-17 J
+Energy absolute difference:       6.409494854920721e-31 J
+Energy relative difference:       2.3411977389742535e-14
+
+Max per-atom force difference:    1.8167033649082698e-22 N
+Max force component difference:   1.747e-22 N
+RMS per-atom force difference:    3.4702212855945075e-23 N
+Max force magnitude:              1.4621685148513376e-08 N
+Force relative difference:        1.2424719493381914e-14
+
+Result: PASS. Energy and forces agree far inside the 1e-6 tolerance.
+
+CPU platform result (declared tolerance 1e-5 relative)
+------------------------------------------------------
+Energy absolute difference:       1.1836969553806136e-22 J
+Energy relative difference:       4.323711431964359e-06
+Max per-atom force difference:    5.83091302019527e-14 N
+RMS per-atom force difference:    1.2227609636403653e-14 N
+Force relative difference:        3.987854961327532e-06
+
+Result: PASS. The larger difference is single-precision evaluation on the CPU
+platform, not a model mismatch.
+
+Reproduce
+---------
+uv venv --python 3.12 /tmp/openmm-venv
+uv pip install --python /tmp/openmm-venv/bin/python openmm numpy
+/tmp/openmm-venv/bin/python benchmarks/openmm/compare_water_box.py
+
+Caveats and limitations
+-----------------------
+1. Model agreement, not physical validation. Both codes use the same cutoff and
+   no long-range correction. The check finds coding errors, not physics errors.
+2. The flexible bonds and angle make the model SPC-like, not SPC. It is not
+   comparable to a standard SPC or TIP3P water result.
+3. The `step(ron - r)` switching branch is not exercised: no pair sits exactly
+   at the switch-on distance in this configuration.
+4. `Reference` is double precision and reaches 1e-14. The CPU and OpenCL
+   platforms are single precision in places and reach about 4e-6. Certify with
+   `Reference`.
+5. Only one fixed configuration is checked (seed 0x5A17E2). A model error that
+   is symmetric under this geometry could pass.

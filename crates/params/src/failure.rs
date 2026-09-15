@@ -70,6 +70,57 @@ pub struct FailureResult {
     pub provenance: Provenance,
 }
 
+/// Builds one bond limit per bond in the system bond-stretch term.
+///
+/// Every bond gets the same rupture strain. The endpoints and the equilibrium
+/// length come from the system. An empty bond term or a non-positive rupture
+/// strain returns an error. The caller can edit the returned limits, for
+/// example to set the rupture strain of one bond.
+pub fn bond_limits_from_system(
+    system: &System,
+    rupture_strain: f64,
+) -> Result<Vec<BondLimit>, ParamError> {
+    if !rupture_strain.is_finite() || rupture_strain <= 0.0 {
+        return Err(ParamError::InvalidExtraction {
+            reason: "the rupture strain must be finite and positive".to_string(),
+        });
+    }
+    if system.bond_count() == 0 {
+        return Err(ParamError::InvalidExtraction {
+            reason: "the system has no bonds to fail".to_string(),
+        });
+    }
+    let mut bonds = Vec::with_capacity(system.bond_count());
+    for bond in 0..system.bond_count() {
+        let info = system
+            .bond(bond)
+            .ok_or_else(|| ParamError::InvalidExtraction {
+                reason: "a system bond index is out of range".to_string(),
+            })?;
+        bonds.push(BondLimit {
+            u: info.u,
+            v: info.v,
+            r0_m: info.r0_m,
+            rupture_strain,
+        });
+    }
+    Ok(bonds)
+}
+
+/// Extracts a failure stress with the bond limits taken from the system.
+///
+/// Every bond in the system bond-stretch term gets the same `rupture_strain`.
+/// See [`extract_failure_stress`] for the sweep and the result.
+pub fn extract_failure_stress_from_system(
+    system: &mut System,
+    positions_m: &[f64],
+    config: &FailureConfig,
+    rupture_strain: f64,
+) -> Result<FailureResult, ParamError> {
+    let bonds = bond_limits_from_system(system, rupture_strain)?;
+    extract_failure_stress(system, positions_m, config, &bonds)
+}
+
 /// Extracts a failure stress by loading a sample until a bond limit triggers.
 ///
 /// The function applies a growing uniaxial x strain. At each step it measures
@@ -335,6 +386,52 @@ mod tests {
         };
         assert!(matches!(
             extract_failure_stress(&mut system, &positions_m, &short, &bonds()),
+            Err(ParamError::InvalidExtraction { .. })
+        ));
+    }
+
+    #[test]
+    fn the_system_bond_limits_match_the_hand_built_limits() {
+        let (system, _positions_m) = uniform_chain();
+        let limits = bond_limits_from_system(&system, RUPTURE_STRAIN).expect("valid limits");
+        assert_eq!(limits, bonds());
+    }
+
+    #[test]
+    fn a_system_driven_failure_run_matches_the_explicit_bond_path() {
+        let (mut system, positions_m) = uniform_chain();
+        let explicit =
+            extract_failure_stress(&mut system, &positions_m, &config(), &bonds()).expect("fails");
+        let (mut system, positions_m) = uniform_chain();
+        let derived = extract_failure_stress_from_system(
+            &mut system,
+            &positions_m,
+            &config(),
+            RUPTURE_STRAIN,
+        )
+        .expect("fails");
+        assert_eq!(derived.critical_bond, explicit.critical_bond);
+        assert_eq!(derived.failure_strain, explicit.failure_strain);
+        assert_eq!(
+            derived.failure_stress_pa.value_si(),
+            explicit.failure_stress_pa.value_si()
+        );
+    }
+
+    #[test]
+    fn a_system_without_bonds_or_a_bad_rupture_strain_is_rejected() {
+        let (mut system, positions_m) = uniform_chain();
+        assert!(matches!(
+            bond_limits_from_system(&system, 0.0),
+            Err(ParamError::InvalidExtraction { .. })
+        ));
+        let empty = System::with_masses_kg(2, &[1.0e-26, 1.0e-26]).expect("valid");
+        assert!(matches!(
+            bond_limits_from_system(&empty, RUPTURE_STRAIN),
+            Err(ParamError::InvalidExtraction { .. })
+        ));
+        assert!(matches!(
+            extract_failure_stress_from_system(&mut system, &positions_m, &config(), -0.1),
             Err(ParamError::InvalidExtraction { .. })
         ));
     }

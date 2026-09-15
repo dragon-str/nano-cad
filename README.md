@@ -3,8 +3,8 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **414 Rust tests plus
-33 Python and MCP tests pass**. The 9-crate workspace has: units, the model and
+Status: **pre-alpha.** The core is built end to end and **425 Rust tests plus
+40 Python and MCP tests pass**. The 9-crate workspace has: units, the model and
 the NCZ/MMP/XYZ formats, a force engine (bond, angle, torsion, out-of-plane,
 van der Waals, electrostatic, periodic minimum image, velocity Verlet,
 conjugate gradient, Langevin and Berendsen thermostats), part generators
@@ -13,8 +13,9 @@ parameter records and extraction (stiffness, friction, failure, thermal), jigs,
 rigid-body device joints, URDF and three-scale scene export, the CLI, PyO3
 bindings, and an MCP server. An agent builds the planetary gearbox through the
 tool surface alone and measures the analytic 3.5 gear ratio. A clean checkout
-reproduces the demo with `just reproduce`. M2-11 needs an OpenMM install for its
-cross-check. M8-02 and M8-03 remain. See `docs/benchmarks.md`.
+reproduces the demo with `just reproduce`. The periodic water box matches
+OpenMM 8.6.1 to 1e-14 relative. M8-02 needs the video recording. See
+`docs/benchmarks.md` and `docs/report.md`.
 
 ## Doctrine
 

@@ -4,6 +4,7 @@ use nanocad_params as params;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+use super::engine;
 use super::util;
 
 fn quantity(inner: params::Quantity) -> ParamQuantity {
@@ -573,4 +574,607 @@ pub fn check_record(record: PyRef<'_, PartRecord>) -> Vec<String> {
 #[pyfunction]
 pub fn is_consistent(record: PyRef<'_, PartRecord>) -> bool {
     params::is_consistent(&record.inner)
+}
+
+fn provenance(inner: params::Provenance) -> Provenance {
+    Provenance { inner }
+}
+
+/// The elastic modulus that a strain sweep produced.
+#[pyclass(name = "StiffnessResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct StiffnessResult {
+    inner: params::StiffnessResult,
+}
+
+#[pymethods]
+impl StiffnessResult {
+    #[getter]
+    fn elastic_modulus_pa(&self) -> ParamQuantity {
+        quantity(self.inner.elastic_modulus_pa.clone())
+    }
+
+    #[getter]
+    fn fit_intercept_pa(&self) -> f64 {
+        self.inner.fit_intercept_pa
+    }
+
+    #[getter]
+    fn strain_min(&self) -> f64 {
+        self.inner.strain_range.0
+    }
+
+    #[getter]
+    fn strain_max(&self) -> f64 {
+        self.inner.strain_range.1
+    }
+
+    #[getter]
+    fn samples(&self) -> usize {
+        self.inner.samples
+    }
+
+    #[getter]
+    fn r_squared(&self) -> f64 {
+        self.inner.r_squared
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+/// Extracts an elastic modulus from a controlled strain sweep.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, strain_min=-1.0e-3, strain_max=1.0e-3, samples=11, reference_length_m=3.0e-9, cross_section_area_m2=1.0e-20, derivative_step=1.0e-5, noise_amplitude_pa=0.0, seed=0x5EED_1234))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_stiffness(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    strain_min: f64,
+    strain_max: f64,
+    samples: usize,
+    reference_length_m: f64,
+    cross_section_area_m2: f64,
+    derivative_step: f64,
+    noise_amplitude_pa: f64,
+    seed: u64,
+) -> PyResult<StiffnessResult> {
+    let config = params::StiffnessConfig {
+        strain_min,
+        strain_max,
+        samples,
+        reference_length_m,
+        cross_section_area_m2,
+        derivative_step,
+        noise_amplitude_pa,
+        seed,
+    };
+    let inner =
+        params::extract_stiffness(&mut system.inner, &positions_m, &config).map_err(util::err)?;
+    Ok(StiffnessResult { inner })
+}
+
+/// The friction coefficient that a driven sliding run produced.
+#[pyclass(name = "FrictionResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct FrictionResult {
+    inner: params::FrictionResult,
+}
+
+#[pymethods]
+impl FrictionResult {
+    #[getter]
+    fn friction_coefficient(&self) -> ParamQuantity {
+        quantity(self.inner.friction_coefficient.clone())
+    }
+
+    #[getter]
+    fn friction_force_mean_n(&self) -> f64 {
+        self.inner.friction_force_mean_n
+    }
+
+    #[getter]
+    fn friction_force_spread_n(&self) -> f64 {
+        self.inner.friction_force_spread_n
+    }
+
+    #[getter]
+    fn normal_load_n(&self) -> f64 {
+        self.inner.normal_load_n
+    }
+
+    #[getter]
+    fn samples(&self) -> usize {
+        self.inner.samples
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+/// Extracts a friction coefficient from a driven sliding contact.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, slider_atom=0, normal_load_n=1.0e-11, drag_n_s_per_m=2.0e-13, stage_velocity_m_per_s=1.0, drive_stiffness_n_per_m=1.0e-1, dt_s=1.0e-14, equilibration_steps=10_000, measurement_steps=50_000))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_friction(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    slider_atom: u32,
+    normal_load_n: f64,
+    drag_n_s_per_m: f64,
+    stage_velocity_m_per_s: f64,
+    drive_stiffness_n_per_m: f64,
+    dt_s: f64,
+    equilibration_steps: usize,
+    measurement_steps: usize,
+) -> PyResult<FrictionResult> {
+    let config = params::FrictionConfig {
+        slider_atom,
+        normal_load_n,
+        drag_n_s_per_m,
+        stage_velocity_m_per_s,
+        drive_stiffness_n_per_m,
+        dt_s,
+        equilibration_steps,
+        measurement_steps,
+    };
+    let inner =
+        params::extract_friction(&mut system.inner, &positions_m, &config).map_err(util::err)?;
+    Ok(FrictionResult { inner })
+}
+
+/// Summarizes signed lateral-force samples into a friction result.
+#[pyfunction]
+pub fn summarize_friction(
+    lateral_forces_n: Vec<f64>,
+    normal_load_n: f64,
+) -> PyResult<FrictionResult> {
+    let inner = params::summarize_friction(&lateral_forces_n, normal_load_n).map_err(util::err)?;
+    Ok(FrictionResult { inner })
+}
+
+/// The failure stress that a load sweep produced.
+#[pyclass(name = "FailureResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct FailureResult {
+    inner: params::FailureResult,
+}
+
+#[pymethods]
+impl FailureResult {
+    #[getter]
+    fn failure_stress_pa(&self) -> ParamQuantity {
+        quantity(self.inner.failure_stress_pa.clone())
+    }
+
+    #[getter]
+    fn failure_strain(&self) -> f64 {
+        self.inner.failure_strain
+    }
+
+    #[getter]
+    fn critical_bond(&self) -> usize {
+        self.inner.critical_bond
+    }
+
+    #[getter]
+    fn critical_bond_strain(&self) -> f64 {
+        self.inner.critical_bond_strain
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+fn failure_config(
+    strain_step: f64,
+    max_strain: f64,
+    reference_length_m: f64,
+    cross_section_area_m2: f64,
+    derivative_step: f64,
+) -> params::FailureConfig {
+    params::FailureConfig {
+        strain_step,
+        max_strain,
+        reference_length_m,
+        cross_section_area_m2,
+        derivative_step,
+    }
+}
+
+/// Extracts a failure stress with explicit per-bond limits.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, bonds, strain_step=1.0e-3, max_strain=0.2, reference_length_m=3.0e-9, cross_section_area_m2=1.0e-20, derivative_step=1.0e-5))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_failure_stress(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    bonds: Vec<(u32, u32, f64, f64)>,
+    strain_step: f64,
+    max_strain: f64,
+    reference_length_m: f64,
+    cross_section_area_m2: f64,
+    derivative_step: f64,
+) -> PyResult<FailureResult> {
+    let limits: Vec<params::BondLimit> = bonds
+        .into_iter()
+        .map(|(u, v, r0_m, rupture_strain)| params::BondLimit {
+            u,
+            v,
+            r0_m,
+            rupture_strain,
+        })
+        .collect();
+    let config = failure_config(
+        strain_step,
+        max_strain,
+        reference_length_m,
+        cross_section_area_m2,
+        derivative_step,
+    );
+    let inner = params::extract_failure_stress(&mut system.inner, &positions_m, &config, &limits)
+        .map_err(util::err)?;
+    Ok(FailureResult { inner })
+}
+
+/// Extracts a failure stress with the bond limits taken from the system.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, rupture_strain, strain_step=1.0e-3, max_strain=0.2, reference_length_m=3.0e-9, cross_section_area_m2=1.0e-20, derivative_step=1.0e-5))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_failure_stress_from_system(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    rupture_strain: f64,
+    strain_step: f64,
+    max_strain: f64,
+    reference_length_m: f64,
+    cross_section_area_m2: f64,
+    derivative_step: f64,
+) -> PyResult<FailureResult> {
+    let config = failure_config(
+        strain_step,
+        max_strain,
+        reference_length_m,
+        cross_section_area_m2,
+        derivative_step,
+    );
+    let inner = params::extract_failure_stress_from_system(
+        &mut system.inner,
+        &positions_m,
+        &config,
+        rupture_strain,
+    )
+    .map_err(util::err)?;
+    Ok(FailureResult { inner })
+}
+
+/// The specific heat that an NVT run produced.
+#[pyclass(name = "SpecificHeatResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct SpecificHeatResult {
+    inner: params::SpecificHeatResult,
+}
+
+#[pymethods]
+impl SpecificHeatResult {
+    #[getter]
+    fn specific_heat_j_kg_k(&self) -> ParamQuantity {
+        quantity(self.inner.specific_heat_j_kg_k.clone())
+    }
+
+    #[getter]
+    fn mean_temperature_k(&self) -> f64 {
+        self.inner.mean_temperature_k
+    }
+
+    #[getter]
+    fn mean_kinetic_energy_j(&self) -> f64 {
+        self.inner.mean_kinetic_energy_j
+    }
+
+    #[getter]
+    fn samples(&self) -> usize {
+        self.inner.samples
+    }
+
+    #[getter]
+    fn mass_kg(&self) -> f64 {
+        self.inner.mass_kg
+    }
+
+    #[getter]
+    fn atoms(&self) -> usize {
+        self.inner.atoms
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+/// The thermal conductivity that a two-bath run produced.
+#[pyclass(name = "ConductivityResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct ConductivityResult {
+    inner: params::ConductivityResult,
+}
+
+#[pymethods]
+impl ConductivityResult {
+    #[getter]
+    fn thermal_conductivity_w_m_k(&self) -> ParamQuantity {
+        quantity(self.inner.thermal_conductivity_w_m_k.clone())
+    }
+
+    #[getter]
+    fn temperature_gradient_k_per_m(&self) -> f64 {
+        self.inner.temperature_gradient_k_per_m
+    }
+
+    #[getter]
+    fn heat_current_w(&self) -> f64 {
+        self.inner.heat_current_w
+    }
+
+    #[getter]
+    fn hot_temperature_k(&self) -> f64 {
+        self.inner.hot_temperature_k
+    }
+
+    #[getter]
+    fn cold_temperature_k(&self) -> f64 {
+        self.inner.cold_temperature_k
+    }
+
+    #[getter]
+    fn slab_distance_m(&self) -> f64 {
+        self.inner.slab_distance_m
+    }
+
+    #[getter]
+    fn samples(&self) -> usize {
+        self.inner.samples
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+/// The two thermal properties of one part, from one run.
+#[pyclass(name = "ThermalResult", skip_from_py_object)]
+#[derive(Clone)]
+pub struct ThermalResult {
+    inner: params::ThermalResult,
+}
+
+#[pymethods]
+impl ThermalResult {
+    #[getter]
+    fn specific_heat_j_kg_k(&self) -> ParamQuantity {
+        quantity(self.inner.specific_heat_j_kg_k.clone())
+    }
+
+    #[getter]
+    fn thermal_conductivity_w_m_k(&self) -> ParamQuantity {
+        quantity(self.inner.thermal_conductivity_w_m_k.clone())
+    }
+
+    #[getter]
+    fn mean_temperature_k(&self) -> f64 {
+        self.inner.mean_temperature_k
+    }
+
+    #[getter]
+    fn temperature_gradient_k_per_m(&self) -> f64 {
+        self.inner.temperature_gradient_k_per_m
+    }
+
+    #[getter]
+    fn heat_current_w(&self) -> f64 {
+        self.inner.heat_current_w
+    }
+
+    #[getter]
+    fn kinetic_energy_samples(&self) -> usize {
+        self.inner.kinetic_energy_samples
+    }
+
+    #[getter]
+    fn heat_current_samples(&self) -> usize {
+        self.inner.heat_current_samples
+    }
+
+    #[getter]
+    fn provenance(&self) -> Provenance {
+        provenance(self.inner.provenance.clone())
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn thermal_config(
+    dt_s: f64,
+    temperature_k: f64,
+    friction_per_s: f64,
+    berendsen_tau_s: f64,
+    equilibration_steps: usize,
+    production_steps: usize,
+    sample_interval: usize,
+    hot_temperature_k: f64,
+    cold_temperature_k: f64,
+    bath_friction_per_s: f64,
+    conductivity_equilibration_steps: usize,
+    conductivity_production_steps: usize,
+    conductivity_sample_interval: usize,
+    slab_atoms: usize,
+    cross_section_area_m2: f64,
+    seed: u64,
+) -> params::ThermalConfig {
+    params::ThermalConfig {
+        dt_s,
+        temperature_k,
+        friction_per_s,
+        berendsen_tau_s,
+        equilibration_steps,
+        production_steps,
+        sample_interval,
+        hot_temperature_k,
+        cold_temperature_k,
+        bath_friction_per_s,
+        conductivity_equilibration_steps,
+        conductivity_production_steps,
+        conductivity_sample_interval,
+        slab_atoms,
+        cross_section_area_m2,
+        seed,
+    }
+}
+
+/// Extracts the specific heat from the kinetic-energy fluctuation under NVT.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, dt_s=5.0e-15, temperature_k=300.0, friction_per_s=5.0e12, berendsen_tau_s=2.0e-13, equilibration_steps=4_000, production_steps=80_000, sample_interval=20, hot_temperature_k=400.0, cold_temperature_k=200.0, bath_friction_per_s=1.0e13, conductivity_equilibration_steps=10_000, conductivity_production_steps=40_000, conductivity_sample_interval=1, slab_atoms=2, cross_section_area_m2=1.0e-20, seed=0x7E57_1CE5))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_specific_heat(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    dt_s: f64,
+    temperature_k: f64,
+    friction_per_s: f64,
+    berendsen_tau_s: f64,
+    equilibration_steps: usize,
+    production_steps: usize,
+    sample_interval: usize,
+    hot_temperature_k: f64,
+    cold_temperature_k: f64,
+    bath_friction_per_s: f64,
+    conductivity_equilibration_steps: usize,
+    conductivity_production_steps: usize,
+    conductivity_sample_interval: usize,
+    slab_atoms: usize,
+    cross_section_area_m2: f64,
+    seed: u64,
+) -> PyResult<SpecificHeatResult> {
+    let config = thermal_config(
+        dt_s,
+        temperature_k,
+        friction_per_s,
+        berendsen_tau_s,
+        equilibration_steps,
+        production_steps,
+        sample_interval,
+        hot_temperature_k,
+        cold_temperature_k,
+        bath_friction_per_s,
+        conductivity_equilibration_steps,
+        conductivity_production_steps,
+        conductivity_sample_interval,
+        slab_atoms,
+        cross_section_area_m2,
+        seed,
+    );
+    let inner = params::extract_specific_heat(&mut system.inner, &positions_m, &config)
+        .map_err(util::err)?;
+    Ok(SpecificHeatResult { inner })
+}
+
+/// Extracts a thermal conductivity from a two-bath non-equilibrium run.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, dt_s=5.0e-15, temperature_k=300.0, friction_per_s=5.0e12, berendsen_tau_s=2.0e-13, equilibration_steps=4_000, production_steps=80_000, sample_interval=20, hot_temperature_k=400.0, cold_temperature_k=200.0, bath_friction_per_s=1.0e13, conductivity_equilibration_steps=10_000, conductivity_production_steps=40_000, conductivity_sample_interval=1, slab_atoms=2, cross_section_area_m2=1.0e-20, seed=0x7E57_1CE5))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_thermal_conductivity(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    dt_s: f64,
+    temperature_k: f64,
+    friction_per_s: f64,
+    berendsen_tau_s: f64,
+    equilibration_steps: usize,
+    production_steps: usize,
+    sample_interval: usize,
+    hot_temperature_k: f64,
+    cold_temperature_k: f64,
+    bath_friction_per_s: f64,
+    conductivity_equilibration_steps: usize,
+    conductivity_production_steps: usize,
+    conductivity_sample_interval: usize,
+    slab_atoms: usize,
+    cross_section_area_m2: f64,
+    seed: u64,
+) -> PyResult<ConductivityResult> {
+    let config = thermal_config(
+        dt_s,
+        temperature_k,
+        friction_per_s,
+        berendsen_tau_s,
+        equilibration_steps,
+        production_steps,
+        sample_interval,
+        hot_temperature_k,
+        cold_temperature_k,
+        bath_friction_per_s,
+        conductivity_equilibration_steps,
+        conductivity_production_steps,
+        conductivity_sample_interval,
+        slab_atoms,
+        cross_section_area_m2,
+        seed,
+    );
+    let inner = params::extract_thermal_conductivity(&mut system.inner, &positions_m, &config)
+        .map_err(util::err)?;
+    Ok(ConductivityResult { inner })
+}
+
+/// Runs both thermal extractions and combines them into one result.
+#[pyfunction]
+#[pyo3(signature = (system, positions_m, dt_s=5.0e-15, temperature_k=300.0, friction_per_s=5.0e12, berendsen_tau_s=2.0e-13, equilibration_steps=4_000, production_steps=80_000, sample_interval=20, hot_temperature_k=400.0, cold_temperature_k=200.0, bath_friction_per_s=1.0e13, conductivity_equilibration_steps=10_000, conductivity_production_steps=40_000, conductivity_sample_interval=1, slab_atoms=2, cross_section_area_m2=1.0e-20, seed=0x7E57_1CE5))]
+#[allow(clippy::too_many_arguments)]
+pub fn extract_thermal(
+    mut system: PyRefMut<'_, engine::System>,
+    positions_m: Vec<f64>,
+    dt_s: f64,
+    temperature_k: f64,
+    friction_per_s: f64,
+    berendsen_tau_s: f64,
+    equilibration_steps: usize,
+    production_steps: usize,
+    sample_interval: usize,
+    hot_temperature_k: f64,
+    cold_temperature_k: f64,
+    bath_friction_per_s: f64,
+    conductivity_equilibration_steps: usize,
+    conductivity_production_steps: usize,
+    conductivity_sample_interval: usize,
+    slab_atoms: usize,
+    cross_section_area_m2: f64,
+    seed: u64,
+) -> PyResult<ThermalResult> {
+    let config = thermal_config(
+        dt_s,
+        temperature_k,
+        friction_per_s,
+        berendsen_tau_s,
+        equilibration_steps,
+        production_steps,
+        sample_interval,
+        hot_temperature_k,
+        cold_temperature_k,
+        bath_friction_per_s,
+        conductivity_equilibration_steps,
+        conductivity_production_steps,
+        conductivity_sample_interval,
+        slab_atoms,
+        cross_section_area_m2,
+        seed,
+    );
+    let inner =
+        params::extract_thermal(&mut system.inner, &positions_m, &config).map_err(util::err)?;
+    Ok(ThermalResult { inner })
 }

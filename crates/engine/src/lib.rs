@@ -28,7 +28,7 @@ mod test_support;
 
 pub use angle_bend::{AngleBendParams, AngleBendTerm};
 pub use berendsen::BerendsenThermostat;
-pub use bond_stretch::{BondStretchParams, BondStretchTerm};
+pub use bond_stretch::{BondInfo, BondStretchParams, BondStretchTerm};
 pub use electrostatic::{ElectrostaticTerm, COULOMB_CONSTANT_N_M2_PER_C2};
 pub use error::EngineError;
 pub use integrator::VelocityVerlet;

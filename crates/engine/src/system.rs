@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::angle_bend::AngleBendTerm;
-use crate::bond_stretch::BondStretchTerm;
+use crate::bond_stretch::{BondInfo, BondStretchTerm};
 use crate::electrostatic::ElectrostaticTerm;
 use crate::error::EngineError;
 use crate::geometry::validate_positions;
@@ -230,6 +230,52 @@ impl System {
     /// Returns the number of pairs in the current neighbor list.
     pub fn neighbor_pair_count(&self) -> usize {
         self.verlet.as_ref().map_or(0, VerletList::pair_count)
+    }
+
+    /// Returns the number of bonds in the bond-stretch term.
+    ///
+    /// It is zero when no bond-stretch term is set.
+    pub fn bond_count(&self) -> usize {
+        self.bond_stretch
+            .as_ref()
+            .map_or(0, BondStretchTerm::bond_count)
+    }
+
+    /// Returns a read-only view of one bond, or `None` when the index is out
+    /// of range or no bond-stretch term is set.
+    pub fn bond(&self, bond: usize) -> Option<BondInfo> {
+        self.bond_stretch.as_ref()?.bond_info(bond)
+    }
+
+    /// Returns the magnitude of the harmonic force on each bond, in newtons.
+    ///
+    /// The buffer holds one value per bond, in bond index order. The magnitude
+    /// is `|k_n_per_m * (r - r0_m)|`. It is never negative. See
+    /// [`System::bond_strains`] for the local strain.
+    pub fn bond_forces_n(&self, positions_m: &[f64]) -> Result<Vec<f64>, EngineError> {
+        validate_positions(positions_m, self.atom_count)?;
+        match &self.bond_stretch {
+            Some(term) => {
+                let span = term.atom_count();
+                term.bond_force_magnitudes_n(&positions_m[..3 * span])
+            }
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Returns the local strain of each bond, dimensionless.
+    ///
+    /// The buffer holds one value per bond, in bond index order. The strain is
+    /// `(r - r0_m) / r0_m`.
+    pub fn bond_strains(&self, positions_m: &[f64]) -> Result<Vec<f64>, EngineError> {
+        validate_positions(positions_m, self.atom_count)?;
+        match &self.bond_stretch {
+            Some(term) => {
+                let span = term.atom_count();
+                term.bond_strains(&positions_m[..3 * span])
+            }
+            None => Ok(Vec::new()),
+        }
     }
 
     /// Rebuilds the neighbor list if a non-bonded term is set and the atoms
@@ -964,6 +1010,100 @@ mod tests {
                 "coordinate {index}: serial {} parallel {} error {}",
                 serial[index],
                 parallel[index],
+                error_n
+            );
+        }
+    }
+
+    #[test]
+    fn the_bond_accessors_read_the_bond_stretch_term() {
+        let positions_m = small_molecule_positions_m();
+        let system = crate::test_support::bonded_system(&positions_m, &carbon_masses(6));
+        assert_eq!(system.bond_count(), 5);
+        let bond = system.bond(0).expect("bond 0");
+        assert_eq!((bond.u, bond.v), (0, 1));
+        assert_eq!(bond.order, 1);
+        assert_eq!(bond.r0_m, 1.5e-10);
+        assert!(system.bond(99).is_none());
+
+        let magnitudes_n = system.bond_forces_n(&positions_m).expect("valid");
+        let strains = system.bond_strains(&positions_m).expect("valid");
+        assert_eq!(magnitudes_n.len(), 5);
+        assert_eq!(strains.len(), 5);
+        for (magnitude_n, strain) in magnitudes_n.iter().zip(strains.iter()) {
+            assert!((magnitude_n - 300.0 * strain.abs() * 1.5e-10).abs() < 1.0e-20);
+        }
+    }
+
+    #[test]
+    fn an_empty_bond_term_reports_no_bonds() {
+        let system = System::new(1);
+        assert_eq!(system.bond_count(), 0);
+        assert!(system.bond(0).is_none());
+        assert!(system
+            .bond_forces_n(&[0.0, 0.0, 0.0])
+            .expect("valid")
+            .is_empty());
+        assert!(system
+            .bond_strains(&[0.0, 0.0, 0.0])
+            .expect("valid")
+            .is_empty());
+        assert!(matches!(
+            system.bond_forces_n(&[0.0]),
+            Err(EngineError::PositionBufferSizeMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn the_bond_force_magnitude_matches_a_finite_difference_of_the_bond_energy() {
+        let positions_m = small_molecule_positions_m();
+        let atom_count = positions_m.len() / 3;
+        let mut system =
+            System::with_masses_kg(atom_count, &carbon_masses(atom_count)).expect("valid");
+        let mut term = BondStretchTerm::new();
+        for [u, v] in [[0u32, 1u32], [1, 2], [2, 3], [3, 4], [4, 5]] {
+            term.add_bond(u, v, 300.0, 1.5e-10).expect("valid bond");
+        }
+        system.set_bond_stretch(term).expect("bond term fits");
+
+        let magnitudes_n = system.bond_forces_n(&positions_m).expect("valid");
+        let step_m = 1.0e-14;
+        for (bond, magnitude_n) in magnitudes_n.iter().enumerate() {
+            let info = system.bond(bond).expect("bond");
+            let mut bond_energy = BondStretchTerm::new();
+            bond_energy
+                .add_bond(info.u, info.v, info.k_n_per_m, info.r0_m)
+                .expect("valid bond");
+            let u = info.u as usize * 3;
+            let v = info.v as usize * 3;
+            let mut dx = positions_m[u] - positions_m[v];
+            let mut dy = positions_m[u + 1] - positions_m[v + 1];
+            let mut dz = positions_m[u + 2] - positions_m[v + 2];
+            let distance_m = (dx * dx + dy * dy + dz * dz).sqrt();
+            dx /= distance_m;
+            dy /= distance_m;
+            dz /= distance_m;
+
+            let mut forward_m = positions_m.clone();
+            forward_m[u] += step_m * dx;
+            forward_m[u + 1] += step_m * dy;
+            forward_m[u + 2] += step_m * dz;
+            let mut backward_m = positions_m.clone();
+            backward_m[u] -= step_m * dx;
+            backward_m[u + 1] -= step_m * dy;
+            backward_m[u + 2] -= step_m * dz;
+            let span = bond_energy.atom_count();
+            let forward_j = bond_energy.energy_j(&forward_m[..3 * span]).expect("valid");
+            let backward_j = bond_energy
+                .energy_j(&backward_m[..3 * span])
+                .expect("valid");
+            let finite_difference_n = ((forward_j - backward_j) / (2.0 * step_m)).abs();
+            let error_n = (magnitude_n - finite_difference_n).abs();
+            assert!(
+                error_n <= 1.0e-20 + 1.0e-6 * finite_difference_n,
+                "bond {bond}: magnitude {} finite difference {} error {}",
+                magnitude_n,
+                finite_difference_n,
                 error_n
             );
         }

@@ -124,13 +124,17 @@ Start here on a clean session. `M0-01` is the first task.
 - [x] **M2-10** NVE energy-conservation test with a drift bound.
   - Result: `VelocityVerlet` in `crates/engine/src/integrator.rs`. Relative
     drift 1.278e-5 over 4000 steps, below the 1e-4 bound.
-- [ ] **M2-11** Reference water-box benchmark compared to OpenMM within
+- [x] **M2-11** Reference water-box benchmark compared to OpenMM within
   tolerance for energy and forces.
-  - BLOCKED: OpenMM is not installed and is not importable. No conda and no
-    virtual environment exists. The periodic minimum-image fix and a
-    self-consistent SPC-like water box are done (`crates/engine/src/reference.rs`,
-    `neighbor.rs`). NVE relative drift 1.274e-6. The OpenMM cross-check waits on
-    an OpenMM install.
+  - Result: PASS against OpenMM 8.6.1 on the Reference platform. 200 molecules,
+    600 atoms, seed 0x5A17E2, cubic box 1.8833259369189425e-9 m. Energy
+    relative difference 2.341e-14, maximum per-atom force relative difference
+    1.242e-14, tolerance 1.0e-6. `crates/engine/examples/water_box.rs`,
+    `benchmarks/openmm/compare_water_box.py`, and
+    `benchmarks/results/openmm-water-crosscheck.txt`. The CPU platform agrees
+    to about 4e-6 (single precision).
+  - Note: a coding check, not a physics validation. Both codes share the cutoff
+    and the missing long-range correction. The model is SPC-like, not SPC.
 - [x] **M2-12** Record timings in `benchmarks/results/`.
   - Result: `crates/engine/benches/engine_bench.rs` plus
     `benchmarks/results/2026-09-14-engine-timings.txt`. Apple M4 release: energy
@@ -287,7 +291,12 @@ Start here on a clean session. `M0-01` is the first task.
     `nanocad.scene` version 1. Default design: 7 bodies, 6 joints, 3 planets.
     See `docs/three-scale.md`.
 - [ ] **M8-02** The 90-second gearbox video and its script.
-- [ ] **M8-03** Written report with the measured numbers and the caveats.
+  - Result: the script is written at `docs/video-script.md` (10 shots, 90 s
+    budget, commands, asset list). The video is not recorded. This stays open
+    until the recording exists.
+- [x] **M8-03** Written report with the measured numbers and the caveats.
+  - Result: `docs/report.md`. Every number cites its source. Caveats and
+    limitations section. Marked simulated, no medical claim.
 - [x] **M8-04** Public benchmark page with hardware and timing.
   - Result: `docs/benchmarks.md` plus `scripts/bench.sh`. Apple M4, cargo
     1.98.1: energy 680.97 us, serial forces 679.83 us, 4-worker 370.97 us.

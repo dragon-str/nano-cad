@@ -21,6 +21,24 @@ impl BondStretchParams {
     }
 }
 
+/// A read-only view of one bond in a [`BondStretchTerm`].
+///
+/// The bond order is metadata. [`BondStretchTerm::add_bond`] sets it to one
+/// (single). [`BondStretchTerm::from_topology`] reads it from the topology.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BondInfo {
+    /// Index of the first atom.
+    pub u: u32,
+    /// Index of the second atom.
+    pub v: u32,
+    /// Bond order. One means single.
+    pub order: u8,
+    /// Force constant in newtons per metre.
+    pub k_n_per_m: f64,
+    /// Equilibrium bond length in metres.
+    pub r0_m: f64,
+}
+
 /// A harmonic bond-stretch term over a set of bonds.
 ///
 /// The term reads its endpoints from the bond list of a [`Topology`] and holds
@@ -33,6 +51,7 @@ pub struct BondStretchTerm {
     endpoints: Vec<[u32; 2]>,
     k_n_per_m: Vec<f64>,
     r0_m: Vec<f64>,
+    orders: Vec<u8>,
 }
 
 impl Default for BondStretchTerm {
@@ -49,6 +68,7 @@ impl BondStretchTerm {
             endpoints: Vec::new(),
             k_n_per_m: Vec::new(),
             r0_m: Vec::new(),
+            orders: Vec::new(),
         }
     }
 
@@ -71,6 +91,7 @@ impl BondStretchTerm {
             endpoints: Vec::with_capacity(params.len()),
             k_n_per_m: Vec::with_capacity(params.len()),
             r0_m: Vec::with_capacity(params.len()),
+            orders: Vec::with_capacity(params.len()),
         };
         for (bond, param) in params.iter().enumerate() {
             let u = topology
@@ -85,7 +106,13 @@ impl BondStretchTerm {
                     bond,
                     atom_count: topology.atom_count(),
                 })?;
-            term.add_bond(u, v, param.k_n_per_m, param.r0_m)?;
+            let order = topology
+                .bond_order(bond)
+                .ok_or(EngineError::BondEndpointOutOfBounds {
+                    bond,
+                    atom_count: topology.atom_count(),
+                })?;
+            term.push_bond(u, v, order, param.k_n_per_m, param.r0_m)?;
         }
         Ok(term)
     }
@@ -94,11 +121,24 @@ impl BondStretchTerm {
     ///
     /// The term grows its atom count to cover the larger endpoint. The force
     /// constant must be finite and non-negative. The equilibrium length must
-    /// be finite and positive. The endpoints must differ.
+    /// be finite and positive. The endpoints must differ. The bond order is set
+    /// to one (single). Use [`BondStretchTerm::from_topology`] to keep the
+    /// topology bond order.
     pub fn add_bond(
         &mut self,
         u: u32,
         v: u32,
+        k_n_per_m: f64,
+        r0_m: f64,
+    ) -> Result<(), EngineError> {
+        self.push_bond(u, v, 1, k_n_per_m, r0_m)
+    }
+
+    fn push_bond(
+        &mut self,
+        u: u32,
+        v: u32,
+        order: u8,
         k_n_per_m: f64,
         r0_m: f64,
     ) -> Result<(), EngineError> {
@@ -115,6 +155,7 @@ impl BondStretchTerm {
         self.endpoints.push([u, v]);
         self.k_n_per_m.push(k_n_per_m);
         self.r0_m.push(r0_m);
+        self.orders.push(order);
         let span = (u.max(v) as usize).saturating_add(1);
         if span > self.atom_count {
             self.atom_count = span;
@@ -125,6 +166,49 @@ impl BondStretchTerm {
     /// Returns the number of bonds.
     pub fn bond_count(&self) -> usize {
         self.endpoints.len()
+    }
+
+    /// Returns a read-only view of one bond, or `None` when the index is out
+    /// of range.
+    pub fn bond_info(&self, bond: usize) -> Option<BondInfo> {
+        let [u, v] = *self.endpoints.get(bond)?;
+        Some(BondInfo {
+            u,
+            v,
+            order: *self.orders.get(bond)?,
+            k_n_per_m: *self.k_n_per_m.get(bond)?,
+            r0_m: *self.r0_m.get(bond)?,
+        })
+    }
+
+    /// Returns the magnitude of the harmonic force on each bond, in newtons.
+    ///
+    /// The magnitude is `|k_n_per_m * (r - r0_m)|`, with `r` the current bond
+    /// length. It is never negative, and it is well defined for coincident
+    /// atoms.
+    pub fn bond_force_magnitudes_n(&self, positions_m: &[f64]) -> Result<Vec<f64>, EngineError> {
+        self.validate_positions(positions_m)?;
+        let mut magnitudes_n = Vec::with_capacity(self.bond_count());
+        for bond in 0..self.bond_count() {
+            let [u, v] = self.endpoints[bond];
+            let distance_m = self.distance_m(positions_m, u, v);
+            magnitudes_n.push(self.k_n_per_m[bond] * (distance_m - self.r0_m[bond]).abs());
+        }
+        Ok(magnitudes_n)
+    }
+
+    /// Returns the local strain of each bond, dimensionless.
+    ///
+    /// The strain is `(r - r0_m) / r0_m`, with `r` the current bond length.
+    pub fn bond_strains(&self, positions_m: &[f64]) -> Result<Vec<f64>, EngineError> {
+        self.validate_positions(positions_m)?;
+        let mut strains = Vec::with_capacity(self.bond_count());
+        for bond in 0..self.bond_count() {
+            let [u, v] = self.endpoints[bond];
+            let distance_m = self.distance_m(positions_m, u, v);
+            strains.push((distance_m - self.r0_m[bond]) / self.r0_m[bond]);
+        }
+        Ok(strains)
     }
 
     /// Returns the number of atoms the term covers.
@@ -380,5 +464,43 @@ mod tests {
         for (force, grad) in forces.iter().zip(gradient.iter()) {
             assert!((force + grad).abs() < 1.0e-30);
         }
+    }
+
+    #[test]
+    fn bond_info_reads_the_topology_order_and_defaults_add_bond_to_single() {
+        let mut topology = chain_topology(3, 1.5e-10, 0x7);
+        topology.set_bond_order(1, 2).expect("valid order");
+        let term = chain_term(&topology, 300.0, 1.5e-10);
+        let info = term.bond_info(1).expect("bond 1");
+        assert_eq!(info.u, 1);
+        assert_eq!(info.v, 2);
+        assert_eq!(info.order, 2);
+        assert_eq!(info.r0_m, 1.5e-10);
+
+        let mut direct = BondStretchTerm::new();
+        direct.add_bond(0, 1, 300.0, 1.5e-10).expect("valid bond");
+        assert_eq!(direct.bond_info(0).expect("bond 0").order, 1);
+        assert_eq!(direct.bond_info(9), None);
+    }
+
+    #[test]
+    fn bond_force_magnitudes_and_strains_match_the_geometry() {
+        let r0_m = 1.5e-10;
+        let mut term = BondStretchTerm::new();
+        term.add_bond(0, 1, 300.0, r0_m).expect("valid bond");
+        let stretched_m = 1.2 * r0_m;
+        let compressed_m = 0.8 * r0_m;
+        let positions_m = vec![0.0, 0.0, 0.0, stretched_m, 0.0, 0.0];
+        let magnitudes_n = term.bond_force_magnitudes_n(&positions_m).expect("valid");
+        assert_eq!(magnitudes_n.len(), 1);
+        assert!((magnitudes_n[0] - 300.0 * 0.2 * r0_m).abs() < 1.0e-24);
+        let strains = term.bond_strains(&positions_m).expect("valid");
+        assert!((strains[0] - 0.2).abs() < 1.0e-14);
+
+        let compressed = vec![0.0, 0.0, 0.0, compressed_m, 0.0, 0.0];
+        let magnitudes_n = term.bond_force_magnitudes_n(&compressed).expect("valid");
+        assert!((magnitudes_n[0] - 300.0 * 0.2 * r0_m).abs() < 1.0e-24);
+        let strains = term.bond_strains(&compressed).expect("valid");
+        assert!((strains[0] + 0.2).abs() < 1.0e-14);
     }
 }

@@ -79,6 +79,8 @@ pub enum EngineError {
     BufferSizeMismatch { len: usize, expected: usize },
     #[error("velocity {index} is not finite")]
     NonFiniteVelocity { index: usize },
+    #[error("external force {index} is not finite")]
+    NonFiniteExternalForce { index: usize },
     #[error("no masses are set on the system")]
     MassesNotSet,
     #[error("mass count {provided} does not match {expected} atoms")]

@@ -78,8 +78,28 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<params::Provenance>()?;
     module.add_class::<params::PartRecord>()?;
     module.add_class::<params::ParameterLibrary>()?;
+    module.add_class::<params::StiffnessResult>()?;
+    module.add_class::<params::FrictionResult>()?;
+    module.add_class::<params::FailureResult>()?;
+    module.add_class::<params::SpecificHeatResult>()?;
+    module.add_class::<params::ConductivityResult>()?;
+    module.add_class::<params::ThermalResult>()?;
     module.add_function(wrap_pyfunction!(params::check_record, module)?)?;
     module.add_function(wrap_pyfunction!(params::is_consistent, module)?)?;
+    module.add_function(wrap_pyfunction!(params::extract_stiffness, module)?)?;
+    module.add_function(wrap_pyfunction!(params::extract_friction, module)?)?;
+    module.add_function(wrap_pyfunction!(params::summarize_friction, module)?)?;
+    module.add_function(wrap_pyfunction!(params::extract_failure_stress, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        params::extract_failure_stress_from_system,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(params::extract_specific_heat, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        params::extract_thermal_conductivity,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(params::extract_thermal, module)?)?;
 
     // Engine.
     module.add_class::<engine::System>()?;

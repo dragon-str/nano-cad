@@ -8,7 +8,7 @@
 //! The result is an estimate from a simulation. It is not a certified material
 //! constant.
 
-use nanocad_engine::{EngineError, System};
+use nanocad_engine::{EngineError, System, VelocityVerlet};
 
 use crate::error::ParamError;
 use crate::provenance::{extraction_provenance, Method, Provenance};
@@ -94,15 +94,17 @@ pub fn summarize_friction(
 
 /// Runs a driven sliding contact and extracts a friction coefficient.
 ///
-/// The function integrates the slider atom with a velocity-Verlet step that
-/// adds three external forces to the engine force: the drive spring, the normal
-/// load, and the drag. Every other atom is held fixed. It discards the
-/// equilibration window, then measures the drive-spring force for the
-/// measurement window. See [`summarize_friction`] for the summary.
+/// The function integrates the slider atom with the engine
+/// [`VelocityVerlet::step_with_external_forces`]. It adds three external forces
+/// to the engine force: the drive spring, the normal load, and the drag. Every
+/// other atom is reset to its start position after each step, so it stays
+/// fixed. It discards the equilibration window, then measures the drive-spring
+/// force for the measurement window. See [`summarize_friction`] for the
+/// summary.
 ///
-/// The engine has no public integrator that accepts an external force, so this
-/// module carries its own small step. It uses the engine for the interaction
-/// force only.
+/// The external force is constant over one step, so the velocity-dependent drag
+/// uses the velocity at the step start. This is an explicit splitting of the
+/// drag, not an implicit solve.
 pub fn extract_friction(
     system: &mut System,
     positions_m: &[f64],
@@ -190,43 +192,36 @@ fn simulate_sliding(
     config: &FrictionConfig,
 ) -> Result<Vec<f64>, ParamError> {
     let slider = config.slider_atom as usize;
-    let mass_kg = system.masses_kg()[slider];
+    let atom_count = system.atom_count();
+    let integrator = VelocityVerlet::new(config.dt_s)?;
     let mut positions_m = base_positions_m.to_vec();
     let mut velocities_m_per_s = vec![0.0; positions_m.len()];
+    let fixed_positions_m = base_positions_m.to_vec();
     let start_x_m = positions_m[3 * slider];
-    let half_dt_s = 0.5 * config.dt_s;
     let total_steps = config.equilibration_steps + config.measurement_steps;
     let mut time_s = 0.0;
     let mut samples_n = Vec::with_capacity(config.measurement_steps);
 
-    let mut force_n = slider_force(
-        system,
-        &positions_m,
-        &velocities_m_per_s,
-        config,
-        time_s,
-        start_x_m,
-    )?;
     for step in 0..total_steps {
-        for (axis, force) in force_n.iter().enumerate() {
-            let index = 3 * slider + axis;
-            let half_velocity = velocities_m_per_s[index] + half_dt_s * force / mass_kg;
-            positions_m[index] += half_velocity * config.dt_s;
-            velocities_m_per_s[index] = half_velocity;
-        }
-        time_s += config.dt_s;
-        force_n = slider_force(
+        let external_forces_n =
+            sliding_forces_n(&positions_m, &velocities_m_per_s, config, time_s, start_x_m);
+        integrator.step_with_external_forces(
             system,
-            &positions_m,
-            &velocities_m_per_s,
-            config,
-            time_s,
-            start_x_m,
+            &mut positions_m,
+            &mut velocities_m_per_s,
+            &external_forces_n,
         )?;
-        for (axis, force) in force_n.iter().enumerate() {
-            let index = 3 * slider + axis;
-            velocities_m_per_s[index] += half_dt_s * force / mass_kg;
+
+        for atom in 0..atom_count {
+            if atom == slider {
+                continue;
+            }
+            let base = 3 * atom;
+            positions_m[base..base + 3].copy_from_slice(&fixed_positions_m[base..base + 3]);
+            velocities_m_per_s[base..base + 3].fill(0.0);
         }
+
+        time_s += config.dt_s;
         if step >= config.equilibration_steps {
             let stage_x_m = start_x_m + config.stage_velocity_m_per_s * time_s;
             let spring_force_n =
@@ -242,26 +237,23 @@ fn simulate_sliding(
     Ok(samples_n)
 }
 
-fn slider_force(
-    system: &mut System,
+fn sliding_forces_n(
     positions_m: &[f64],
     velocities_m_per_s: &[f64],
     config: &FrictionConfig,
     time_s: f64,
     start_x_m: f64,
-) -> Result<[f64; 3], ParamError> {
+) -> Vec<f64> {
     let slider = config.slider_atom as usize;
-    let engine_forces_n = system.forces_n(positions_m)?;
     let base = 3 * slider;
     let stage_x_m = start_x_m + config.stage_velocity_m_per_s * time_s;
     let drag = config.drag_n_s_per_m;
-    let spring_n = config.drive_stiffness_n_per_m * (stage_x_m - positions_m[base]);
-    let mut force_n = [0.0; 3];
-    force_n[0] = engine_forces_n[base] + spring_n - drag * velocities_m_per_s[base];
-    force_n[1] = engine_forces_n[base + 1] - drag * velocities_m_per_s[base + 1];
-    force_n[2] =
-        engine_forces_n[base + 2] - config.normal_load_n - drag * velocities_m_per_s[base + 2];
-    Ok(force_n)
+    let mut forces_n = vec![0.0; positions_m.len()];
+    forces_n[base] = config.drive_stiffness_n_per_m * (stage_x_m - positions_m[base])
+        - drag * velocities_m_per_s[base];
+    forces_n[base + 1] = -drag * velocities_m_per_s[base + 1];
+    forces_n[base + 2] = -config.normal_load_n - drag * velocities_m_per_s[base + 2];
+    forces_n
 }
 
 fn validate_config(

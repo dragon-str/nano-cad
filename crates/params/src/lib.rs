@@ -30,7 +30,10 @@ mod test_support;
 
 pub use check::{check, is_consistent, Problem};
 pub use error::ParamError;
-pub use failure::{extract_failure_stress, BondLimit, FailureConfig, FailureResult};
+pub use failure::{
+    bond_limits_from_system, extract_failure_stress, extract_failure_stress_from_system, BondLimit,
+    FailureConfig, FailureResult,
+};
 pub use friction::{extract_friction, summarize_friction, FrictionConfig, FrictionResult};
 pub use library::{LibraryEntry, ParameterLibrary, LIBRARY_SCHEMA, LIBRARY_VERSION};
 pub use provenance::{Method, Provenance, Validation};
