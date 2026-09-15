@@ -14,6 +14,7 @@ pub mod nanotube;
 pub mod parameter;
 pub mod planetary;
 pub mod registry;
+pub mod respirocyte;
 pub mod spur_gear;
 pub mod validation;
 
@@ -27,6 +28,11 @@ pub use planetary::{
     planetary_constraint_holds, PlanetaryDesign, PlanetaryGenerator, PlanetarySet,
 };
 pub use registry::{gear_generator, gear_generators, generate_gear};
+pub use respirocyte::{
+    respirocyte_pump, respirocyte_rotor, respirocyte_tank, RespirocytePump,
+    RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
+    RespirocyteTankGenerator,
+};
 pub use spur_gear::SpurGearGenerator;
 pub use validation::{
     element_valence, validate_part, ValidationReport, Violation, DEFAULT_STRAIN_TOLERANCE_RELATIVE,

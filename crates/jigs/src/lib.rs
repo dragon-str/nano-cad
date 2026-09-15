@@ -19,6 +19,7 @@ mod device;
 mod error;
 mod jig;
 mod motor;
+mod nanomedicine;
 mod rotor;
 mod scene;
 mod spring;
@@ -37,6 +38,7 @@ pub use device::{
 pub use error::JigError;
 pub use jig::{Jig, JigKind};
 pub use motor::MotorJig;
+pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineError, SliceResult};
 pub use rotor::{
     LangevinCoupling, RotorConfig, RotorError, RotorMachine, RotorStep, BOLTZMANN_J_PER_K,
     CARBON_ATOM_MASS_KG,

@@ -15,10 +15,14 @@ AREA_M2 = 1.0e-20
 BOND_COUNT = 20
 
 
-def uniform_chain(atom_count: int = BOND_COUNT + 1) -> tuple[nanocad.System, list[float]]:
+def uniform_chain(
+    atom_count: int = BOND_COUNT + 1,
+) -> tuple[nanocad.System, list[float]]:
     """Build a straight harmonic chain along x."""
     system = nanocad.System(atom_count, [CARBON_MASS_KG] * atom_count)
-    system.set_bond_stretch([(i, i + 1, K_N_PER_M, R0_M) for i in range(atom_count - 1)])
+    system.set_bond_stretch(
+        [(i, i + 1, K_N_PER_M, R0_M) for i in range(atom_count - 1)]
+    )
     positions: list[float] = []
     for atom in range(atom_count):
         positions += [atom * R0_M, 0.0, 0.0]

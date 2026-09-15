@@ -18,6 +18,10 @@ classifiers = [
 dependencies = []
 dynamic = ["version"]
 
+[project.optional-dependencies]
+# The adapters (L3 continuum, L0 quantum) use numpy and pytest in their tests.
+test = ["pytest>=8", "numpy>=1.24"]
+
 [tool.maturin]
 # The Rust bindings crate lives at the repository root, not under python/.
 # This path is relative to this pyproject.toml file.

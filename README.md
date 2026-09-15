@@ -3,19 +3,22 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **425 Rust tests plus
-40 Python and MCP tests pass**. The 9-crate workspace has: units, the model and
+Status: **pre-alpha.** The core is built end to end and **440 Rust tests plus
+75 Python and MCP tests pass**. The 9-crate workspace has: units, the model and
 the NCZ/MMP/XYZ formats, a force engine (bond, angle, torsion, out-of-plane,
 van der Waals, electrostatic, periodic minimum image, velocity Verlet,
 conjugate gradient, Langevin and Berendsen thermostats), part generators
-(diamond, graphite, nanotube, involute gear, spur gear, planetary set),
-parameter records and extraction (stiffness, friction, failure, thermal), jigs,
-rigid-body device joints, URDF and three-scale scene export, the CLI, PyO3
-bindings, and an MCP server. An agent builds the planetary gearbox through the
-tool surface alone and measures the analytic 3.5 gear ratio. A clean checkout
-reproduces the demo with `just reproduce`. The periodic water box matches
-OpenMM 8.6.1 to 1e-14 relative. M8-02 needs the video recording. See
-`docs/benchmarks.md` and `docs/report.md`.
+(diamond, graphite, nanotube, involute gear, spur gear, planetary set,
+respirocyte rotor, pump and tank), parameter records and extraction (stiffness,
+friction, failure, thermal), jigs, rigid-body device joints, URDF and
+three-scale scene export, the CLI, PyO3 bindings, and an MCP server. An agent
+builds the planetary gearbox through the tool surface alone and measures the
+analytic 3.5 gear ratio. A clean checkout reproduces the demo with
+`just reproduce`. The periodic water box matches OpenMM 8.6.1 to 1e-14
+relative. The later-phase adapters are started: L0 quantum (PySCF), L3
+continuum (structural and flow), L4 lumped system (SBML subset), FL-01, FL-02
+and NM-01. M8-02 needs the video recording. See `docs/benchmarks.md` and
+`docs/report.md`.
 
 ## Doctrine
 

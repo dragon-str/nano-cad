@@ -310,9 +310,32 @@ Start here on a clean session. `M0-01` is the first task.
 
 ## Phase 6 — Later
 
-- [ ] **L0-01** Quantum adapter through ASE and PySCF or xTB.
-- [ ] **L3-01** Continuum adapter for structural and flow.
-- [ ] **L4-01** Lumped system model with CellML or SBML interop.
-- [ ] **FL-01** Respirocyte rotor and bearing subsystem.
-- [ ] **FL-02** Respirocyte pump and gas tank subsystem.
-- [ ] **NM-01** One nanomedicine slice: a machine coupled to a coarse host.
+- [x] **L0-01** Quantum adapter through ASE and PySCF or xTB.
+  - Result: `python/nanocad/quantum_adapter.py`. PySCF 2.14.0 from
+    `/tmp/nc-qm-venv` ran RHF/STO-3G on H2 and gave -1.116999 Ha against the
+    cited Hehre-Stewart-Pople 1969 value -1.1167 Ha. ASE EMT is a labelled
+    classical fallback. Backends import lazily; the test skips when absent.
+  - Note: single-point energy only. No forces, so no finite-difference test.
+    xTB path is written but not exercised.
+- [x] **L3-01** Continuum adapter for structural and flow.
+  - Result: `python/nanocad/continuum_adapter.py`. Axial bar and
+    Euler-Bernoulli beam, plus Hagen-Poiseuille tube and plane-channel flow.
+    Relative error 1.4e-16 (bar), 2.4e-12 (beam), 5.8e-11 (tube), 1.5e-11
+    (channel). `voxelize_part` maps a plain atom list to density.
+- [x] **L4-01** Lumped system model with CellML or SBML interop.
+  - Result: `python/nanocad/lumped_adapter.py`. A two-compartment respirocyte
+    gas-transport model, fixed-step RK4, and an SBML Level 3 subset round trip.
+    Analytic check reaches 6.55e-12 relative error.
+- [x] **FL-01** Respirocyte rotor and bearing subsystem.
+  - Result: `RespirocyteRotorGenerator` in `crates/parts/src/respirocyte.rs`.
+    Rotor and bearing from the diamond lattice, a stated radial gap, and a
+    rotational degree of freedom. No bonds cross the gap.
+- [x] **FL-02** Respirocyte pump and gas tank subsystem.
+  - Result: `RespirocytePumpGenerator` and `RespirocyteTankGenerator` in
+    `crates/parts/src/respirocyte.rs`. Cylinder and piston, plus a hollow
+    spherical shell. The tank interior is empty.
+- [x] **NM-01** One nanomedicine slice: a machine coupled to a coarse host.
+  - Result: `crates/jigs/src/nanomedicine.rs`. `HostEnvironment` (Stokes drag,
+    optional flow, tether, drive) and `NanoMachine`. Terminal velocity matches
+    the analytic value to 2.0e-9 relative; the energy balance closes to 3.4e-7.
+    All geometry is a skeletal lattice model, not a validated device.

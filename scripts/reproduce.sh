@@ -58,15 +58,16 @@ fi
 venv_python="$venv_dir/bin/python"
 "$venv_python" --version || fail "the virtual environment has no working Python"
 
-# Step 3: maturin and pytest. The download needs network access.
-step "Step 3/7: install maturin and pytest (network access needed on the first run)"
-if [ -x "$venv_dir/bin/maturin" ] && [ -x "$venv_dir/bin/pytest" ]; then
-    printf 'maturin and pytest are already installed; skipping the download\n'
+# Step 3: maturin, pytest and numpy. The download needs network access.
+step "Step 3/7: install maturin, pytest and numpy (network access needed on the first run)"
+if [ -x "$venv_dir/bin/maturin" ] && [ -x "$venv_dir/bin/pytest" ] \
+    && "$venv_python" -c 'import numpy' 2>/dev/null; then
+    printf 'maturin, pytest and numpy are already installed; skipping the download\n'
 else
     "$venv_python" -m pip install --quiet --upgrade pip \
         || fail "pip install --upgrade pip failed (check network access)"
-    "$venv_python" -m pip install --quiet "maturin>=1.7,<2.0" pytest \
-        || fail "pip install maturin pytest failed (check network access)"
+    "$venv_python" -m pip install --quiet "maturin>=1.7,<2.0" pytest numpy \
+        || fail "pip install maturin pytest numpy failed (check network access)"
 fi
 "$venv_python" -m maturin --version || fail "maturin is not runnable in the venv"
 

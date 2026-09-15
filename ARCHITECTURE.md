@@ -29,13 +29,13 @@ nano-cad/
     model/                   # document model: atoms, bonds, topology, parts
     format/                  # NCZ, MMP, XYZ, PDB, URDF
     engine/                  # L1: cell list, pair list, forces, integrators
-    jigs/                    # anchors, motors, springs, rigid bodies, device, URDF, scene
-    parts/                   # parametric generators: gear, nanotube, lattice
+    jigs/                    # anchors, motors, springs, rigid bodies, device, URDF, scene, nanomedicine
+    parts/                   # parametric generators: gear, nanotube, lattice, respirocyte
     params/                  # parameter store, provenance, verification
     python/                  # PyO3 bindings -> the nanocad package
     cli/                     # the nanocad command line
   python/
-    nanocad/                 # the Python package
+    nanocad/                 # the Python package and the L0/L3/L4 adapters
     tests/
   mcp/                       # stdio JSON-RPC MCP server wrapping the API
   scripts/                   # reproducible shell entry points (bench, ...)

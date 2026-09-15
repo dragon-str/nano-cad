@@ -273,3 +273,59 @@ Template:
   class with `Quantity` fields and provenance.
 - Consequences: The functions take many keyword arguments and no Python config
   class exists yet. The `python` feature still gates every binding (ADR-0016).
+
+## ADR-0024: L0 quantum adapter is a lazy Python slice over PySCF or ASE
+- Status: accepted
+- Date: 2026-09-14
+- Context: L0 needs a quantum energy, but a hard PySCF dependency would break
+  the default install and the test suite.
+- Decision: `python/nanocad/quantum_adapter.py` imports every backend inside
+  the call and takes plain atom data. PySCF is preferred, ASE is a fallback,
+  and the result states `is_quantum`, `method` and `validation`.
+- Consequences: The default test run skips the backend tests. The adapter is a
+  single-point energy only; it returns no forces and no gradient.
+
+## ADR-0025: L3 continuum adapter uses closed-form checks, numpy only
+- Status: accepted
+- Date: 2026-09-14
+- Context: L3 needs structural and flow results that a reviewer can verify.
+- Decision: `python/nanocad/continuum_adapter.py` solves an axial bar, an
+  Euler-Bernoulli beam, and Poiseuille tube and channel flow, and checks each
+  against the analytic closed form. It uses numpy and the standard library.
+- Consequences: The models are 1D, steady, and laminar. numpy is a test extra
+  in `python/pyproject.toml` and the reproduce script installs it.
+
+## ADR-0026: L4 lumped model emits an honest SBML subset
+- Status: accepted
+- Date: 2026-09-14
+- Context: L4 needs a lumped model and a standard interchange format. Full SBML
+  support is large and would need a dependency.
+- Decision: `python/nanocad/lumped_adapter.py` emits and parses an SBML Level 3
+  subset with `xml.etree.ElementTree`. It supports compartments, species,
+  parameters, and reactions with a MathML kinetic law.
+- Consequences: Foreign SBML that uses assignment rules, events, or function
+  definitions is rejected with a typed error. Units ride in a
+  `nanocad:unit` extension attribute.
+
+## ADR-0027: Respirocyte subsystems live in nanocad-parts as lattice generators
+- Status: accepted
+- Date: 2026-09-14
+- Context: FL-01 and FL-02 need rotor, bearing, pump, and tank geometry that
+  the part machinery can generate and validate.
+- Decision: Add `crates/parts/src/respirocyte.rs` with three
+  `PartGenerator`s over the diamond lattice, each returning Parts plus a
+  metadata struct with SI values.
+- Consequences: The geometry is skeletal, not a validated device. No force term
+  was added, so no finite-difference gradient test applies.
+
+## ADR-0028: NM-01 couples a rigid body to a coarse Stokes host
+- Status: accepted
+- Date: 2026-09-14
+- Context: NM-01 needs a machine in a host environment without a full fluid
+  solver.
+- Decision: Add `crates/jigs/src/nanomedicine.rs` with `HostEnvironment`
+  (Stokes drag, optional flow and tether) and `NanoMachine`, integrated by the
+  existing `RigidBodySystem`. The slice is checked against terminal velocity.
+- Consequences: The host is a single-sphere Stokes model with no wall
+  correction, no Brownian noise, and no hydrodynamic interaction. The energy
+  balance closes only to the integrator order.
