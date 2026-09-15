@@ -1,6 +1,8 @@
 //! Writes the default three-scale planetary gearbox scene as JSON.
 //!
 //! The first argument is the output path. The default is `site/scene.json`.
+//! Every later argument is a generator parameter as `key=value`, for example
+//! `layers=6 sun_teeth=20`. The names match `PLANETARY_PARAMETERS`.
 //! The static viewer in `site/` loads this file. The scene is a schematic
 //! snapshot of a simulated design, not a built device.
 //!
@@ -155,12 +157,23 @@ fn check_scene_order(
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let path = std::env::args()
-        .nth(1)
+    let mut arguments = std::env::args().skip(1);
+    let path = arguments
+        .next()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("site/scene.json"));
 
-    let parameters = ParameterSet::new().with("planet_count", 3.0);
+    let mut parameters = ParameterSet::new().with("planet_count", 3.0);
+    for argument in arguments {
+        let Some((key, value)) = argument.split_once('=') else {
+            return Err(format!("expected `key=value`, got `{argument}`").into());
+        };
+        let parsed_value: f64 = value
+            .parse()
+            .map_err(|_| format!("bad number in `{argument}`"))?;
+        parameters = parameters.with(key, parsed_value);
+    }
+
     let assembly = assemble_planetary(&parameters)?;
     let set = PlanetaryGenerator.build(&parameters)?;
     let scene = build_scene(&assembly, &set)?;

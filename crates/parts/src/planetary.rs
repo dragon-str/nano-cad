@@ -279,6 +279,24 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
         false,
         "axial offset of the carrier plate in metres",
     ),
+    ParameterSpec::new(
+        "layers",
+        None,
+        4.0,
+        1.0,
+        64.0,
+        true,
+        "number of atomic layers in the gear thickness",
+    ),
+    ParameterSpec::new(
+        "layer_spacing_m",
+        Some(Unit::Metre),
+        1.544e-10,
+        0.1e-10,
+        5.0e-9,
+        false,
+        "separation between adjacent atomic layers in metres",
+    ),
 ];
 
 /// A generated planetary set with the atom ranges of each body.
@@ -320,6 +338,13 @@ impl PlanetaryGenerator {
         let samples_per_flank = resolved.require("samples_per_flank")? as usize;
         let samples_per_arc = resolved.require("samples_per_arc")? as usize;
         let carrier_offset_m = resolved.require("carrier_offset_m")?;
+        let layers = resolved.require("layers")?.round() as usize;
+        let layer_spacing_m = resolved.require("layer_spacing_m")?;
+        if layers == 0 {
+            return Err(PartError::InvalidGeometry(
+                "layer count must be at least one".to_owned(),
+            ));
+        }
 
         let design = PlanetaryDesign::new(
             module_m,
@@ -334,22 +359,36 @@ impl PlanetaryGenerator {
         let sun_profile = GearProfile::new(module_m, sun_teeth, pressure_angle_rad)?;
         let sun_points =
             trim_closed_loop(sun_profile.outline_points(samples_per_flank, samples_per_arc)?);
-        let sun_indices = add_closed_loop(&mut topology, &sun_points, 0.0, 0.0, [0.0, 0.0], "sun")?;
+        let sun_indices = add_extruded_loop(
+            &mut topology,
+            &sun_points,
+            0.0,
+            [0.0, 0.0],
+            layers,
+            layer_spacing_m,
+            "sun",
+        )?;
         let sun_atoms = index_range(&sun_indices);
 
         let planet_profile = GearProfile::new(module_m, planet_teeth, pressure_angle_rad)?;
         let planet_points =
             trim_closed_loop(planet_profile.outline_points(samples_per_flank, samples_per_arc)?);
+        // A planet must present a tooth space at each mesh line. The outline
+        // puts the first tooth tip at local angle zero, so add a half-tooth
+        // phase offset. Without it the sun tooth meets a planet tooth and the
+        // set collides.
+        let half_tooth_rad = PI / planet_teeth as f64;
         let mut planet_atoms = Vec::with_capacity(planet_count);
         for planet in 0..planet_count {
-            let angle_rad = design.planet_angle_rad(planet);
+            let angle_rad = design.planet_angle_rad(planet) + half_tooth_rad;
             let center_m = design.planet_center_m(planet);
-            let indices = add_closed_loop(
+            let indices = add_extruded_loop(
                 &mut topology,
                 &planet_points,
-                0.0,
                 angle_rad,
                 center_m,
+                layers,
+                layer_spacing_m,
                 "planet",
             )?;
             planet_atoms.push(index_range(&indices));
@@ -359,14 +398,22 @@ impl PlanetaryGenerator {
         let external_ring =
             trim_closed_loop(ring_profile.outline_points(samples_per_flank, samples_per_arc)?);
         let internal_ring = reflect_to_internal(&external_ring, design.ring_pitch_radius_m());
-        let ring_indices =
-            add_closed_loop(&mut topology, &internal_ring, 0.0, 0.0, [0.0, 0.0], "ring")?;
+        let ring_indices = add_extruded_loop(
+            &mut topology,
+            &internal_ring,
+            0.0,
+            [0.0, 0.0],
+            layers,
+            layer_spacing_m,
+            "ring",
+        )?;
         let ring_atoms = index_range(&ring_indices);
 
         let carrier_start = topology.atom_count();
         add_carrier(&mut topology, &design, carrier_offset_m)?;
         let carrier_atoms = carrier_start..topology.atom_count();
 
+        let thickness_m = (layers - 1) as f64 * layer_spacing_m;
         let name = format!("planetary-s{sun_teeth}-p{planet_teeth}x{planet_count}");
         let mut part = Part::new(name, topology).with_material("diamondoid");
         part.metadata
@@ -377,6 +424,14 @@ impl PlanetaryGenerator {
             "gear_ratio".to_owned(),
             format!("{:.6}", design.gear_ratio()),
         );
+        part.metadata
+            .insert("layers".to_owned(), layers.to_string());
+        part.metadata.insert(
+            "layer_spacing_m".to_owned(),
+            format!("{layer_spacing_m:.6e}"),
+        );
+        part.metadata
+            .insert("thickness_m".to_owned(), format!("{thickness_m:.6e}"));
 
         Ok(PlanetarySet {
             part,
@@ -434,6 +489,39 @@ fn reflect_to_internal(points_m: &[[f64; 2]], pitch_radius_m: f64) -> Vec<[f64; 
             [point[0] * scale, point[1] * scale]
         })
         .collect()
+}
+
+/// Extrudes a closed loop into `layers` parallel planes and bonds the layers.
+///
+/// The gear thickness is `(layers - 1) * spacing_m`. Each plane holds one copy
+/// of the outline, and every atom bonds to the atom directly above it. This
+/// makes the axial atom count exact and controllable. The solid between the
+/// outline and the axis stays empty; the part is skeletal, not filled.
+fn add_extruded_loop(
+    topology: &mut Topology,
+    points_m: &[[f64; 2]],
+    rotation_rad: f64,
+    center_m: [f64; 2],
+    layers: usize,
+    spacing_m: f64,
+    atom_type: &str,
+) -> Result<Vec<u32>, PartError> {
+    let layers = layers.max(1);
+    let half_span_m = 0.5 * (layers - 1) as f64 * spacing_m;
+    let mut all_indices = Vec::with_capacity(points_m.len() * layers);
+    let mut previous: Option<Vec<u32>> = None;
+    for layer in 0..layers {
+        let z_m = layer as f64 * spacing_m - half_span_m;
+        let indices = add_closed_loop(topology, points_m, z_m, rotation_rad, center_m, atom_type)?;
+        if let Some(previous_indices) = &previous {
+            for (lower, upper) in previous_indices.iter().zip(indices.iter()) {
+                topology.add_bond(Bond::new(*lower, *upper, 1, BondType::Single))?;
+            }
+        }
+        all_indices.extend_from_slice(&indices);
+        previous = Some(indices);
+    }
+    Ok(all_indices)
 }
 
 /// Adds a closed loop of carbon atoms and bonds it around. Returns the indices.
@@ -740,6 +828,100 @@ mod tests {
     fn a_generator_reports_its_identity() {
         assert_eq!(PlanetaryGenerator.id(), "planetary");
         assert_eq!(PlanetaryGenerator.name(), "Planetary gear set");
-        assert_eq!(PlanetaryGenerator.parameters().len(), 8);
+        assert_eq!(PlanetaryGenerator.parameters().len(), 10);
+    }
+
+    /// The in-plane radius of the atom nearest a world direction, in metres.
+    fn nearest_atom_radius_m(
+        topology: &Topology,
+        range: &Range<usize>,
+        center_m: [f64; 2],
+        world_angle_rad: f64,
+    ) -> f64 {
+        let mut best_angle = f64::MAX;
+        let mut best_radius = f64::NAN;
+        for index in range.clone() {
+            let Some(position_m) = topology.position_m(index) else {
+                continue;
+            };
+            let dx = position_m[0] - center_m[0];
+            let dy = position_m[1] - center_m[1];
+            let radius_m = (dx * dx + dy * dy).sqrt();
+            let delta = (dy.atan2(dx) - world_angle_rad).rem_euclid(2.0 * PI);
+            let delta = delta.min(2.0 * PI - delta);
+            if delta < best_angle {
+                best_angle = delta;
+                best_radius = radius_m;
+            }
+        }
+        best_radius
+    }
+
+    #[test]
+    fn the_planet_presents_a_tooth_space_at_each_mesh_line() {
+        let build = PlanetaryGenerator
+            .build(&default_parameters())
+            .expect("generate");
+        let design = build.design;
+        let profile = GearProfile::new(
+            design.module_m(),
+            design.planet_teeth(),
+            design.pressure_angle_rad(),
+        )
+        .expect("profile");
+        let outer_m = profile.outer_radius_m();
+        let root_m = profile.root_radius_m();
+        let tooth_height_m = outer_m - root_m;
+        // The atom nearest the mesh direction must sit near the root circle,
+        // not the tip. Near the tip means tooth-on-tooth and a collision.
+        for planet in 0..design.planet_count() {
+            let center_m = design.planet_center_m(planet);
+            let phi = design.planet_angle_rad(planet);
+            let toward_sun_radius_m = nearest_atom_radius_m(
+                &build.part.topology,
+                &build.planet_atoms[planet],
+                center_m,
+                phi + PI,
+            );
+            let toward_ring_radius_m = nearest_atom_radius_m(
+                &build.part.topology,
+                &build.planet_atoms[planet],
+                center_m,
+                phi,
+            );
+            assert!(
+                toward_sun_radius_m < root_m + 0.25 * tooth_height_m,
+                "planet {planet} shows a tooth at the sun mesh: radius {toward_sun_radius_m:e} m"
+            );
+            assert!(
+                toward_ring_radius_m < root_m + 0.25 * tooth_height_m,
+                "planet {planet} shows a tooth at the ring mesh: radius {toward_ring_radius_m:e} m"
+            );
+        }
+    }
+
+    #[test]
+    fn the_gear_thickness_is_the_axial_layer_span() {
+        let parameters = default_parameters()
+            .with("layers", 5.0)
+            .with("layer_spacing_m", 2.0e-10);
+        let build = PlanetaryGenerator.build(&parameters).expect("generate");
+        assert_eq!(
+            build.part.metadata.get("layers").map(String::as_str),
+            Some("5")
+        );
+        assert_eq!(
+            build.part.metadata.get("thickness_m").map(String::as_str),
+            Some("8.000000e-10")
+        );
+        let mut z_values: Vec<i64> = build
+            .sun_atoms
+            .clone()
+            .filter_map(|index| build.part.topology.position_m(index))
+            .map(|position_m| (position_m[2] * 1.0e10).round() as i64)
+            .collect();
+        z_values.sort_unstable();
+        z_values.dedup();
+        assert_eq!(z_values, vec![-4, -2, 0, 2, 4]);
     }
 }

@@ -333,7 +333,10 @@ class GearLattice:
         a = t * 0.34
         w_s = -1.0
         w_c = w_s * ns / (ns + nr)
-        w_p = w_c - (ns / npz) * (w_s - w_c)
+        # The generator already bakes the planet's placement phase into the
+        # scene coordinates. The spin about the planet center is therefore the
+        # RELATIVE rate; the orbit about the origin supplies the carrier term.
+        w_rel = -(ns / npz) * (w_s - w_c)
         out = []
         for atom in self.atoms:
             x, y, _ = atom["position_m"]
@@ -344,7 +347,7 @@ class GearLattice:
                 x, y = _rot2(x, y, w_c * a)
             elif name.startswith("planet_"):
                 cx0, cy0 = self.centers[name]
-                dx, dy = _rot2(x - cx0, y - cy0, w_p * a)
+                dx, dy = _rot2(x - cx0, y - cy0, w_rel * a)
                 x, y = _rot2(cx0 + dx, cy0 + dy, w_c * a)
             out.append((x, y))
         return out
@@ -403,28 +406,37 @@ RING_TEETH = 60
 PLANETS = 3
 
 
-def planetary_angles(t):
+def planetary_angles(t, sun_teeth=SUN_TEETH, planet_teeth=PLANET_TEETH,
+                     planet_count=PLANETS):
     """Return (theta_sun, [(phi_k, theta_planet_k), ...]) for time t.
 
     The ring is fixed. With sun rate w_s, the carrier rate is
-    w_c = w_s * N_s / (N_s + N_r), and the planet absolute spin is
-    w_p = w_c - (N_s / N_p) * (w_s - w_c). Set w_s = -1.0 so the sun turns
-    clockwise on screen and the planets turn counter-clockwise. The planet
-    tooth phase keeps the sun-planet mesh invariant.
+    w_c = w_s * N_s / (N_s + N_r). The planet spin is the relative rate
+    w_rel = -(N_s / N_p) * (w_s - w_c), so the planet absolute rate is
+    w_p = w_c + w_rel. Set w_s = -1.0 so the sun turns clockwise on screen and
+    the planets turn counter-clockwise.
+
+    The planet placement phase matches `PlanetaryGenerator`: planet k sits at
+    orbit angle phi_k and its first tooth points at local angle
+    phi_k + pi / N_p. The half-tooth offset pi / N_p makes each planet present a
+    space at the mesh line, so the sun tooth enters a planet space and the
+    planet tooth enters a ring space.
     """
     a = t * 0.34
     w_s = -1.0
-    w_c = w_s * SUN_TEETH / (SUN_TEETH + RING_TEETH)
-    w_p = w_c - (SUN_TEETH / PLANET_TEETH) * (w_s - w_c)
-    delta = math.pi / PLANET_TEETH
+    ns = float(sun_teeth)
+    npz = float(planet_teeth)
+    nr = ns + 2.0 * npz
+    w_c = w_s * ns / (ns + nr)
+    w_rel = -(ns / npz) * (w_s - w_c)
+    w_p = w_c + w_rel
+    half_tooth = math.pi / npz
     theta_sun = w_s * a
     planets = []
-    for k in range(PLANETS):
-        phi = w_c * a + 2.0 * math.pi * k / PLANETS
-        theta_p = (w_p * a
-                   + (1.0 + SUN_TEETH / PLANET_TEETH)
-                   * (2.0 * math.pi * k / PLANETS)
-                   + delta)
+    for k in range(int(planet_count)):
+        orbit = 2.0 * math.pi * k / planet_count
+        phi = w_c * a + orbit
+        theta_p = orbit + half_tooth + w_p * a
         planets.append((phi, theta_p))
     return theta_sun, planets
 

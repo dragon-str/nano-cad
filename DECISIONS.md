@@ -466,3 +466,49 @@ Template:
   `PlanetaryGenerator` stays skeletal, so its bond lengths and angles are not
   diamond values. The `DiamondGenerator` block is kept as the verified material
   basis. Supersedes ADR-0038.
+
+## ADR-0040: The gear generator extrudes the profile into atomic layers
+- Status: accepted
+- Date: 2026-09-14
+- Context: The gears were a single plane of atoms, so they had no thickness and
+  the video could not show a solid. The generator also placed the planet teeth
+  on the sun and ring teeth, so the atom gear set collided.
+- Decision: Add `layers` and `layer_spacing_m` to `PLANETARY_PARAMETERS` and an
+  `add_extruded_loop` helper in `crates/parts/src/planetary.rs`. The sun, the
+  planets, and the ring are copied into centered axial layers with vertical
+  bonds. The planet rotation carries a half-tooth offset `pi/N_p`.
+- Consequences: The default gear set has four layers and is `4.632e-10 m` thick.
+  The atom layer meshes: a sun tooth enters a planet space and a planet tooth
+  enters a ring space. The thickness is a stated number of atoms, not a render
+  effect. The carrier stays on one plane.
+
+## ADR-0041: One rate function drives the schematic and the atoms
+- Status: accepted
+- Date: 2026-09-14
+- Context: The schematic and the atom layer each carried their own hand-coded
+  kinematics. The atom layer double-counted the carrier, so the schematic and
+  the atoms turned the planets at different rates.
+- Decision: Derive both from one phase and rate function. With sun rate `w_s`,
+  `w_c = w_s*N_s/(N_s+N_r)`, the planet relative rate is
+  `w_rel = -(N_s/N_p)*(w_s - w_c)`, and the planet absolute rate is
+  `w_p = w_c + w_rel`. The planet placement phase is `2*pi*k/P + pi/N_p`.
+  `scripts/check_atom_geometry.py` measures the atom planet orientation rate
+  and compares it to the schematic rate.
+- Consequences: The schematic and the atom layer share one rate, checked to
+  `1e-6 rad/s`. The renderer no longer keeps a second set of rates. A change to
+  the kinematics must change one function.
+
+## ADR-0042: The interactive app is a standard-library server with a rule-based parser
+- Status: accepted
+- Date: 2026-09-14
+- Context: The user asked to change the design in words and with side-panel
+  parameters. A language model in the loop would add a dependency and could
+  invent a value.
+- Decision: `app/server.py` is a `http.server` app that runs the Rust generator
+  for each change. `app/chat.py` is a rule-based parser. Both use only the
+  Python standard library. The page talks to the server under `/api/`.
+- Consequences: The app needs no external service and no network. It accepts a
+  stated set of commands only; other text returns help. Every value is clamped,
+  and the engine error is shown verbatim. The panel and the chat show engine
+  output, never an invented number. The parser has its own tests, and
+  `just py-test` runs them.

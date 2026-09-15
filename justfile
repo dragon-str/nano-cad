@@ -25,7 +25,7 @@ test:
 
 # Run the Python test suite (gate when the package is installed).
 py-test:
-    python3 -m pytest python/tests
+    python3 -m pytest python/tests app/tests
 
 # Run timing benchmarks. Not a gate.
 bench:

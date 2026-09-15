@@ -59,6 +59,22 @@
         <div id="readout">Waiting for scene.json ...</div>
         <div id="message"></div>
 
+        <h2>Parameters (live)</h2>
+        <div id="params"></div>
+        <button id="param-reset" type="button">Reset to defaults</button>
+
+        <h2>Chat</h2>
+        <div id="chat-log"></div>
+        <form id="chat-form" autocomplete="off">
+          <input
+            id="chat-input"
+            type="text"
+            placeholder="one atomic layer thicker"
+          />
+          <button type="submit">Send</button>
+        </form>
+        <div class="hint" id="chat-hint"></div>
+
         <div id="load-fallback" hidden>
           <strong>Could not load scene.json automatically.</strong>
           <p id="fallback-note">

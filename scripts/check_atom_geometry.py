@@ -154,6 +154,194 @@ def part_radii_m(atoms, name: str, center) -> list[float]:
     return result
 
 
+def nearest_atom_radius_m(atoms, name: str, center, world_angle_rad: float) -> float:
+    """Radius of the atom in `name` nearest the given in-plane world angle."""
+    best_radius = math.nan
+    best_error = math.inf
+    for atom in atoms:
+        if atom["name"] != name:
+            continue
+        position = atom["position_m"]
+        dx = position[0] - center[0]
+        dy = position[1] - center[1]
+        if dx == 0.0 and dy == 0.0:
+            continue
+        error = abs((math.atan2(dy, dx) - world_angle_rad + math.pi)
+                    % (2.0 * math.pi) - math.pi)
+        if error < best_error:
+            best_error = error
+            best_radius = math.hypot(dx, dy)
+    return best_radius
+
+
+def check_mesh_phase(atoms, design, centers, failures: list[str]) -> None:
+    module_m = design["module_m"]
+    sun_teeth = int(design["sun_teeth"])
+    planet_teeth = int(design["planet_teeth"])
+    ring_teeth = int(design["ring_teeth"])
+    sun_outer = gp.outer_radius_m(module_m, sun_teeth)
+    sun_root = gp.root_radius_m(module_m, sun_teeth)
+    sun_height = sun_outer - sun_root
+    planet_outer = gp.outer_radius_m(module_m, planet_teeth)
+    planet_root = gp.root_radius_m(module_m, planet_teeth)
+    planet_height = planet_outer - planet_root
+    ring_pitch = gp.pitch_radius_m(module_m, ring_teeth)
+    ring_tip = ring_pitch - gp.addendum_m(module_m)
+    ring_root = ring_pitch + gp.dedendum_m(module_m)
+
+    for k in range(int(design["planet_count"])):
+        center = centers[f"planet_{k}"]
+        phi = math.atan2(center[1], center[0])
+        sun_radius = nearest_atom_radius_m(atoms, "sun", centers["sun"], phi)
+        planet_toward_sun = nearest_atom_radius_m(
+            atoms, f"planet_{k}", center, phi + math.pi)
+        planet_toward_ring = nearest_atom_radius_m(
+            atoms, f"planet_{k}", center, phi)
+        ring_radius = nearest_atom_radius_m(atoms, "ring", centers["ring"], phi)
+        print(
+            f"  mesh {k}: sun tooth r {sun_radius:.6e} m (tip {sun_outer:.6e}); "
+            f"planet space r {planet_toward_sun:.6e}, "
+            f"{planet_toward_ring:.6e} m (root {planet_root:.6e}); "
+            f"ring tooth r {ring_radius:.6e} m (tip {ring_tip:.6e})"
+        )
+        if sun_radius < sun_outer - 0.25 * sun_height:
+            failures.append(
+                f"mesh {k}: the sun presents a space, not a tooth, at the mesh "
+                f"line (r {sun_radius:.6e} m, tip {sun_outer:.6e} m)"
+            )
+        for radius, side in ((planet_toward_sun, "sun"),
+                             (planet_toward_ring, "ring")):
+            if radius > planet_root + 0.25 * planet_height:
+                failures.append(
+                    f"mesh {k}: the planet presents a tooth, not a space, "
+                    f"toward the {side} (r {radius:.6e} m, "
+                    f"root {planet_root:.6e} m)"
+                )
+        if ring_radius > ring_tip + 0.25 * (ring_root - ring_tip):
+            failures.append(
+                f"mesh {k}: the ring presents a space, not a tooth, at the mesh "
+                f"line (r {ring_radius:.6e} m, tip {ring_tip:.6e} m)"
+            )
+    print("mesh phase: sun tooth into planet space, planet tooth into ring space")
+
+
+def check_kinematics(failures: list[str]) -> None:
+    """The schematic and the atom layer must share one kinematics.
+
+    The schematic comes from `render_video.planetary_angles`; the atom layer is
+    animated by `render_video.GearLattice`. This checks three facts:
+
+    1. The sun-planet mesh invariant is constant in time.
+    2. The sun and the planets turn in opposite directions, and the carrier
+       turns with the sun.
+    3. A planet atom's spin about its own center matches the engine relative
+       rate `-(N_s / N_p) * (w_s - w_c)`, so the atoms and the schematic agree.
+    """
+    try:
+        import render_video as rv
+    except Exception as error:  # Pillow or numpy missing
+        print(f"kinematics: render_video not importable ({error}), skipped")
+        return
+
+    ns = float(rv.SUN_TEETH)
+    npz = float(rv.PLANET_TEETH)
+    sun0, planets0 = rv.planetary_angles(0.0)
+    sun1, planets1 = rv.planetary_angles(1.0)
+    w_s = sun1 - sun0
+    w_c = planets1[0][0] - planets0[0][0]
+    for k, ((phi0, tp0), (phi1, tp1)) in enumerate(zip(planets0, planets1)):
+        invariant0 = ns * (sun0 - phi0) + npz * (tp0 - phi0)
+        invariant1 = ns * (sun1 - phi1) + npz * (tp1 - phi1)
+        if abs(invariant1 - invariant0) > 1e-9:
+            failures.append(
+                f"the sun-planet {k} mesh invariant changes by "
+                f"{invariant1 - invariant0:.3e} in one second"
+            )
+        w_p = tp1 - tp0
+        if w_s * w_p >= 0.0:
+            failures.append(
+                f"the sun and planet {k} turn the same way "
+                f"(w_s {w_s:+.6f}, w_p {w_p:+.6f})"
+            )
+    if w_s * w_c <= 0.0:
+        failures.append(
+            f"the carrier and the sun turn opposite ways "
+            f"(w_s {w_s:+.6f}, w_c {w_c:+.6f})"
+        )
+    print(
+        f"  schematic: w_s {w_s:+.6f} rad/s, w_c {w_c:+.6f} rad/s, "
+        f"w_p {planets1[0][1] - planets0[0][1]:+.6f} rad/s"
+    )
+
+    scene_path = "site/scene.json"
+    bonds_path = "site/scene.bonds.json"
+    if not (os.path.exists(scene_path) and os.path.exists(bonds_path)):
+        print("  atoms: scene files not found, rate check skipped")
+        return
+    lattice = rv.GearLattice(scene_path, bonds_path)
+    design = lattice.design
+    ns_l = int(design["sun_teeth"])
+    npz_l = int(design["planet_teeth"])
+    nr_l = int(design["ring_teeth"])
+    expected_rate = planets1[0][1] - planets0[0][1]
+    index = next(i for i, atom in enumerate(lattice.atoms)
+                 if atom["name"] == "planet_0")
+    center = lattice.centers["planet_0"]
+
+    def relative_angle(t):
+        positions = lattice.animated_xy(t)
+        w_c_l = -1.0 * ns_l / (ns_l + nr_l)
+        cx, cy = rv._rot2(center[0], center[1], w_c_l * t * 0.34)
+        return math.atan2(positions[index][1] - cy, positions[index][0] - cx)
+
+    measured_rate = relative_angle(1.0) - relative_angle(0.0)
+    measured_rate = (measured_rate + math.pi) % (2.0 * math.pi) - math.pi
+    print(
+        f"  atoms: planet orientation {measured_rate:+.6f} rad/s, "
+        f"schematic planet rate {expected_rate:+.6f} rad/s"
+    )
+    if abs(measured_rate - expected_rate) > 1e-6:
+        failures.append(
+            f"the atom planet orientation rate is {measured_rate:+.6f} rad/s "
+            f"but the schematic planet rate is {expected_rate:+.6f} rad/s"
+        )
+    print("kinematics: schematic and atoms share one rate function")
+
+
+def check_thickness(atoms, design, failures: list[str]) -> None:
+    layers = int(design.get("layers", 1))
+    spacing_m = float(design.get("layer_spacing_m", 0.0))
+    thickness_m = float(design.get("thickness_m", 0.0))
+    z_values = sorted({round(atom["position_m"][2], 15) for atom in atoms
+                       if atom["name"] in ("sun", "ring")
+                       or atom["name"].startswith("planet_")})
+    expected_thickness = (layers - 1) * spacing_m
+    expected = [round((i - 0.5 * (layers - 1)) * spacing_m, 15)
+                for i in range(layers)]
+    print(
+        f"  thickness: {layers} layers, spacing {spacing_m:.6e} m, "
+        f"{thickness_m:.6e} m"
+    )
+    print(f"  gear z values: {[f'{z:.3e}' for z in z_values]}")
+    if len(z_values) != layers:
+        failures.append(
+            f"the gear atoms have {len(z_values)} z values, expected {layers}"
+        )
+    elif any(abs(actual - want) > 1e-18
+             for actual, want in zip(z_values, expected)):
+        failures.append(
+            f"the gear z values {z_values} do not match the centered layers "
+            f"{expected} for {layers} layers at {spacing_m:.6e} m"
+        )
+    if abs(thickness_m - expected_thickness) > 1e-18:
+        failures.append(
+            f"thickness_m {thickness_m:.6e} m is not "
+            f"(layers-1)*spacing = {expected_thickness:.6e} m"
+        )
+    else:
+        print("thickness: the metadata matches the atomic layer span")
+
+
 def check_gear_layer(scene_path: str, bonds_path: str,
                      failures: list[str]) -> None:
     if not (os.path.exists(scene_path) and os.path.exists(bonds_path)):
@@ -214,6 +402,8 @@ def check_gear_layer(scene_path: str, bonds_path: str,
                 f"{profile_lo:.6e}..{profile_hi:.6e} m disagrees with the "
                 f"atom layer {measured_lo:.6e}..{measured_hi:.6e} m"
             )
+    check_mesh_phase(atoms, design, centers, failures)
+    check_thickness(atoms, design, failures)
     print("gear layer: schematic profile and atom layer agree")
 
 
@@ -224,6 +414,9 @@ def main() -> int:
     args = parser.parse_args()
 
     failures: list[str] = []
+    print("=== kinematics (the schematic and the atoms must agree) ===")
+    check_kinematics(failures)
+    print()
     print("=== gear layer (the schematic must match the atoms) ===")
     check_gear_layer(args.scene, args.bonds, failures)
     print()

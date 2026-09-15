@@ -60,7 +60,7 @@ writes a silent video and still writes the `.srt`.
 
 **Every frame is generated.** No camera and no screen recording exist in the
 pipeline. The terminal shots are drawn, not filmed. The gear scenes are
-schematic 2D drawings:
+schematic drawings of a three-dimensional gear set:
 
 - Gears are drawn with the exact full-depth involute profile. The tooth counts,
   the module, and the pitch radii follow `docs/three-scale.md`: 24 sun teeth,
@@ -70,30 +70,34 @@ schematic 2D drawings:
   `crates/parts/src/gear_profile.rs`. The drawing and the Rust generator use one
   formula. The addendum is `1.0 m` and the dedendum is `1.25 m`. The ring is an
   internal gear: its teeth point inward, and the planet tips reach into the ring
-  tooth spaces.
+  tooth spaces. Each gear has an axial thickness of four atomic layers, so the
+  set is a solid with a stated thickness, not a flat outline.
 - The gear scenes use the kinematics of a fixed ring. With sun rate `w_s`, the
   carrier rate is `w_c = w_s * 2/7`, and the planet absolute spin is
-  `w_p = -(2/3) * w_s`. The sun and the planets therefore turn in opposite
-  directions. The planet centers orbit the carrier at `w_c`, and each drawn
-  planet tooth phase keeps the sun, planet, and ring teeth meshed. The ring is
+  `w_p = w_c - (N_s/N_p) * (w_s - w_c) = -(2/3) * w_s`. The sun and the planets
+  therefore turn in opposite directions. The planet centers orbit the carrier at
+  `w_c`. Each planet carries a half-tooth phase offset `pi/N_p`, so a sun tooth
+  enters a planet tooth space and a planet tooth enters a ring tooth space. The
+  renderer and the Rust generator share this one phase function. The ring is
   drawn static.
 - **The atomistic layer is the gears themselves as atoms.** The layer draws the
-  `PlanetaryGenerator` output: 2202 carbon atoms and 2205 bonds from
-  `site/scene.json` and `site/scene.bonds.json`. The renderer maps the scene
-  metres to pixels, so an atom sits on the same involute profile that the
-  schematic draws. It animates the sun, the carrier, and the planets with the
-  fixed-ring rates above. It draws the layer only in shot 1 and shot 8, so the
-  render stays fast.
+  `PlanetaryGenerator` output: 8340 carbon atoms and 14481 bonds from
+  `site/scene.json` and `site/scene.bonds.json`, in four centered axial layers,
+  `4.632e-10 m` thick. The renderer maps the scene metres to pixels, so an atom
+  sits on the same involute profile that the schematic draws. It animates the
+  sun, the carrier, and the planets with the fixed-ring rates above. It draws
+  the layer only in shot 1 and shot 8, so the render stays fast.
 - **The atom layer passes an accuracy gate.** `scripts/check_atom_geometry.py`
-  checks two layers. For the gear layer it asserts that each part's tip and root
+  checks the layers. For the gear layer it asserts that each part's tip and root
   radii equal the exact involute profile: sun `5.375e-9` to `6.500e-9 m`,
   planet `3.875e-9` to `5.000e-9 m` about its center, ring `1.450e-8` to
-  `1.5625e-8 m` internal. It also checks that the shared schematic formula
-  yields the same extremes. For the diamond layer (the material basis) it
-  asserts that the mean nearest-neighbour C-C distance is `1.544e-10 m` within
-  one percent, that every interior carbon has four bonds, and that the mean bond
-  angle is `109.4712` degrees within one degree. `scripts/make_video.sh` runs
-  the check and fails when it fails.
+  `1.5625e-8 m` internal. It checks the mesh phase at every planet, and it
+  checks that the layer count and the thickness match the design. It checks that
+  the schematic formula and the atom layer share one rate. For the diamond layer
+  (the material basis) it asserts that the mean nearest-neighbour C-C distance
+  is `1.544e-10 m` within one percent, that every interior carbon has four
+  bonds, and that the mean bond angle is `109.4712` degrees within one degree.
+  `scripts/make_video.sh` runs the check and fails when it fails.
 - The device bodies and joints are marked with circles and arrows.
 
 **The narration is synthetic.** It is machine text-to-speech, not a human
@@ -123,8 +127,8 @@ generates.
   `DiamondGenerator` block is the material basis, and its geometry is verified
   separately.
 - **The three-scale cross-fade is a schematic illustration.** The atomistic
-  panel draws the real gear atoms. The "viewer" itself is drawn; it is not a
-  reader of a real `nanocad.scene` JSON file.
+  panel draws the real gear atoms. The interactive viewer is a separate page
+  (`site/index.html` with `app/server.py`); the video draws its own panels.
 - **The benchmark is from one host.** The timings are from a single Apple M4
   with 10 cores and cargo 1.98.1. The video shows the caveat "one host; your
   numbers will differ". `docs/benchmarks.md` says the same.
@@ -154,5 +158,6 @@ generates.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The atom layer is the gear generator output. It has 2202 atoms and 2205
-  bonds, so it is a skeletal profile, not a dense diamond solid.
+- The atom layer is the gear generator output. It has 8340 atoms and 14481
+  bonds in four axial layers, so it is a skeletal profile, not a dense diamond
+  solid.

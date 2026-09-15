@@ -108,6 +108,12 @@ pub struct SceneDesign {
     pub ring_pitch_radius_m: f64,
     /// The carrier pin-circle radius in metres.
     pub carrier_radius_m: f64,
+    /// The number of atomic layers in the axial gear thickness.
+    pub layers: usize,
+    /// The separation between adjacent atomic layers in metres.
+    pub layer_spacing_m: f64,
+    /// The gear thickness in metres, equal to `(layers - 1) * layer_spacing_m`.
+    pub thickness_m: f64,
 }
 
 /// One atom in the L1 layer.
@@ -320,6 +326,25 @@ pub fn build_scene(assembly: &PlanetaryAssembly, set: &PlanetarySet) -> Result<S
     let topology = &set.part.topology;
     let atom_count = topology.atom_count();
 
+    let layers = set
+        .part
+        .metadata
+        .get("layers")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(1);
+    let layer_spacing_m = set
+        .part
+        .metadata
+        .get("layer_spacing_m")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0);
+    let thickness_m = set
+        .part
+        .metadata
+        .get("thickness_m")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0);
+
     let atomistic = build_atomistic(assembly, set, atom_count)?;
     let device = build_device(assembly, body_count)?;
     let coarse = build_coarse(assembly, set, atom_count)?;
@@ -343,6 +368,9 @@ pub fn build_scene(assembly: &PlanetaryAssembly, set: &PlanetarySet) -> Result<S
             planet_pitch_radius_m: set.design.planet_pitch_radius_m(),
             ring_pitch_radius_m: set.design.ring_pitch_radius_m(),
             carrier_radius_m: set.design.carrier_radius_m(),
+            layers,
+            layer_spacing_m,
+            thickness_m,
         },
         atomistic,
         device,

@@ -450,6 +450,10 @@
       throw new Error("not a nanocad.scene document");
     }
     scene = data;
+    if (scene.design && scene.design.layers !== undefined) {
+      currentParams = paramsFromDesign(scene.design);
+      syncParamInputs();
+    }
     message.textContent = "";
     fallback.hidden = true;
     computeFit();
@@ -597,6 +601,210 @@
 
   window.addEventListener("resize", resize);
 
+  /* ---------- Live parameters and chat (served by app/server.py) ---------- */
+
+  var paramsEl = document.getElementById("params");
+  var paramReset = document.getElementById("param-reset");
+  var chatLog = document.getElementById("chat-log");
+  var chatForm = document.getElementById("chat-form");
+  var chatInput = document.getElementById("chat-input");
+  var chatHint = document.getElementById("chat-hint");
+  var meta = null;
+  var live = false;
+  var currentParams = null;
+  var busy = false;
+
+  function paramsFromDesign(design) {
+    return {
+      module_m: design.module_m,
+      sun_teeth: design.sun_teeth,
+      planet_teeth: design.planet_teeth,
+      planet_count: design.planet_count,
+      layers: design.layers,
+      layer_spacing_m: design.layer_spacing_m,
+    };
+  }
+
+  function setMessage(text) {
+    message.textContent = text;
+  }
+
+  function applyScene(payload) {
+    if (payload && payload.scene) {
+      setScene(payload.scene);
+      currentParams = paramsFromDesign(payload.scene.design);
+      syncParamInputs();
+      draw();
+      setMessage("");
+    }
+  }
+
+  function syncParamInputs() {
+    if (!meta || !currentParams) {
+      return;
+    }
+    meta.parameters.forEach(function (entry) {
+      var input = document.getElementById("param-" + entry.key);
+      if (!input) {
+        return;
+      }
+      var shown = currentParams[entry.key] / entry.scale;
+      input.value = String(Number(shown.toPrecision(6)));
+    });
+  }
+
+  function buildParamInputs() {
+    paramsEl.innerHTML = "";
+    meta.parameters.forEach(function (entry) {
+      var row = document.createElement("label");
+      row.className = "param-row";
+      var span = document.createElement("span");
+      span.textContent = entry.label + (entry.unit ? " (" + entry.unit + ")" : "");
+      var input = document.createElement("input");
+      input.type = "number";
+      input.id = "param-" + entry.key;
+      var limits = meta.limits[entry.key];
+      input.min = String(limits[0] / entry.scale);
+      input.max = String(limits[1] / entry.scale);
+      input.step = entry.scale === 1 ? "1" : "any";
+      input.addEventListener("change", buildFromInputs);
+      row.appendChild(span);
+      row.appendChild(input);
+      paramsEl.appendChild(row);
+    });
+    syncParamInputs();
+  }
+
+  function buildFromInputs() {
+    if (!meta || !live) {
+      return;
+    }
+    var params = {};
+    meta.parameters.forEach(function (entry) {
+      var input = document.getElementById("param-" + entry.key);
+      if (!input) {
+        return;
+      }
+      var value = parseFloat(input.value);
+      if (isFinite(value)) {
+        params[entry.key] = value * entry.scale;
+      }
+    });
+    requestBuild(params);
+  }
+
+  function requestBuild(params) {
+    if (busy || !live) {
+      return;
+    }
+    busy = true;
+    setMessage("building ...");
+    var query = Object.keys(params)
+      .map(function (key) {
+        return encodeURIComponent(key) + "=" + encodeURIComponent(params[key]);
+      })
+      .join("&");
+    fetch("api/build?" + query)
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload.error) {
+          setMessage("rejected by the engine: " + payload.error);
+          return;
+        }
+        applyScene(payload);
+      })
+      .catch(function (error) {
+        setMessage("build failed: " + error.message);
+      })
+      .then(function () {
+        busy = false;
+      });
+  }
+
+  function addChat(who, text) {
+    var line = document.createElement("div");
+    line.className = "chat-" + who;
+    line.textContent = text;
+    chatLog.appendChild(line);
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function sendChat(event) {
+    event.preventDefault();
+    var text = chatInput.value.trim();
+    if (!text) {
+      return;
+    }
+    if (!live) {
+      addChat("bot", "Start python3 app/server.py to edit the design.");
+      return;
+    }
+    addChat("you", text);
+    chatInput.value = "";
+    var body = {
+      message: text,
+      params: currentParams || paramsFromDesign(scene.design),
+    };
+    fetch("api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        addChat("bot", payload.reply);
+        currentParams = payload.params;
+        if (payload.scene) {
+          applyScene(payload);
+        } else {
+          syncParamInputs();
+        }
+      })
+      .catch(function (error) {
+        addChat("bot", "error: " + error.message);
+      });
+  }
+
+  function initApp() {
+    if (!window.fetch || window.location.protocol === "file:") {
+      paramsEl.textContent = "Start python3 app/server.py, then reload this page.";
+      chatHint.textContent =
+        "Live edit needs the local server: python3 app/server.py";
+      return;
+    }
+    chatForm.addEventListener("submit", sendChat);
+    paramReset.addEventListener("click", function () {
+      if (meta) {
+        requestBuild(meta.defaults);
+      }
+    });
+    fetch("api/meta")
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        meta = data;
+        live = true;
+        chatHint.textContent =
+          'Try "one atomic layer thicker", "6 atoms thick", ' +
+          '"add more teeth", "4 planets", or "reset".';
+        buildParamInputs();
+        if (!currentParams && scene) {
+          currentParams = paramsFromDesign(scene.design);
+        }
+        syncParamInputs();
+      })
+      .catch(function () {
+        chatHint.textContent =
+          "Live edit needs the local server: python3 app/server.py";
+      });
+  }
+
   updateSliderLabel();
   load();
+  initApp();
 })();

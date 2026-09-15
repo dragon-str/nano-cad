@@ -456,5 +456,39 @@ Phase 6. All result notes cite the test that measures the number.
     5.375e-9 to 6.500e-9 m, planet 3.875e-9 to 5.000e-9 m about its center,
     ring internal 1.450e-8 to 1.5625e-8 m. It also checks that the shared
     schematic formula gives the same extremes. The diamond-block checks stay.
-    The video is regenerated: 1920x1080, 30 fps, 90.000 s, 2202 atoms and 2205
-    planetary bonds. See ADR-0039.
+    The video is regenerated: 1920x1080, 30 fps, 90.000 s. At that time the
+    gear layer was a single 2D layer of 2202 atoms and 2205 bonds; M9-04
+    extrudes it to four axial layers. See ADR-0039.
+- [x] **M9-04** Give the gears an axial thickness and make the atom layer mesh
+  with the schematic.
+  - Result: `crates/parts/src/planetary.rs` adds `layers` and
+    `layer_spacing_m` parameters and an `add_extruded_loop` helper. The sun,
+    the planets, and the ring are extruded into centered axial layers with
+    vertical bonds; the part metadata carries `layers`, `layer_spacing_m`, and
+    `thickness_m`. `crates/jigs/src/scene.rs` exports the three values in
+    `SceneDesign`. The planet rotation now carries the half-tooth offset
+    `pi/N_p`, so a sun tooth enters a planet space and a planet tooth enters a
+    ring space. Without it the generator placed tooth on tooth and the gears
+    collided. The renderer now uses one shared rate function: the planet spins
+    about its center at the relative rate `-(N_s/N_p)*(w_s - w_c)` and the
+    carrier orbit supplies the rest.
+  - Verification: `cargo test -p nanocad-parts planetary` -> 13 pass,
+    including `the_planet_presents_a_tooth_space_at_each_mesh_line` and
+    `the_gear_thickness_is_the_axial_layer_span`.
+    `scripts/check_atom_geometry.py` checks the mesh phase at every planet, the
+    layer count and the thickness, and that the schematic and the atoms share
+    one rate. Default scene: 8340 atoms and 14481 bonds, 4 layers x 1.544e-10 m
+    = 4.632e-10 m. The video is regenerated at 1920x1080, 30 fps, 90.000 s.
+    See ADR-0040.
+- [x] **M9-05** Add a live parameter panel and a chat interface.
+  - Result: `app/chat.py` is a rule-based parser for short edit commands
+    ("one atomic layer thicker", "6 atoms thick", "add more teeth", "4
+    planets", "move the layers 20 pm apart", "reset"). It clamps every value to
+    a stated limit and reports the new state. `app/server.py` is a standard
+    library web server that runs the Rust generator for each change and serves
+    the viewer. `site/index.html`, `site/viewer.js`, and `site/style.css` add
+    the numeric panel, the chat box, and the live scene update. A change the
+    engine rejects keeps the old parameters and reports the engine error.
+  - Verification: `app/tests/test_chat_parser.py` -> 12 pass. The server was
+    smoke-tested on `127.0.0.1:8123`: `/api/meta`, `/api/build?layers=6`, and a
+    `/api/chat` message all returned 200 and a new scene. See ADR-0041.
