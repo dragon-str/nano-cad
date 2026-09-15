@@ -554,3 +554,17 @@ Phase 6. All result notes cite the test that measures the number.
     ambient occlusion, legend hide, panel hide, hover pick and measure all pass.
     `node --check` on both files, `node site/render_atoms.test.js` -> 11 passed,
     `site/check.py` -> all checks passed, `just verify` -> all gates passed.
+
+- [x] **M9-10** Fix the dark diagonal band in the atom render.
+  - Result: The band was the ambient-occlusion pass. The fragment shader
+    projected each occlusion sample back to the screen with an inverted
+    factor, so all sixteen samples read the centre depth and a large
+    spurious region turned black. The projection now inverts the atom
+    camera correctly. The result is a soft contact shadow of about
+    25 percent, not a black band.
+  - Verification: A raw-pixel probe (read the GL canvas into a 2D canvas)
+    shows no dark rows with ambient occlusion on or off; the on/off
+    luminance differs by about 25 percent. Screenshots at device pixel
+    ratios 1 and 2 look the same. `node --check`, `node
+    site/render_atoms.test.js` -> 11 passed, and the headless-browser
+    feature check -> all features pass.
