@@ -2,8 +2,10 @@
 
 This document tells you how to generate the scene file and how to open the
 viewer. The viewer is a static page. It has no external library. The view is a
-schematic projection, not a physical render. A local server adds a live
-parameter panel and a chat interface; see "Interactive mode" below.
+schematic projection, not a measurement. When WebGL2 is available the atom
+layer is a lit sphere render with screen-space ambient occlusion; otherwise
+the viewer falls back to flat dots. A local server adds a live parameter panel
+and a chat interface; see "Interactive mode" below.
 
 ## What the viewer shows
 
@@ -15,14 +17,43 @@ The viewer draws the three layers of a `nanocad.scene` document.
 - **Coarse (handoff).** A dashed gear pitch circle for each gear and a bounding
   cylinder for each body.
 
-The scale slider blends between the layers. The three checkboxes hide or show
-one layer. Drag to rotate, use the wheel to zoom, and double-click to reset.
+Three checkboxes hide or show one layer. There is no blend slider: the atom
+layer already switches to the schematic on its own (see below).
+
+Drag to rotate. Hold Shift and drag, or drag with the middle button, to pan.
+Use the wheel to zoom. Double-click to reset. The arrow keys pan, `+` and `-`
+zoom, `R` resets, `F` toggles fullscreen, `T` toggles a turntable, `P` toggles
+motion, and Escape clears a measurement.
 
 The atomistic layer has a level of detail. When the projected carbon-carbon
-spacing is six pixels or more, the viewer draws depth-shaded atoms at that
-spacing. Below six pixels it draws the exact involute schematic instead. Both
-use one profile function and one world fit, so the switch does not move the
-geometry.
+spacing is six pixels or more, the viewer draws the atoms with WebGL (or flat
+depth-shaded dots when WebGL2 is absent). Below six pixels it draws the exact
+involute schematic instead. Both use one profile function and one world fit, so
+the switch does not move the geometry.
+
+## Controls
+
+The panel groups the controls.
+
+- **View.** Reset, Iso, Top and Front set fixed views. Play animates the
+  planetary kinematics: the sun spins, each planet spins and revolves on the
+  carrier, the ring stays fixed. The Motion speed slider scales it. Turntable
+  orbits the camera. Fullscreen expands the view. Save PNG writes a composite
+  image.
+- **Display.** Ambient occlusion turns the SSAO pass on and off. Atom size
+  scales the sphere radius from space-filling (1.0) to ball (0.4). Section z
+  clips the atoms above a plane, so you can see inside the solid gear.
+- **Elements.** One checkbox for each element in the scene. Clear the
+  Hydrogen box to see the carbon lattice alone.
+- **Readout.** Move the pointer over an atom to read its element, index, body
+  and position. Click one atom, then a second, to measure the distance between
+  them.
+
+The scale bar shows the length of a segment at the middle of the view. The
+triad shows the world x, y and z axes.
+
+The renderer is a display effect only. The occlusion, the lighting and the
+sphere radius are not measurements and carry no physical result.
 
 The scene is the default planetary design: 7 bodies, 6 joints, 3 planets, and
 an analytic sun-to-carrier gear ratio of 3.5.
@@ -145,8 +176,8 @@ Expected output:
 
 ```
 scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=70070
-viewer ok: index.html, viewer.js, style.css present
-docs ok: 17 markdown inputs have HTML pages
+viewer ok: index.html, viewer.js, style.css, render_atoms.js present
+docs ok: 18 markdown inputs have HTML pages
 check: all checks passed
 ```
 
@@ -154,14 +185,17 @@ check: all checks passed
 
 - The label **simulated / schematic** is always visible in the viewer.
 - The scene is a snapshot of a simulated design. It is not a built device.
-- The atomistic layer is the zero configuration. The viewer does not animate
-  the device transform. At the zero configuration the two agree.
-- The projection is a flat schematic. It is not a physical or space-filling
-  render. An atom dot is drawn at a fixed fraction of the carbon-carbon spacing,
-  not at the true covalent radius.
+- The atomistic layer animates the rigid-body kinematics only. It shows the
+  zero-stress geometry turning. It does not simulate forces, heat or strain.
+- The projection is a schematic. The WebGL render is a display effect. The
+  ambient occlusion, the lighting and the sphere radii are approximate. An atom
+  sphere is drawn at the covalent radius, not at the true van der Waals radius.
+  The scale bar is a projection aid, not a calibrated measurement.
 - The viewer draws no bonds and no forces. The gears are solid
-  hydrogen-capped diamond, so the atom dots form a solid with the crystal
-  thickness; the render is an illustration of that solid.
+  hydrogen-capped diamond, so the atom spheres form a solid with the crystal
+  thickness; the render is an illustration of that solid. The ball-and-stick
+  `setBonds` path exists in `site/render_atoms.js` but the viewer does not load
+  `site/scene.bonds.json`, so no bonds are drawn.
 - The gear pitch circles are design values. They are not measured.
 - `site/scene.json`, `site/docs/`, and the viewer are generated or static. They
   are not part of `just verify`. The app parser has its own tests under

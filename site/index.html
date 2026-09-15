@@ -18,7 +18,18 @@
     </header>
 
     <div id="app">
+      <canvas id="gl-canvas"></canvas>
       <canvas id="canvas"></canvas>
+      <div id="scale-bar"><span id="scale-bar-line"></span><span id="scale-bar-label"></span></div>
+      <svg id="triad" viewBox="0 0 64 64" aria-hidden="true">
+        <line id="triad-x" x1="32" y1="32" x2="52" y2="32" />
+        <line id="triad-y" x1="32" y1="32" x2="32" y2="12" />
+        <line id="triad-z" x1="32" y1="32" x2="24" y2="48" />
+        <circle cx="32" cy="32" r="2" />
+        <text id="triad-x-label" x="54" y="35">x</text>
+        <text id="triad-y-label" x="30" y="10">y</text>
+        <text id="triad-z-label" x="16" y="54">z</text>
+      </svg>
 
       <aside id="panel">
         <h2>Layers</h2>
@@ -43,20 +54,55 @@
             (handoff)</label
           >
         </div>
+        <div class="hint">
+          The atom, device and coarse views share one world fit. The atom view
+          switches to the exact schematic when the atoms are closer than six
+          pixels, so the layers always agree.
+        </div>
 
-        <h2>Scale slider</h2>
-        <input
-          type="range"
-          id="layer-slider"
-          min="0"
-          max="2"
-          step="0.01"
-          value="0"
-        />
-        <div class="hint" id="slider-label">Atomistic (L1)</div>
+        <h2>View</h2>
+        <div class="button-row">
+          <button id="view-reset" type="button">Reset</button>
+          <button id="view-iso" type="button">Iso</button>
+          <button id="view-top" type="button">Top</button>
+          <button id="view-front" type="button">Front</button>
+        </div>
+        <div class="button-row">
+          <button id="view-play" type="button">Play</button>
+          <button id="view-turntable" type="button">Turntable</button>
+          <button id="view-full" type="button">Fullscreen</button>
+          <button id="view-save" type="button">Save PNG</button>
+        </div>
+        <label class="param-row"
+          ><span>Motion speed</span
+          ><input id="speed" type="range" min="0.1" max="4" step="0.1" value="1"
+        /></label>
+        <div class="hint">
+          Drag to rotate &middot; Shift-drag or middle-drag to pan &middot; wheel
+          to zoom &middot; double-click to reset.
+        </div>
+
+        <h2>Display</h2>
+        <div class="layer-row">
+          <input type="checkbox" id="toggle-ao" checked />
+          <label for="toggle-ao">Ambient occlusion</label>
+        </div>
+        <label class="param-row"
+          ><span>Atom size</span
+          ><input id="atom-size" type="range" min="0.25" max="1" step="0.05" value="1"
+        /></label>
+        <label class="param-row"
+          ><span>Section z</span
+          ><input id="clip" type="range" min="0" max="1" step="0.01" value="1"
+        /></label>
+
+        <h2>Elements</h2>
+        <div id="legend"></div>
 
         <h2>Readout</h2>
         <div id="readout">Waiting for scene.json ...</div>
+        <div id="pick"></div>
+        <div id="measure"></div>
         <div id="message"></div>
 
         <h2>Parameters (live)</h2>
@@ -88,14 +134,10 @@
             accept=".json,application/json"
           />
         </div>
-
-        <h2>Controls</h2>
-        <div class="hint">
-          Drag to rotate &middot; wheel to zoom &middot; double-click to reset.
-        </div>
       </aside>
     </div>
 
+    <script src="render_atoms.js"></script>
     <script src="viewer.js"></script>
   </body>
 </html>

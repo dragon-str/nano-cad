@@ -85,14 +85,27 @@ body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #11161d 0%, #0d1117 70%);
 }
 
+#gl-canvas,
 #canvas {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
+}
+
+#gl-canvas {
+  z-index: 1;
+}
+
+#canvas {
+  z-index: 2;
   cursor: grab;
-  background: radial-gradient(circle at 50% 40%, #11161d 0%, #0d1117 70%);
+  background: transparent;
 }
 
 #canvas:active {
@@ -401,4 +414,105 @@ input[type="range"] {
 
 .doc-index-group ul {
   padding-left: 1.2rem;
+}
+
+/* Viewer overlays and controls (M9-07) */
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.35rem 0;
+}
+
+.button-row button {
+  flex: 1 1 auto;
+}
+
+#legend .legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.2rem 0;
+  font-size: 0.85rem;
+}
+
+#legend .swatch {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+#pick,
+#measure {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  min-height: 1.1rem;
+  margin-top: 0.25rem;
+  font-family: ui-monospace, Menlo, monospace;
+}
+
+#measure {
+  color: #f2c14e;
+}
+
+#scale-bar {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  pointer-events: none;
+}
+
+#scale-bar-line {
+  display: block;
+  height: 8px;
+  width: 100px;
+  border-left: 2px solid rgba(232, 238, 245, 0.85);
+  border-right: 2px solid rgba(232, 238, 245, 0.85);
+  border-bottom: 2px solid rgba(232, 238, 245, 0.85);
+}
+
+#scale-bar-label {
+  font: 12px ui-monospace, Menlo, monospace;
+  color: rgba(232, 238, 245, 0.85);
+}
+
+#triad {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 64px;
+  height: 64px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+#triad line {
+  stroke-width: 2;
+}
+
+#triad #triad-x {
+  stroke: #f05a5a;
+}
+
+#triad #triad-y {
+  stroke: #7ee787;
+}
+
+#triad #triad-z {
+  stroke: #58a6ff;
+}
+
+#triad circle {
+  fill: rgba(232, 238, 245, 0.85);
+}
+
+#triad text {
+  fill: rgba(232, 238, 245, 0.85);
+  font: 10px ui-monospace, Menlo, monospace;
 }

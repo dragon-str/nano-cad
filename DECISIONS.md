@@ -545,3 +545,24 @@ Template:
 - Consequences: The user sees atoms at close zoom and a clean profile at far
   zoom. The schematic and the atom outline share one code path, so a change to
   the profile shows in both.
+
+## ADR-0045: The atom layer renders with WebGL sphere impostors and screen-space ambient occlusion
+- Status: accepted
+- Date: 2026-09-15
+- Context: The user asked for a render close to Philip Turner's published
+  atom-level images and asked to remove the scale slider, add panning, and add
+  the features that a viewer of this kind needs.
+- Decision: `site/render_atoms.js` adds a WebGL2 renderer with no external
+  library. It draws one instanced sphere impostor for each atom, with key, fill
+  and rim light, a specular term, a contact-shadow bias, a screen-space ambient
+  occlusion pass at half resolution, and a vignette. `site/viewer.js` drives it:
+  pan, preset views, a turntable, a PNG export, fullscreen, an element legend
+  with per-element visibility, an atom-size control, a z-section clip, a hover
+  pick, a two-click distance measure, a nanometre scale bar and an orientation
+  triad. The scale slider is removed because the atom layer already switches to
+  the schematic by zoom.
+- Consequences: The viewer looks closer to a real atomistic render and stays
+  offline and dependency-free. The occlusion, the lighting and the sphere radii
+  are display effects, so they carry no physical result. When WebGL2 is absent
+  the viewer falls back to the flat 2D dots, and the page still works. The
+  banner stays on the page.

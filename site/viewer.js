@@ -14,18 +14,51 @@
 
   var canvas = document.getElementById("canvas");
   var ctx = canvas.getContext("2d");
-  var slider = document.getElementById("layer-slider");
-  var sliderLabel = document.getElementById("slider-label");
   var readout = document.getElementById("readout");
   var message = document.getElementById("message");
   var fallback = document.getElementById("load-fallback");
   var fileInput = document.getElementById("file-input");
+
+  var pickEl = document.getElementById("pick");
+  var measureEl = document.getElementById("measure");
+  var legendEl = document.getElementById("legend");
+  var aoToggle = document.getElementById("toggle-ao");
+  var atomSizeInput = document.getElementById("atom-size");
+  var clipInput = document.getElementById("clip");
+  var speedInput = document.getElementById("speed");
+  var scaleBarLine = document.getElementById("scale-bar-line");
+  var scaleBarLabel = document.getElementById("scale-bar-label");
+  var triad = {
+    x: document.getElementById("triad-x"),
+    y: document.getElementById("triad-y"),
+    z: document.getElementById("triad-z"),
+  };
+  var buttons = {
+    reset: document.getElementById("view-reset"),
+    iso: document.getElementById("view-iso"),
+    top: document.getElementById("view-top"),
+    front: document.getElementById("view-front"),
+    play: document.getElementById("view-play"),
+    turntable: document.getElementById("view-turntable"),
+    full: document.getElementById("view-full"),
+    save: document.getElementById("view-save"),
+  };
 
   var toggles = {
     atomistic: document.getElementById("toggle-atomistic"),
     device: document.getElementById("toggle-device"),
     coarse: document.getElementById("toggle-coarse"),
   };
+
+  var glCanvas = document.getElementById("gl-canvas");
+  var renderer = null;
+  try {
+    if (window.NanoCadAtoms && glCanvas) {
+      renderer = window.NanoCadAtoms.createAtomRenderer(glCanvas);
+    }
+  } catch (error) {
+    renderer = null;
+  }
 
   var ROLE_COLORS = {
     ground: "#6e7681",
@@ -47,10 +80,21 @@
     B: "#ffb86c",
   };
 
-  var view = { yaw: -0.65, tilt: 1.02, zoom: 1 };
+  var view = { yaw: -0.65, tilt: 1.02, zoom: 1, panX: 0, panY: 0 };
   var fit = { c: [0, 0, 0], r: 1 };
   var scene = null;
-  var drag = null;
+
+  var display = {
+    ao: true,
+    atomSize: 1,
+    clip: 1,
+    hiddenElements: {},
+  };
+  var atomCache = null;
+  var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0 };
+  var hoverAtom = -1;
+  var measure = [];
+  var livePositions = null;
 
   /* ---------- Small vector helpers ---------- */
 
@@ -186,11 +230,347 @@
     var persp = camDistance / (camDistance - depth * 0.6);
     var scale = pixelSize();
 
-    return [w / 2 + x1 * scale * persp, h / 2 + y2 * scale * persp, depth, persp];
+    return [w / 2 + x1 * scale * persp + view.panX, h / 2 + y2 * scale * persp + view.panY, depth, persp];
   }
 
   function pixRadius(radius_m, persp) {
     return (radius_m / fit.r) * pixelSize() * persp;
+  }
+
+  /* ---------- WebGL atom pass ---------- */
+
+  var ATOM_RADII = {
+    H: 0.31e-10,
+    C: 0.76e-10,
+    N: 0.71e-10,
+    O: 0.66e-10,
+    F: 0.57e-10,
+    Si: 1.11e-10,
+    P: 1.07e-10,
+    S: 1.05e-10,
+    B: 0.84e-10,
+  };
+
+  function atomRadius(element) {
+    return ATOM_RADII[element] || 0.7e-10;
+  }
+
+  function hexToRgb(hex) {
+    var n = parseInt(hex.slice(1), 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  }
+
+  function glState() {
+    var zmin = fitMin[2];
+    var zmax = fitMax[2];
+    var clipZ = zmin + display.clip * (zmax - zmin);
+    return {
+      center: fit.c,
+      invR: 1 / Math.max(fit.r, 1e-30),
+      yaw: view.yaw,
+      tilt: view.tilt,
+      camDistance: 3.2,
+      perspK: 0.6,
+      scale: pixelSize(),
+      viewport: [w, h],
+      pan: [view.panX, view.panY],
+      near: 2.4,
+      far: 4.0,
+      radiusScale: display.atomSize,
+      ballStick: display.atomSize < 0.72,
+      keyDir: [-0.42, 0.55, 0.72],
+      clipZ: clipZ,
+      clipOn: display.clip < 0.999,
+      showBonds: false,
+      ao: display.ao,
+      aoRadius: 0.02,
+      aoStrength: 1.0,
+    };
+  }
+
+  function buildAtomBuffers() {
+    var atoms = scene.atomistic.atoms;
+    var position = new Float32Array(atoms.length * 3);
+    var radii = new Float32Array(atoms.length);
+    var colors = new Float32Array(atoms.length * 3);
+    for (var i = 0; i < atoms.length; i += 1) {
+      position[i * 3] = atoms[i].position_m[0];
+      position[i * 3 + 1] = atoms[i].position_m[1];
+      position[i * 3 + 2] = atoms[i].position_m[2];
+      radii[i] = atomRadius(atoms[i].element);
+      var rgb = hexToRgb(elementColor(atoms[i].element));
+      colors[i * 3] = rgb[0];
+      colors[i * 3 + 1] = rgb[1];
+      colors[i * 3 + 2] = rgb[2];
+    }
+    var design = scene.design || {};
+    var ns = design.sun_teeth || 24;
+    var nr = design.ring_teeth || 60;
+    motion.w_sun = -0.34;
+    motion.w_carrier = (motion.w_sun * ns) / (ns + nr);
+    motion.w_planet = (-2 / 3) * motion.w_sun;
+    atomCache = {
+      atoms: atoms,
+      base: position,
+      position: position.slice(),
+      radii: radii,
+      colors: colors,
+    };
+    uploadAtoms();
+  }
+
+  function hasHiddenElements() {
+    for (var key in display.hiddenElements) {
+      if (display.hiddenElements[key]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function uploadAtoms() {
+    if (!renderer || !atomCache) {
+      return;
+    }
+    var cache = atomCache;
+    if (!hasHiddenElements()) {
+      renderer.setAtoms(cache.position, cache.radii, cache.colors);
+      livePositions = cache.position;
+      return;
+    }
+    var kept = [];
+    for (var i = 0; i < cache.atoms.length; i += 1) {
+      if (!display.hiddenElements[cache.atoms[i].element]) {
+        kept.push(i);
+      }
+    }
+    var position = new Float32Array(kept.length * 3);
+    var radii = new Float32Array(kept.length);
+    var colors = new Float32Array(kept.length * 3);
+    for (var k = 0; k < kept.length; k += 1) {
+      var j = kept[k];
+      position[k * 3] = cache.position[j * 3];
+      position[k * 3 + 1] = cache.position[j * 3 + 1];
+      position[k * 3 + 2] = cache.position[j * 3 + 2];
+      radii[k] = cache.radii[j];
+      colors[k * 3] = cache.colors[j * 3];
+      colors[k * 3 + 1] = cache.colors[j * 3 + 1];
+      colors[k * 3 + 2] = cache.colors[j * 3 + 2];
+    }
+    renderer.setAtoms(position, radii, colors);
+    livePositions = position;
+  }
+
+  /* Advance the planetary kinematics. The ring is fixed. */
+  function updateAnimation(dt) {
+    if (!atomCache) {
+      return;
+    }
+    motion.time += dt;
+    var t = motion.time;
+    var ca = Math.cos(motion.w_carrier * t);
+    var sa = Math.sin(motion.w_carrier * t);
+    var cb = Math.cos(motion.w_planet * t);
+    var sb = Math.sin(motion.w_planet * t);
+    var cc = Math.cos(motion.w_sun * t);
+    var sc = Math.sin(motion.w_sun * t);
+    var base = atomCache.base;
+    var live = atomCache.position;
+    var atoms = atomCache.atoms;
+    var bodies = scene.device.bodies;
+    for (var i = 0; i < atoms.length; i += 1) {
+      var body = atoms[i].body;
+      var x = base[i * 3];
+      var y = base[i * 3 + 1];
+      var ox;
+      var oy;
+      if (body === 1) {
+        ox = x * cc - y * sc;
+        oy = x * sc + y * cc;
+      } else if (body >= 2 && body <= 4) {
+        var center = bodies[body].position_m;
+        var dx = x - center[0];
+        var dy = y - center[1];
+        ox = center[0] * ca - center[1] * sa + (dx * cb - dy * sb);
+        oy = center[0] * sa + center[1] * ca + (dx * sb + dy * cb);
+      } else if (body === 6) {
+        ox = x * ca - y * sa;
+        oy = x * sa + y * ca;
+      } else {
+        ox = x;
+        oy = y;
+      }
+      live[i * 3] = ox;
+      live[i * 3 + 1] = oy;
+    }
+  }
+
+  /* ---------- Legend ---------- */
+
+  function buildLegend() {
+    legendEl.textContent = "";
+    var seen = [];
+    for (var i = 0; i < scene.atomistic.atoms.length; i += 1) {
+      var el = scene.atomistic.atoms[i].element;
+      if (seen.indexOf(el) < 0) {
+        seen.push(el);
+      }
+    }
+    seen.forEach(function (element) {
+      var row = document.createElement("label");
+      row.className = "legend-row";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = !display.hiddenElements[element];
+      box.addEventListener("change", function () {
+        display.hiddenElements[element] = !box.checked;
+        uploadAtoms();
+        draw();
+      });
+      var swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = elementColor(element);
+      var text = document.createElement("span");
+      text.textContent = element;
+      row.appendChild(box);
+      row.appendChild(swatch);
+      row.appendChild(text);
+      legendEl.appendChild(row);
+    });
+  }
+
+  /* ---------- Overlays ---------- */
+
+  function updateTriad() {
+    var cy = Math.cos(view.yaw);
+    var sy = Math.sin(view.yaw);
+    var ct = Math.cos(view.tilt);
+    var st = Math.sin(view.tilt);
+    var axes = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1] };
+    Object.keys(axes).forEach(function (key) {
+      var n = axes[key];
+      var x1 = n[0] * cy - n[1] * sy;
+      var y1 = n[0] * sy + n[1] * cy;
+      var y2 = y1 * ct - n[2] * st;
+      var line = triad[key];
+      line.setAttribute("x2", (32 + x1 * 18).toFixed(1));
+      line.setAttribute("y2", (32 - y2 * 18).toFixed(1));
+    });
+  }
+
+  function updateScaleBar() {
+    var scale = pixelSize();
+    if (!(scale > 0) || !(fit.r > 0)) {
+      return;
+    }
+    var metersPerPixel = fit.r / scale;
+    var nm = (metersPerPixel * 110) / 1e-9;
+    var pow = Math.pow(10, Math.floor(Math.log10(nm)));
+    var mult = nm / pow;
+    var nice = mult < 1.5 ? 1 : mult < 3.5 ? 2 : mult < 7.5 ? 5 : 10;
+    var nmNice = nice * pow;
+    var pixels = (nmNice * 1e-9) / metersPerPixel;
+    scaleBarLine.style.width = Math.max(20, Math.round(pixels)) + "px";
+    scaleBarLabel.textContent =
+      (nmNice >= 1 ? nmNice.toFixed(0) : nmNice.toFixed(2)) + " nm";
+  }
+
+  function atomPoint(index) {
+    var p = livePositions || (atomCache && atomCache.position);
+    if (!p) {
+      return [0, 0, 0];
+    }
+    return [p[index * 3], p[index * 3 + 1], p[index * 3 + 2]];
+  }
+
+  function pickAtom(mx, my) {
+    if (!atomCache) {
+      return -1;
+    }
+    var cy = Math.cos(view.yaw);
+    var sy = Math.sin(view.yaw);
+    var ct = Math.cos(view.tilt);
+    var st = Math.sin(view.tilt);
+    var scale = pixelSize();
+    var halfW = w / 2;
+    var halfH = h / 2;
+    var invR = 1 / Math.max(fit.r, 1e-30);
+    var camDistance = 3.2;
+    var c0 = fit.c[0];
+    var c1 = fit.c[1];
+    var c2 = fit.c[2];
+    var p = livePositions || atomCache.position;
+    var best = -1;
+    var bestDistance = 14 * 14;
+    for (var i = 0; i < atomCache.atoms.length; i += 1) {
+      var nx = (p[i * 3] - c0) * invR;
+      var ny = (p[i * 3 + 1] - c1) * invR;
+      var nz = (p[i * 3 + 2] - c2) * invR;
+      var x1 = nx * cy - ny * sy;
+      var y1 = nx * sy + ny * cy;
+      var y2 = y1 * ct - nz * st;
+      var depth = y1 * st + nz * ct;
+      var persp = camDistance / (camDistance - depth * 0.6);
+      var sx = halfW + x1 * scale * persp + view.panX;
+      var sy2 = halfH + y2 * scale * persp + view.panY;
+      var dx = sx - mx;
+      var dy = sy2 - my;
+      var d = dx * dx + dy * dy;
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  function describeAtom(index) {
+    var atom = atomCache.atoms[index];
+    var p = atomPoint(index);
+    var role = (scene.device.bodies[atom.body] || {}).name || "?";
+    return (
+      atom.element +
+      " #" +
+      index +
+      "  " +
+      role +
+      "  (" +
+      (p[0] / 1e-9).toFixed(3) +
+      ", " +
+      (p[1] / 1e-9).toFixed(3) +
+      ", " +
+      (p[2] / 1e-9).toFixed(3) +
+      ") nm"
+    );
+  }
+
+  function drawOverlay() {
+    updateTriad();
+    updateScaleBar();
+    if (!atomCache) {
+      return;
+    }
+    if (hoverAtom >= 0) {
+      var hp = camera(atomPoint(hoverAtom));
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = "#f2c14e";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(hp[0], hp[1], 9, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+    if (measure.length === 2) {
+      var a = camera(atomPoint(measure[0]));
+      var b = camera(atomPoint(measure[1]));
+      ctx.strokeStyle = "#f2c14e";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(a[0], a[1]);
+      ctx.lineTo(b[0], b[1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   var w = 0;
@@ -203,6 +583,11 @@
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (renderer) {
+      glCanvas.width = Math.round(w * dpr);
+      glCanvas.height = Math.round(h * dpr);
+      renderer.resize(w * dpr, h * dpr);
+    }
     draw();
   }
 
@@ -472,6 +857,9 @@
   }
 
   function drawAtomistic(alpha) {
+    if (renderer && atomSpacingPx() >= 6) {
+      return;
+    }
     if (atomSpacingPx() < 6) {
       drawGearSchematic(alpha);
       return;
@@ -584,26 +972,11 @@
   /* ---------- Layer weights and frame ---------- */
 
   function layerWeights() {
-    var v = parseFloat(slider.value);
-    var raw = [
-      Math.max(0, 1 - Math.abs(v - 0)),
-      Math.max(0, 1 - Math.abs(v - 1)),
-      Math.max(0, 1 - Math.abs(v - 2)),
-    ];
     return [
-      toggles.atomistic.checked ? raw[0] : 0,
-      toggles.device.checked ? raw[1] : 0,
-      toggles.coarse.checked ? raw[2] : 0,
+      toggles.atomistic.checked ? 1 : 0,
+      toggles.device.checked ? 1 : 0,
+      toggles.coarse.checked ? 1 : 0,
     ];
-  }
-
-  var LAYER_NAMES = ["Atomistic (L1)", "Device (L2)", "Coarse (handoff)"];
-
-  function updateSliderLabel() {
-    var v = parseFloat(slider.value);
-    var nearest = Math.round(v);
-    sliderLabel.textContent =
-      LAYER_NAMES[nearest] + (Math.abs(v - nearest) > 0.01 ? " (blend)" : "");
   }
 
   function draw() {
@@ -612,6 +985,14 @@
       return;
     }
     var weights = layerWeights();
+    var useGl = Boolean(renderer) && weights[0] > 0 && atomSpacingPx() >= 6;
+    if (renderer) {
+      if (useGl) {
+        renderer.render(glState());
+      } else {
+        renderer.clear();
+      }
+    }
     if (weights[2] > 0) {
       drawCoarse(weights[2]);
     }
@@ -621,6 +1002,7 @@
     if (weights[0] > 0) {
       drawAtomistic(weights[0]);
     }
+    drawOverlay();
     drawCaption();
   }
 
@@ -628,13 +1010,13 @@
     ctx.globalAlpha = 1;
     ctx.fillStyle = "rgba(240, 180, 41, 0.9)";
     ctx.font = "bold 12px ui-monospace, Menlo, monospace";
-    ctx.fillText("simulated / schematic", 12, h - 14);
+    ctx.fillText("simulated / schematic", 12, 20);
     ctx.fillStyle = "rgba(139, 148, 158, 0.9)";
     ctx.font = "11px ui-monospace, Menlo, monospace";
     ctx.fillText(
       "yaw " + view.yaw.toFixed(2) + " rad  tilt " + view.tilt.toFixed(2) + " rad",
       12,
-      h - 30
+      36
     );
   }
 
@@ -669,6 +1051,12 @@
     message.textContent = "";
     fallback.hidden = true;
     computeFit();
+    buildAtomBuffers();
+    buildLegend();
+    hoverAtom = -1;
+    measure = [];
+    pickEl.textContent = "";
+    measureEl.textContent = "";
     setReadout();
     resize();
   }
@@ -761,49 +1149,230 @@
 
   /* ---------- Interaction ---------- */
 
+  var pointerState = { active: false, mode: "rotate", x: 0, y: 0, moved: 0, lastPick: 0 };
+
   canvas.addEventListener("pointerdown", function (event) {
-    drag = { x: event.clientX, y: event.clientY };
+    pointerState.active = true;
+    pointerState.mode = event.shiftKey || event.button === 1 ? "pan" : "rotate";
+    pointerState.x = event.clientX;
+    pointerState.y = event.clientY;
+    pointerState.moved = 0;
     canvas.setPointerCapture(event.pointerId);
   });
 
   canvas.addEventListener("pointermove", function (event) {
-    if (!drag) {
+    if (!pointerState.active) {
+      var now = performance.now();
+      if (pointerState.lastPick && now - pointerState.lastPick < 40) {
+        return;
+      }
+      pointerState.lastPick = now;
+      var rect = canvas.getBoundingClientRect();
+      var found = pickAtom(event.clientX - rect.left, event.clientY - rect.top);
+      if (found !== hoverAtom) {
+        hoverAtom = found;
+        pickEl.textContent = found >= 0 ? describeAtom(found) : "";
+        draw();
+      }
       return;
     }
-    view.yaw += (event.clientX - drag.x) * 0.01;
-    view.tilt += (event.clientY - drag.y) * 0.01;
-    view.tilt = Math.max(0.05, Math.min(Math.PI - 0.05, view.tilt));
-    drag = { x: event.clientX, y: event.clientY };
+    var dx = event.clientX - pointerState.x;
+    var dy = event.clientY - pointerState.y;
+    pointerState.moved += Math.abs(dx) + Math.abs(dy);
+    if (pointerState.mode === "pan") {
+      view.panX += dx;
+      view.panY += dy;
+    } else {
+      view.yaw += dx * 0.01;
+      view.tilt += dy * 0.01;
+      view.tilt = Math.max(0.05, Math.min(Math.PI - 0.05, view.tilt));
+    }
+    pointerState.x = event.clientX;
+    pointerState.y = event.clientY;
     draw();
   });
 
   canvas.addEventListener("pointerup", function (event) {
-    drag = null;
+    var wasClick = pointerState.active && pointerState.moved < 4;
+    pointerState.active = false;
     if (canvas.hasPointerCapture(event.pointerId)) {
       canvas.releasePointerCapture(event.pointerId);
     }
+    if (wasClick) {
+      var rect = canvas.getBoundingClientRect();
+      var index = pickAtom(event.clientX - rect.left, event.clientY - rect.top);
+      if (index >= 0) {
+        measure.push(index);
+        if (measure.length > 2) {
+          measure = [index];
+        }
+      } else {
+        measure = [];
+      }
+      updateMeasureText();
+      draw();
+    }
   });
+
+  function updateMeasureText() {
+    if (measure.length < 2) {
+      measureEl.textContent =
+        measure.length === 1 ? "measure: pick a second atom" : "";
+      return;
+    }
+    var a = atomPoint(measure[0]);
+    var b = atomPoint(measure[1]);
+    var d = Math.sqrt(
+      (a[0] - b[0]) * (a[0] - b[0]) +
+        (a[1] - b[1]) * (a[1] - b[1]) +
+        (a[2] - b[2]) * (a[2] - b[2])
+    );
+    measureEl.textContent =
+      "measure: " + (d * 1e10).toFixed(3) + " A (" + (d * 1e9).toFixed(3) + " nm)";
+  }
 
   canvas.addEventListener(
     "wheel",
     function (event) {
       event.preventDefault();
-      view.zoom *= event.deltaY < 0 ? 1.1 : 0.9;
-      view.zoom = Math.max(0.2, Math.min(8, view.zoom));
+      if (event.shiftKey) {
+        view.panX -= event.deltaY * 0.6;
+      } else {
+        view.zoom *= event.deltaY < 0 ? 1.1 : 0.9;
+        view.zoom = Math.max(0.2, Math.min(8, view.zoom));
+      }
       draw();
     },
     { passive: false }
   );
 
   canvas.addEventListener("dblclick", function () {
-    view.yaw = -0.65;
-    view.tilt = 1.02;
-    view.zoom = 1;
-    draw();
+    setView("reset");
   });
 
-  slider.addEventListener("input", function () {
-    updateSliderLabel();
+  function setView(name) {
+    var presets = {
+      reset: [-0.65, 1.02],
+      iso: [-0.65, 1.02],
+      top: [0, 0.05],
+      front: [0, Math.PI / 2],
+    };
+    var preset = presets[name] || presets.reset;
+    view.yaw = preset[0];
+    view.tilt = preset[1];
+    view.zoom = 1;
+    view.panX = 0;
+    view.panY = 0;
+    draw();
+  }
+
+  buttons.reset.addEventListener("click", function () {
+    setView("reset");
+  });
+  buttons.iso.addEventListener("click", function () {
+    setView("iso");
+  });
+  buttons.top.addEventListener("click", function () {
+    setView("top");
+  });
+  buttons.front.addEventListener("click", function () {
+    setView("front");
+  });
+
+  buttons.play.addEventListener("click", function () {
+    motion.playing = !motion.playing;
+    buttons.play.textContent = motion.playing ? "Pause" : "Play";
+  });
+
+  buttons.turntable.addEventListener("click", function () {
+    motion.turntable = !motion.turntable;
+    buttons.turntable.textContent = motion.turntable ? "Stop" : "Turntable";
+  });
+
+  buttons.full.addEventListener("click", function () {
+    var app = document.getElementById("app");
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else if (app.requestFullscreen) {
+      app.requestFullscreen();
+    }
+  });
+
+  buttons.save.addEventListener("click", function () {
+    var dpr = window.devicePixelRatio || 1;
+    var out = document.createElement("canvas");
+    out.width = Math.round(w * dpr);
+    out.height = Math.round(h * dpr);
+    var octx = out.getContext("2d");
+    octx.fillStyle = "#0d1117";
+    octx.fillRect(0, 0, out.width, out.height);
+    if (renderer && glCanvas.width) {
+      octx.drawImage(glCanvas, 0, 0, out.width, out.height);
+    }
+    octx.drawImage(canvas, 0, 0, out.width, out.height);
+    out.toBlob(function (blob) {
+      if (!blob) {
+        return;
+      }
+      var link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "nano-cad-gearbox.png";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  });
+
+  aoToggle.addEventListener("change", function () {
+    display.ao = aoToggle.checked;
+    draw();
+  });
+  atomSizeInput.addEventListener("input", function () {
+    display.atomSize = parseFloat(atomSizeInput.value);
+    draw();
+  });
+  clipInput.addEventListener("input", function () {
+    display.clip = parseFloat(clipInput.value);
+    draw();
+  });
+  speedInput.addEventListener("input", function () {
+    motion.speed = parseFloat(speedInput.value);
+  });
+
+  window.addEventListener("keydown", function (event) {
+    if (event.target && /input|textarea/i.test(event.target.tagName)) {
+      return;
+    }
+    var panStep = 24;
+    if (event.key === "ArrowLeft") {
+      view.panX -= panStep;
+    } else if (event.key === "ArrowRight") {
+      view.panX += panStep;
+    } else if (event.key === "ArrowUp") {
+      view.panY -= panStep;
+    } else if (event.key === "ArrowDown") {
+      view.panY += panStep;
+    } else if (event.key === "+" || event.key === "=") {
+      view.zoom = Math.min(8, view.zoom * 1.1);
+    } else if (event.key === "-" || event.key === "_") {
+      view.zoom = Math.max(0.2, view.zoom * 0.9);
+    } else if (event.key === "r" || event.key === "R") {
+      setView("reset");
+      return;
+    } else if (event.key === "f" || event.key === "F") {
+      buttons.full.click();
+      return;
+    } else if (event.key === "t" || event.key === "T") {
+      buttons.turntable.click();
+      return;
+    } else if (event.key === "p" || event.key === "P") {
+      buttons.play.click();
+      return;
+    } else if (event.key === "Escape") {
+      measure = [];
+      updateMeasureText();
+    } else {
+      return;
+    }
     draw();
   });
 
@@ -812,6 +1381,23 @@
   });
 
   window.addEventListener("resize", resize);
+
+  function frame(now) {
+    var dt = motion.last ? Math.min(0.05, (now - motion.last) / 1000) : 0;
+    motion.last = now;
+    if (motion.playing) {
+      updateAnimation(dt * motion.speed);
+      uploadAtoms();
+    }
+    if (motion.turntable) {
+      view.yaw += dt * 0.5 * motion.speed;
+    }
+    if (motion.playing || motion.turntable) {
+      draw();
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 
   /* ---------- Live parameters and chat (served by app/server.py) ---------- */
 
@@ -1015,7 +1601,6 @@
       });
   }
 
-  updateSliderLabel();
   load();
   initApp();
 })();

@@ -510,3 +510,19 @@ Phase 6. All result notes cite the test that measures the number.
     4-bonded, 0 hydrogen not 1-bonded, mean C-C-C angle 109.471221 deg. The app
     smoke test on `127.0.0.1` returned 200 for `/api/meta`, `/api/build`, and
     `/api/chat`. See ADR-0043 and ADR-0044.
+
+- [x] **M9-07** Give the atom layer a lit WebGL render, remove the scale slider,
+  add panning, and add the viewer features that a solid-gear viewer needs.
+  - Result: `site/render_atoms.js` is a WebGL2 renderer with instanced sphere
+    impostors, key/fill/rim lighting, specular, a contact-shadow bias, a
+    half-resolution screen-space ambient-occlusion pass, and a vignette. The
+    viewer adds pan (shift-drag, middle-drag, shift-wheel), preset views, a
+    turntable, motion playback of the planetary kinematics, fullscreen, PNG
+    export, an element legend with per-element visibility, an atom-size control
+    (space-filling to ball), a z-section clip, a hover pick, a two-click
+    distance measure, a nanometre scale bar, and an orientation triad. The scale
+    slider is gone; the layer checkboxes remain. When WebGL2 is absent the flat
+    2D dots are the fallback. See ADR-0045.
+  - Verification: `node --check site/render_atoms.js` and
+    `node --check site/viewer.js` pass. `node site/render_atoms.test.js` -> 11
+    passed. `/opt/homebrew/bin/python3 site/check.py` -> all checks passed.
