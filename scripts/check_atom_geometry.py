@@ -40,8 +40,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gear_profile as gp  # noqa: E402
 
 C_C_BOND_M = 1.544e-10
+C_H_BOND_M = 1.09e-10
+DIAMOND_LATTICE_CONSTANT_M = 3.567e-10
 TETRAHEDRAL_ANGLE_DEG = 109.4712
 DISTANCE_TOLERANCE_RELATIVE = 0.01
+BOND_TOLERANCE_RELATIVE = 1.5e-3
 ANGLE_TOLERANCE_DEG = 1.0
 RADIUS_TOLERANCE_RELATIVE = 1e-3
 
@@ -148,18 +151,37 @@ def part_radii_m(atoms, name: str, center) -> list[float]:
     for atom in atoms:
         if atom["name"] != name:
             continue
+        if atom.get("element") != "C":
+            continue
         position = atom["position_m"]
         result.append(math.hypot(position[0] - center[0],
                                  position[1] - center[1]))
     return result
 
 
-def nearest_atom_radius_m(atoms, name: str, center, world_angle_rad: float) -> float:
-    """Radius of the atom in `name` nearest the given in-plane world angle."""
-    best_radius = math.nan
-    best_error = math.inf
+# Angular half-width of the feature at the mesh line, at the atom scale. The
+# window must hold at least one surface carbon yet stay inside the feature, so
+# it is the tooth half-width at the tip plus a lattice margin. A single
+# 0.8*pi/teeth window is too wide: it reaches the adjacent tooth flank.
+SUN_MESH_WINDOW_RAD = math.radians(2.173)
+PLANET_MESH_WINDOW_RAD = math.radians(3.047)
+RING_MESH_WINDOW_RAD = math.radians(0.774)
+
+
+def surface_radius_m(atoms, name: str, center, world_angle_rad: float,
+                     window_rad: float, take_max: bool) -> float:
+    """The gear surface radius near the given world angle.
+
+    A filled solid has atoms at every radius, so the atom nearest in angle can
+    be an interior atom. Take the extreme radius among the atoms inside the
+    angular window. An external gear shows its tooth at the maximum radius; the
+    internal ring shows its tooth at the minimum radius.
+    """
+    best = math.nan
     for atom in atoms:
         if atom["name"] != name:
+            continue
+        if atom.get("element") != "C":
             continue
         position = atom["position_m"]
         dx = position[0] - center[0]
@@ -168,10 +190,14 @@ def nearest_atom_radius_m(atoms, name: str, center, world_angle_rad: float) -> f
             continue
         error = abs((math.atan2(dy, dx) - world_angle_rad + math.pi)
                     % (2.0 * math.pi) - math.pi)
-        if error < best_error:
-            best_error = error
-            best_radius = math.hypot(dx, dy)
-    return best_radius
+        if error > window_rad:
+            continue
+        radius_m = math.hypot(dx, dy)
+        if math.isnan(best) \
+                or (take_max and radius_m > best) \
+                or (not take_max and radius_m < best):
+            best = radius_m
+    return best
 
 
 def check_mesh_phase(atoms, design, centers, failures: list[str]) -> None:
@@ -192,12 +218,16 @@ def check_mesh_phase(atoms, design, centers, failures: list[str]) -> None:
     for k in range(int(design["planet_count"])):
         center = centers[f"planet_{k}"]
         phi = math.atan2(center[1], center[0])
-        sun_radius = nearest_atom_radius_m(atoms, "sun", centers["sun"], phi)
-        planet_toward_sun = nearest_atom_radius_m(
-            atoms, f"planet_{k}", center, phi + math.pi)
-        planet_toward_ring = nearest_atom_radius_m(
-            atoms, f"planet_{k}", center, phi)
-        ring_radius = nearest_atom_radius_m(atoms, "ring", centers["ring"], phi)
+        sun_radius = surface_radius_m(
+            atoms, "sun", centers["sun"], phi, SUN_MESH_WINDOW_RAD, True)
+        planet_toward_sun = surface_radius_m(
+            atoms, f"planet_{k}", center, phi + math.pi,
+            PLANET_MESH_WINDOW_RAD, True)
+        planet_toward_ring = surface_radius_m(
+            atoms, f"planet_{k}", center, phi,
+            PLANET_MESH_WINDOW_RAD, True)
+        ring_radius = surface_radius_m(
+            atoms, "ring", centers["ring"], phi, RING_MESH_WINDOW_RAD, False)
         print(
             f"  mesh {k}: sun tooth r {sun_radius:.6e} m (tip {sun_outer:.6e}); "
             f"planet space r {planet_toward_sun:.6e}, "
@@ -313,8 +343,9 @@ def check_thickness(atoms, design, failures: list[str]) -> None:
     spacing_m = float(design.get("layer_spacing_m", 0.0))
     thickness_m = float(design.get("thickness_m", 0.0))
     z_values = sorted({round(atom["position_m"][2], 15) for atom in atoms
-                       if atom["name"] in ("sun", "ring")
-                       or atom["name"].startswith("planet_")})
+                       if atom.get("element") == "C"
+                       and (atom["name"] in ("sun", "ring")
+                            or atom["name"].startswith("planet_"))})
     expected_thickness = (layers - 1) * spacing_m
     expected = [round((i - 0.5 * (layers - 1)) * spacing_m, 15)
                 for i in range(layers)]
@@ -342,6 +373,94 @@ def check_thickness(atoms, design, failures: list[str]) -> None:
         print("thickness: the metadata matches the atomic layer span")
 
 
+def check_diamond_bonds(atoms, bonds, failures: list[str]) -> None:
+    elements = [atom.get("element") for atom in atoms]
+    # The carrier is a mechanical race ring, not a diamond solid. Its carbons
+    # are two- and three-bonded on purpose, so exclude them from the chemistry.
+    mechanical = {index for index, atom in enumerate(atoms)
+                  if atom.get("name") == "carrier"}
+    neighbours: dict[int, list[int]] = {}
+    cc_count = ch_count = cc_bad = ch_bad = 0
+    other_bonds = 0
+    for u, v in bonds:
+        if u in mechanical or v in mechanical:
+            continue
+        pair = {elements[u], elements[v]}
+        positions = atoms[u]["position_m"], atoms[v]["position_m"]
+        length = math.dist(positions[0], positions[1])
+        if pair == {"C"}:
+            cc_count += 1
+            if abs(length - C_C_BOND_M) / C_C_BOND_M > BOND_TOLERANCE_RELATIVE:
+                cc_bad += 1
+        elif pair == {"C", "H"}:
+            ch_count += 1
+            if abs(length - C_H_BOND_M) / C_H_BOND_M > BOND_TOLERANCE_RELATIVE:
+                ch_bad += 1
+        else:
+            other_bonds += 1
+        neighbours.setdefault(u, []).append(v)
+        neighbours.setdefault(v, []).append(u)
+
+    carbon_bad = hydrogen_bad = 0
+    for index, element in enumerate(elements):
+        if index in mechanical:
+            continue
+        degree = len(neighbours.get(index, []))
+        if element == "C" and degree != 4:
+            carbon_bad += 1
+        elif element == "H" and degree != 1:
+            hydrogen_bad += 1
+
+    angle_sum = 0.0
+    angle_count = 0
+    for index, element in enumerate(elements):
+        if element != "C" or index in mechanical:
+            continue
+        base = atoms[index]["position_m"]
+        directions = []
+        for other in neighbours.get(index, []):
+            position = atoms[other]["position_m"]
+            vector = [position[i] - base[i] for i in range(3)]
+            magnitude = math.sqrt(sum(component * component
+                                     for component in vector))
+            if magnitude > 0.0:
+                directions.append([component / magnitude
+                                   for component in vector])
+        for i in range(len(directions)):
+            for j in range(i + 1, len(directions)):
+                dot = sum(directions[i][k] * directions[j][k] for k in range(3))
+                dot = max(-1.0, min(1.0, dot))
+                angle_sum += math.degrees(math.acos(dot))
+                angle_count += 1
+    mean_angle = angle_sum / angle_count if angle_count else 0.0
+
+    print(f"  bonds: {cc_count} C-C, {ch_count} C-H, {other_bonds} other")
+    print(f"  C-C bond length: {cc_bad} outside "
+          f"{BOND_TOLERANCE_RELATIVE:.1e} of {C_C_BOND_M:.3e} m")
+    print(f"  C-H bond length: {ch_bad} outside "
+          f"{BOND_TOLERANCE_RELATIVE:.1e} of {C_H_BOND_M:.3e} m")
+    print(f"  valence: {carbon_bad} carbon not 4-bonded, "
+          f"{hydrogen_bad} hydrogen not 1-bonded")
+    print(f"  carbon bond angle: mean {mean_angle:.6f} deg, "
+          f"reference {TETRAHEDRAL_ANGLE_DEG} deg")
+    if cc_bad:
+        failures.append(f"{cc_bad} C-C bonds have the wrong length")
+    if ch_bad:
+        failures.append(f"{ch_bad} C-H bonds have the wrong length")
+    if other_bonds:
+        failures.append(f"{other_bonds} bonds link unexpected elements")
+    if carbon_bad:
+        failures.append(f"{carbon_bad} carbon atoms are not four-bonded")
+    if hydrogen_bad:
+        failures.append(f"{hydrogen_bad} hydrogen atoms are not one-bonded")
+    if abs(mean_angle - TETRAHEDRAL_ANGLE_DEG) > ANGLE_TOLERANCE_DEG:
+        failures.append(
+            f"the carbon bond angle is {mean_angle:.6f} deg, not "
+            f"{TETRAHEDRAL_ANGLE_DEG} deg")
+    else:
+        print("diamond bonds: the gear atoms obey the diamond chemistry")
+
+
 def check_gear_layer(scene_path: str, bonds_path: str,
                      failures: list[str]) -> None:
     if not (os.path.exists(scene_path) and os.path.exists(bonds_path)):
@@ -365,27 +484,38 @@ def check_gear_layer(scene_path: str, bonds_path: str,
             continue
         measured_lo, measured_hi = min(radii), max(radii)
         pitch_m = gp.pitch_radius_m(module_m, teeth)
+        tolerance_m = max(RADIUS_TOLERANCE_RELATIVE * pitch_m,
+                          DIAMOND_LATTICE_CONSTANT_M)
         if internal:
-            expected_lo = pitch_m - gp.addendum_m(module_m)
-            expected_hi = pitch_m + gp.dedendum_m(module_m)
-            label = "internal tip/root"
-        else:
-            expected_lo = gp.root_radius_m(module_m, teeth)
-            expected_hi = gp.outer_radius_m(module_m, teeth)
-            label = "root/tip"
-        print(
-            f"  {name}: {label} radius {measured_lo:.6e}..{measured_hi:.6e} m, "
-            f"involute profile {expected_lo:.6e}..{expected_hi:.6e} m"
-        )
-        lo_error = abs(measured_lo - expected_lo) / expected_lo
-        hi_error = abs(measured_hi - expected_hi) / expected_hi
-        if lo_error > RADIUS_TOLERANCE_RELATIVE or \
-                hi_error > RADIUS_TOLERANCE_RELATIVE:
-            failures.append(
-                f"gear part {name} radii {measured_lo:.6e}..{measured_hi:.6e} m "
-                f"do not match the involute profile "
-                f"{expected_lo:.6e}..{expected_hi:.6e} m"
+            tip_m = pitch_m - gp.addendum_m(module_m)
+            root_m = pitch_m + gp.dedendum_m(module_m)
+            print(
+                f"  {name}: internal tip {tip_m:.6e} m, atoms "
+                f"{measured_lo:.6e}..{measured_hi:.6e} m"
             )
+            if abs(measured_lo - tip_m) > tolerance_m:
+                failures.append(
+                    f"gear part {name} inner boundary {measured_lo:.6e} m is "
+                    f"not the internal tip {tip_m:.6e} m")
+            if measured_hi < root_m:
+                failures.append(
+                    f"gear part {name} outer radius {measured_hi:.6e} m stops "
+                    f"before the root {root_m:.6e} m")
+        else:
+            outer_m = gp.outer_radius_m(module_m, teeth)
+            root_m = gp.root_radius_m(module_m, teeth)
+            print(
+                f"  {name}: root/tip {root_m:.6e}..{outer_m:.6e} m, atoms "
+                f"{measured_lo:.6e}..{measured_hi:.6e} m"
+            )
+            if abs(measured_hi - outer_m) > tolerance_m:
+                failures.append(
+                    f"gear part {name} tip {measured_hi:.6e} m is not the "
+                    f"involute tip {outer_m:.6e} m")
+            if measured_lo > 0.5 * root_m:
+                failures.append(
+                    f"gear part {name} has no inner atoms "
+                    f"(minimum radius {measured_lo:.6e} m); it may be hollow")
 
         points = gp.outline_points(module_m, teeth)
         if internal:
@@ -393,17 +523,15 @@ def check_gear_layer(scene_path: str, bonds_path: str,
                 points, gp.pitch_radius_m(module_m, teeth))
         profile_radii = [math.hypot(x, y) for x, y in points]
         profile_lo, profile_hi = min(profile_radii), max(profile_radii)
-        if (abs(profile_lo - measured_lo) / measured_lo
-                > RADIUS_TOLERANCE_RELATIVE
-                or abs(profile_hi - measured_hi) / measured_hi
-                > RADIUS_TOLERANCE_RELATIVE):
+        boundary_error = (abs(profile_lo - measured_lo) if internal
+                          else abs(profile_hi - measured_hi))
+        if boundary_error > tolerance_m:
             failures.append(
-                f"schematic profile for {name} "
-                f"{profile_lo:.6e}..{profile_hi:.6e} m disagrees with the "
-                f"atom layer {measured_lo:.6e}..{measured_hi:.6e} m"
-            )
+                f"schematic profile boundary for {name} disagrees with the "
+                f"atom layer by {boundary_error:.3e} m")
     check_mesh_phase(atoms, design, centers, failures)
     check_thickness(atoms, design, failures)
+    check_diamond_bonds(atoms, planetary_bonds, failures)
     print("gear layer: schematic profile and atom layer agree")
 
 

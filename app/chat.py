@@ -23,8 +23,12 @@ DEFAULT_PARAMS = {
     "planet_teeth": 18.0,
     "planet_count": 3.0,
     "layers": 4.0,
-    "layer_spacing_m": 1.544e-10,
 }
+
+# One atomic layer is one diamond (001) plane. The crystal fixes the spacing,
+# so the user controls the layer count only.
+DIAMOND_LATTICE_CONSTANT_M = 3.567e-10
+DIAMOND_PLANE_SPACING_M = DIAMOND_LATTICE_CONSTANT_M / 4.0
 
 # Inclusive limits. The engine enforces its own, stricter limits too.
 LIMITS = {
@@ -33,7 +37,6 @@ LIMITS = {
     "planet_teeth": (18.0, 120.0),
     "planet_count": (1.0, 12.0),
     "layers": (1.0, 64.0),
-    "layer_spacing_m": (1e-11, 5e-9),
 }
 
 # Parameter names, in the order the UI shows them, with a human label and the
@@ -44,7 +47,6 @@ PARAM_META = [
     ("planet_teeth", "planet teeth", 1.0, ""),
     ("planet_count", "planet count", 1.0, ""),
     ("layers", "atomic layers", 1.0, ""),
-    ("layer_spacing_m", "layer spacing", 1e-12, "pm"),
 ]
 
 _WORD_NUMBERS = {
@@ -57,7 +59,6 @@ _INTENT_ORDER = [
     "layers_set",
     "layers_thicker",
     "layers_thinner",
-    "spacing_set",
     "teeth_set",
     "teeth_more",
     "teeth_fewer",
@@ -93,7 +94,7 @@ def _clamp(name: str, value: float) -> float:
 def _describe(params: dict) -> str:
     ring = params["sun_teeth"] + 2.0 * params["planet_teeth"]
     ratio = (params["sun_teeth"] + ring) / params["sun_teeth"]
-    thickness_nm = (params["layers"] - 1.0) * params["layer_spacing_m"] / 1e-9
+    thickness_nm = (params["layers"] - 1.0) * DIAMOND_PLANE_SPACING_M / 1e-9
     return (
         f"sun {int(params['sun_teeth'])}t, planet {int(params['planet_teeth'])}t, "
         f"ring {int(ring)}t, {int(params['planet_count'])} planets, "
@@ -150,22 +151,15 @@ def parse(message: str, params: dict | None = None) -> Command:
                        f"{word} the gears by {abs(delta)} atomic layer(s). "
                        + _describe({**base, **changed}))
 
-    # layer spacing
-    match = re.search(
-        r"\b(?:layer\s+)?spacing\b[^0-9]*([\d.]+)\s*(pm|nm|a|angstrom)?", text)
-    if not match:
-        match = re.search(
-            r"\b(?:space|separate|move)\b[^0-9]*?\blayers?\b[^0-9]*?"
-            r"([\d.]+)\s*(pm|nm|a|angstrom)?", text)
-    if match:
-        value = float(match.group(1))
-        unit = match.group(2) or "pm"
-        factor = {"pm": 1e-12, "nm": 1e-9, "a": 1e-10, "angstrom": 1e-10}[unit]
-        spacing = _clamp("layer_spacing_m", value * factor)
-        changed = {"layer_spacing_m": spacing}
-        return Command("spacing_set", changed,
-                       f"Set the layer spacing to {value} {unit}. "
-                       + _describe({**base, **changed}))
+    # layer spacing is fixed by the crystal, so explain instead of editing
+    if re.search(r"\b(spacing|space|separate|move)\b.*\blayers?\b", text) or \
+            re.search(r"\blayers?\b.*\bspacing\b", text):
+        return Command(
+            None, {},
+            "One atomic layer is one diamond (001) plane. The crystal fixes the "
+            f"spacing at {DIAMOND_PLANE_SPACING_M * 1e12:.4f} pm, so you set the "
+            "layer count, not the spacing.",
+        )
 
     # "set the sun teeth to 30"
     match = re.search(r"(sun|planet)\s+teeth\s+to\s+(\d+)", text)

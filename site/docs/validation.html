@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Validation - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Validation</h1>
+<p>This page describes the reference cross-checks that verify the nanocad atomistic engine against independent molecular-dynamics codes. It states what each check proves, what each check does not prove, and how to run each check.</p>
+<p><code>ARCHITECTURE.md</code> names two external cross-checks: OpenMM and GROMACS CPU.</p>
+<h2>The common reference model</h2>
+<p>Both cross-checks use the same fixed case: a periodic SPC-like water box from <code>crates/engine/src/reference.rs</code>, printed as JSON by <code>crates/engine/examples/water_box.rs</code>.</p>
+<ul><li>200 molecules, 600 atoms.</li><li>Cubic box, side <code>1.8833259369189425e-9 m</code>, periodic.</li><li>Cutoff <code>0.35 * box</code>, switch-on <code>0.9 * cutoff</code>, no long-range correction.</li><li>Harmonic O-H bond: <code>k = 500 N/m</code>, <code>r0 = 1e-10 m</code>.</li><li>Harmonic H-O-H angle: <code>k = 6e-19 J/rad^2</code>, <code>theta0 = 109.47 deg</code>.</li><li>Buckingham O-O term: <code>U = A exp(-B r) - C/r^6</code>, with <code>A = 1.151e-15 J</code>, <code>B = 4.2e10 1/m</code>, <code>C = 2.6645e-78 J m^6</code>. Only oxygen carries vdW parameters.</li><li>Charges: <code>q_O = -0.82 e</code>, <code>q_H = +0.41 e</code>.</li><li>The 3 intra-molecular pairs per molecule are excluded.</li><li>Seed <code>0x5A17E2</code> fixes the orientations and the velocities.</li></ul>
+<p>The model is flexible and SPC-like. It is not standard SPC, because the bonded terms are flexible and the dispersion term is Buckingham.</p>
+<h2>OpenMM cross-check</h2>
+<p>Task M2-11. Driver: <code>benchmarks/openmm/compare_water_box.py</code>. Result: <code>benchmarks/results/openmm-water-crosscheck.txt</code>.</p>
+<p>The driver runs the Rust example, rebuilds the identical model in OpenMM from the JSON fields, and compares the potential energy and the per-atom forces.</p>
+<table><thead><tr><th>Quantity</th><th>nanocad</th><th>OpenMM</th><th>Relative difference</th></tr></thead><tbody><tr><td>Potential energy</td><td>-2.737699062416127e-17 J</td><td>-2.7376990624161912e-17 J</td><td>2.341e-14</td></tr><tr><td>Maximum per-atom force</td><td>—</td><td>max magnitude 1.4621685148513376e-08 N</td><td>1.242e-14</td></tr></tbody></table>
+<p>The declared tolerance is <code>1.0e-6</code> relative. The result is <strong>PASS</strong>.</p>
+<h3>What the OpenMM cross-check proves</h3>
+<ul><li>The bonded terms, the Buckingham term, the Coulomb term, the switching function, the exclusions, and the minimum-image convention in nanocad agree with an independent implementation to double precision.</li><li>A coding error in any of those terms shows up as a difference far above the tolerance. A missing switching function on the dispersion term is about 5e-4.</li></ul>
+<h3>What the OpenMM cross-check does not prove</h3>
+<ul><li>It is a coding check, not a physics validation. Both codes use the same plain cutoff and no long-range correction. Agreement does not mean the physics is correct.</li><li>It does not compare nanocad to a standard SPC or TIP3P result, because the model is flexible and Buckingham-based.</li><li>It checks one fixed configuration. A model error that is symmetric under this geometry could pass.</li><li>The switching branch at exactly <code>switch_on</code> is not exercised, because no pair sits exactly at that distance.</li><li>The <code>CPU</code> and <code>OpenCL</code> OpenMM platforms are single precision in places and agree to about <code>4e-6</code>, not <code>1e-14</code>. Certify with the <code>Reference</code> platform.</li></ul>
+<h3>How to run the OpenMM cross-check</h3>
+<pre><code>uv venv --python 3.12 /tmp/openmm-venv
+uv pip install --python /tmp/openmm-venv/bin/python openmm numpy
+/tmp/openmm-venv/bin/python benchmarks/openmm/compare_water_box.py</code></pre>
+<p>The <code>Reference</code> platform is the default. Set <code>NANOCAD_OPENMM_PLATFORM=CPU</code> for the single-precision CPU platform. The driver prints <code>SKIP</code> and exits zero when OpenMM is absent.</p>
+<h2>GROMACS CPU cross-check</h2>
+<p>Task from <code>ARCHITECTURE.md</code>. Driver: <code>benchmarks/gromacs/compare_water_box.py</code>. Result: <code>benchmarks/gromacs/results/gromacs-water-crosscheck.txt</code>.</p>
+<h3>Current result: SKIP</h3>
+<p>GROMACS 2026.3 is installed (Homebrew build, <code>2026.3-Homebrew</code>). It cannot run the model. <code>gmx mdrun</code> reports:</p>
+<pre><code>Fatal error:
+The Verlet cutoff-scheme does not (yet) support Buckingham</code></pre>
+<p>Therefore the driver prints <code>SKIP</code>, records no agreement, and exits zero. It does not fabricate a comparison.</p>
+<p>The reasons are:</p>
+<ul><li>GROMACS removed the group cutoff scheme in 2020. Buckingham was only ever supported with that scheme.</li><li>GROMACS 2026 implements only the potential-shift modifier, not a switching function. The nanocad custom switching polynomial has no GROMACS equivalent.</li><li>A tabulated nonbonded potential (<code>vdwtype = User</code>) is also unavailable with the Verlet scheme in 2026. The GROMACS developers state that it returns in the 2027 release.</li></ul>
+<h3>What the GROMACS driver does verify</h3>
+<ul><li><code>gmx grompp</code> accepts the exact topology: <code>nbfunc = 2</code> (Buckingham), the same charges, bond, angle, exclusions, box, and cutoff. The SI-to-GROMACS input conversion is therefore correct.</li><li>The Coulomb constant converts exactly. GROMACS prints <code>138.935458</code> and the nanocad value is <code>138.935458 kJ/mol/nm/e^2</code> at the printed precision.</li><li>The switch-correction function matches an independent Python evaluation of the reference model. Bonded plus switched non-bonded energy equals the recorded nanocad energy to <code>6.75e-15</code> relative. Reproduce this with <code>python3 benchmarks/gromacs/selftest_switch.py</code>.</li></ul>
+<h3>What the GROMACS cross-check would prove</h3>
+<p>When GROMACS can run the model, the driver compares the potential energy and the per-atom forces, exactly as the OpenMM driver does. It would give a second, independent CPU implementation to confirm the nanocad terms. It is subject to the same limits as the OpenMM check: a coding check, not a physics validation, and one fixed configuration only.</p>
+<p>The driver adds an exact analytic switch correction, because GROMACS has no nanocad switch. It compares GROMACS to the corrected prediction. The correction is validated by the independent evaluation above.</p>
+<h3>How to run the GROMACS cross-check</h3>
+<pre><code>brew install gromacs
+python3 benchmarks/gromacs/compare_water_box.py</code></pre>
+<p>The driver prints <code>SKIP</code> and exits zero when GROMACS is absent, and also when GROMACS is present but cannot express the model. Use <code>--workdir DIR --keep</code> to inspect the generated <code>.g96</code>, <code>.top</code>, and <code>.mdp</code> input.</p>
+<h2>Other verification mechanisms</h2>
+<p>The reference cross-checks are one part of the verification architecture in <code>ARCHITECTURE.md</code>. The other parts run in the normal test suite.</p>
+<ul><li><strong>Finite-difference gradient test per force term.</strong> Every analytic force term is compared to a central finite difference in <code>cargo test</code>. A term does not merge without one.</li><li><strong>Energy-conservation test per integrator.</strong> An NVE run must keep the total energy within a set bound.</li><li><strong>Golden regression files</strong> for import and export, under <code>tests/golden/</code>.</li></ul>
+<p>These checks run with <code>just verify</code>. They are merge gates. The OpenMM and GROMACS cross-checks need an external code, so they are not gates.</p>
+<h2>What no check proves</h2>
+<ul><li>No check validates the model against experiment. All results are <strong>simulated</strong>.</li><li>No check shows medical or clinical validity.</li><li>Agreement between two codes proves that the two implementations match. It does not prove that the model is physically correct.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/validation.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

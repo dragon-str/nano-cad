@@ -240,31 +240,243 @@
     ctx.stroke();
   }
 
+  /* ---------- Involute gear profile (port of scripts/gear_profile.py) ---------- */
+
+  var PRESSURE_ANGLE_RAD = (20.0 * Math.PI) / 180.0;
+  var ADDENDUM_COEFF = 1.0;
+  var DEDENDUM_COEFF = 1.25;
+  var C_C_BOND_M = 1.544e-10;
+
+  function involuteFn(a) {
+    return Math.tan(a) - a;
+  }
+
+  function pitchRadiusJS(moduleM, teeth) {
+    return (moduleM * teeth) / 2;
+  }
+
+  function baseRadiusJS(moduleM, teeth) {
+    return pitchRadiusJS(moduleM, teeth) * Math.cos(PRESSURE_ANGLE_RAD);
+  }
+
+  function outerRadiusJS(moduleM, teeth) {
+    return pitchRadiusJS(moduleM, teeth) + ADDENDUM_COEFF * moduleM;
+  }
+
+  function rootRadiusJS(moduleM, teeth) {
+    return pitchRadiusJS(moduleM, teeth) - DEDENDUM_COEFF * moduleM;
+  }
+
+  function flankAngleRad(radiusM, sign, moduleM, teeth) {
+    var base = baseRadiusJS(moduleM, teeth);
+    if (radiusM < base) {
+      throw new Error("radius inside the base circle");
+    }
+    var cosine = Math.max(-1, Math.min(1, base / radiusM));
+    var alphaR = Math.acos(cosine);
+    var halfTooth = Math.PI / (2 * teeth);
+    return (
+      sign * (halfTooth + involuteFn(PRESSURE_ANGLE_RAD) - involuteFn(alphaR))
+    );
+  }
+
+  function outlinePointsJS(moduleM, teeth, flankSamples, arcSamples) {
+    var flanks = Math.max(1, flankSamples);
+    var arcs = Math.max(1, arcSamples);
+    var toothPitch = (2 * Math.PI) / teeth;
+    var halfPitch = Math.PI / teeth;
+    var outerM = outerRadiusJS(moduleM, teeth);
+    var rootM = rootRadiusJS(moduleM, teeth);
+    var baseM = baseRadiusJS(moduleM, teeth);
+    var tipHalf = halfPitch + involuteFn(PRESSURE_ANGLE_RAD)
+      - involuteFn(Math.acos(Math.max(-1, Math.min(1, baseM / outerM))));
+    var flankStart = Math.max(rootM, baseM);
+    var flankStartAngle = flankAngleRad(flankStart, -1, moduleM, teeth);
+    var local = [];
+    var i;
+    var t;
+    if (rootM < baseM) {
+      for (i = 0; i <= arcs; i += 1) {
+        t = i / arcs;
+        var a0 = -halfPitch + (halfPitch + flankStartAngle) * t;
+        local.push([rootM * Math.cos(a0), rootM * Math.sin(a0)]);
+      }
+    }
+    local.push([
+      flankStart * Math.cos(flankStartAngle),
+      flankStart * Math.sin(flankStartAngle),
+    ]);
+    for (i = 1; i <= flanks; i += 1) {
+      t = i / flanks;
+      var r1 = flankStart + (outerM - flankStart) * t;
+      var a1 = flankAngleRad(r1, -1, moduleM, teeth);
+      local.push([r1 * Math.cos(a1), r1 * Math.sin(a1)]);
+    }
+    for (i = 0; i <= arcs; i += 1) {
+      t = i / arcs;
+      var a2 = -tipHalf + 2 * tipHalf * t;
+      local.push([outerM * Math.cos(a2), outerM * Math.sin(a2)]);
+    }
+    for (i = flanks - 1; i >= 0; i -= 1) {
+      t = i / flanks;
+      var r2 = flankStart + (outerM - flankStart) * t;
+      var a3 = flankAngleRad(r2, 1, moduleM, teeth);
+      local.push([r2 * Math.cos(a3), r2 * Math.sin(a3)]);
+    }
+    if (rootM < baseM) {
+      for (i = 0; i <= arcs; i += 1) {
+        t = i / arcs;
+        var a4 = -flankStartAngle + (halfPitch + flankStartAngle) * t;
+        local.push([rootM * Math.cos(a4), rootM * Math.sin(a4)]);
+      }
+    }
+    var points = [];
+    for (var tooth = 0; tooth < teeth; tooth += 1) {
+      var rotation = tooth * toothPitch;
+      var cosR = Math.cos(rotation);
+      var sinR = Math.sin(rotation);
+      for (var k = 0; k < local.length; k += 1) {
+        points.push([
+          local[k][0] * cosR - local[k][1] * sinR,
+          local[k][0] * sinR + local[k][1] * cosR,
+        ]);
+      }
+    }
+    return points;
+  }
+
+  function reflectToInternalJS(points, pitchM) {
+    return points.map(function (p) {
+      var radius = Math.sqrt(p[0] * p[0] + p[1] * p[1]);
+      if (radius <= 0) {
+        return [p[0], p[1]];
+      }
+      var scale = (2 * pitchM - radius) / radius;
+      return [p[0] * scale, p[1] * scale];
+    });
+  }
+
+  function gearOutlineWorldPoints(role, index, design) {
+    var moduleM = design.module_m;
+    var teeth;
+    var internal = false;
+    var rotation = 0;
+    if (role === "sun") {
+      teeth = design.sun_teeth;
+    } else if (role === "planet") {
+      teeth = design.planet_teeth;
+      rotation =
+        (index * 2 * Math.PI) / design.planet_count + Math.PI / design.planet_teeth;
+    } else if (role === "ring") {
+      teeth = design.ring_teeth;
+      internal = true;
+    } else {
+      return null;
+    }
+    var points = outlinePointsJS(moduleM, teeth, 4, 2);
+    if (internal) {
+      points = reflectToInternalJS(points, pitchRadiusJS(moduleM, teeth));
+    }
+    if (rotation === 0) {
+      return points;
+    }
+    var cosR = Math.cos(rotation);
+    var sinR = Math.sin(rotation);
+    return points.map(function (p) {
+      return [p[0] * cosR - p[1] * sinR, p[0] * sinR + p[1] * cosR];
+    });
+  }
+
   /* ---------- Layer drawing ---------- */
 
-  function drawAtomistic(alpha) {
+  /* ---------- Level of detail ---------- */
+
+  function atomSpacingPx() {
+    return (C_C_BOND_M / Math.max(fit.r, 1e-30)) * pixelSize();
+  }
+
+  function shadeColor(hex, factor) {
+    var n = parseInt(hex.slice(1), 16);
+    var r = Math.min(255, Math.round(((n >> 16) & 255) * factor));
+    var g = Math.min(255, Math.round(((n >> 8) & 255) * factor));
+    var b = Math.min(255, Math.round((n & 255) * factor));
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  function drawGearSchematic(alpha) {
+    if (!scene.design || !scene.design.module_m) {
+      return;
+    }
+    var planetIndex = 0;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1.4;
+    scene.device.bodies.forEach(function (body) {
+      var role = body.role;
+      var index = 0;
+      if (role === "planet") {
+        index = planetIndex;
+        planetIndex += 1;
+      }
+      var local = gearOutlineWorldPoints(role, index, scene.design);
+      if (!local) {
+        return;
+      }
+      ctx.strokeStyle = ROLE_COLORS[role] || "#8b98a5";
+      ctx.beginPath();
+      for (var i = 0; i < local.length; i += 1) {
+        var p = camera([
+          body.position_m[0] + local[i][0],
+          body.position_m[1] + local[i][1],
+          body.position_m[2],
+        ]);
+        if (i === 0) {
+          ctx.moveTo(p[0], p[1]);
+        } else {
+          ctx.lineTo(p[0], p[1]);
+        }
+      }
+      ctx.closePath();
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawAtoms(alpha) {
     var atoms = scene.atomistic.atoms;
+    var spacing = atomSpacingPx();
+    var radius = Math.max(0.6, spacing * 0.30);
     var groups = new Map();
     for (var i = 0; i < atoms.length; i += 1) {
-      var key = atoms[i].element;
+      var p = camera(atoms[i].position_m);
+      var bin = Math.max(0, Math.min(3, Math.floor((p[2] + 1) * 2)));
+      var key = atoms[i].element + ":" + bin;
       if (!groups.has(key)) {
-        groups.set(key, []);
+        groups.set(key, { element: atoms[i].element, bin: bin, points: [] });
       }
-      groups.get(key).push(atoms[i]);
+      groups.get(key).points.push(p);
     }
     ctx.globalAlpha = alpha;
-    var radius = Math.max(1.0, 0.011 * pixelSize());
-    groups.forEach(function (list, element) {
-      ctx.fillStyle = elementColor(element);
+    groups.forEach(function (group) {
+      var base = elementColor(group.element);
+      var factor = 0.45 + 0.18 * group.bin;
+      ctx.fillStyle = base.charAt(0) === "#" ? shadeColor(base, factor) : base;
       ctx.beginPath();
-      for (var j = 0; j < list.length; j += 1) {
-        var p = camera(list[j].position_m);
-        ctx.moveTo(p[0] + radius, p[1]);
-        ctx.arc(p[0], p[1], radius, 0, 2 * Math.PI);
+      for (var j = 0; j < group.points.length; j += 1) {
+        var q = group.points[j];
+        ctx.moveTo(q[0] + radius, q[1]);
+        ctx.arc(q[0], q[1], radius, 0, 2 * Math.PI);
       }
       ctx.fill();
     });
     ctx.globalAlpha = 1;
+  }
+
+  function drawAtomistic(alpha) {
+    if (atomSpacingPx() < 6) {
+      drawGearSchematic(alpha);
+      return;
+    }
+    drawAtoms(alpha);
   }
 
   function drawCoarse(alpha) {
@@ -621,7 +833,6 @@
       planet_teeth: design.planet_teeth,
       planet_count: design.planet_count,
       layers: design.layers,
-      layer_spacing_m: design.layer_spacing_m,
     };
   }
 

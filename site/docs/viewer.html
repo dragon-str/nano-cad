@@ -13,16 +13,20 @@
     </header>
     <main>
 <h1>Three-scale viewer</h1>
-<p>This document tells you how to generate the scene file and how to open the viewer. The viewer is a static page. It has no network access and no external library. The view is a schematic projection, not a physical render.</p>
+<p>This document tells you how to generate the scene file and how to open the viewer. The viewer is a static page. It has no external library. The view is a schematic projection, not a physical render. A local server adds a live parameter panel and a chat interface; see "Interactive mode" below.</p>
 <h2>What the viewer shows</h2>
 <p>The viewer draws the three layers of a <code>nanocad.scene</code> document.</p>
 <ul><li><strong>Atomistic (L1).</strong> One dot for each atom, in colour by element.</li><li><strong>Device (L2).</strong> One marker for each rigid body, and a line for each joint. A fixed body shows a small white centre dot.</li><li><strong>Coarse (handoff).</strong> A dashed gear pitch circle for each gear and a bounding cylinder for each body.</li></ul>
 <p>The scale slider blends between the layers. The three checkboxes hide or show one layer. Drag to rotate, use the wheel to zoom, and double-click to reset.</p>
+<p>The atomistic layer has a level of detail. When the projected carbon-carbon spacing is six pixels or more, the viewer draws depth-shaded atoms at that spacing. Below six pixels it draws the exact involute schematic instead. Both use one profile function and one world fit, so the switch does not move the geometry.</p>
 <p>The scene is the default planetary design: 7 bodies, 6 joints, 3 planets, and an analytic sun-to-carrier gear ratio of 3.5.</p>
 <h2>Generate the scene file</h2>
 <p>Run the example from the repository root. The first argument is the output path. The default path is <code>site/scene.json</code>.</p>
 <pre><code class="language-sh">cargo run -p nanocad-jigs --example scene_json -- site/scene.json</code></pre>
-<p>The command prints a one-line summary. The default output has 2202 atoms. The file is about 600 KB. The example creates the parent directory.</p>
+<p>The command prints a one-line summary. The default output has 70070 atoms in four axial layers, <code>2.67525e-10 m</code> thick. The file is a few MB. The example creates the parent directory.</p>
+<p>The example also accepts <code>key=value</code> arguments that override the generator parameters. The keys are the names in <code>PLANETARY_PARAMETERS</code>.</p>
+<pre><code class="language-sh">cargo run -p nanocad-jigs --example scene_json -- site/scene.json layers=6</code></pre>
+<p>This writes a scene with six atomic layers. The interactive app uses the same arguments.</p>
 <p>The example also writes a companion file next to the scene, for example <code>site/scene.data.js</code>. The companion assigns the same scene to <code>window.NANOCAD_SCENE</code>. The viewer uses the companion to load the scene from <code>file://</code>, because a browser blocks <code>fetch</code> of a local file.</p>
 <h2>Open the viewer</h2>
 <p>Open <code>site/index.html</code> in a web browser by double-clicking it, or with:</p>
@@ -31,6 +35,16 @@
 <p>To serve the folder with a local web server instead:</p>
 <pre><code class="language-sh">python3 -m http.server 8000 --directory site</code></pre>
 <p>Then open <code>http://localhost:8000/</code>. The server is local. It needs no network.</p>
+<h2>Interactive mode: parameters and chat</h2>
+<p><code>app/server.py</code> serves the same page and adds a live parameter panel and a chat interface. It runs the Rust generator for each change, so the panel and the chat always show engine output, never an invented number.</p>
+<pre><code class="language-sh">python3 app/server.py --port 8000</code></pre>
+<p>Then open <code>http://localhost:8000/</code>. The page shows numeric fields for the module, the tooth counts, the planet count, and the number of atomic layers. Change a field to rebuild the gears. The chat box accepts short commands:</p>
+<ul><li><code>one atomic layer thicker</code> or <code>make it 2 layers thinner</code></li><li><code>6 atoms thick</code> or <code>layers to 8</code></li><li><code>add more teeth to the gears</code> or <code>sun teeth to 30</code></li><li><code>4 planets</code></li><li><code>reset</code></li></ul>
+<p>One atomic layer is one diamond (001) plane. The crystal fixes the spacing at 89.175 pm, so the layer count is the free control and the spacing is not.</p>
+<p>The parser is rule-based and honest: it recognizes these commands and clamps each value to a stated limit. It returns the new state and says why. A command it does not understand changes nothing and returns help. <code>app/chat.py</code> holds the parser; <code>app/tests/test_chat_parser.py</code> tests it.</p>
+<p>The server binds to <code>127.0.0.1</code> only. It serves these routes:</p>
+<table><thead><tr><th>Route</th><th>Purpose</th></tr></thead><tbody><tr><td><code>GET /api/meta</code></td><td>The parameters, their display units, and their limits.</td></tr><tr><td><code>GET /api/build?&amp;lt;params&amp;gt;</code></td><td>Build a scene with the given parameters.</td></tr><tr><td><code>POST /api/chat</code></td><td>Parse a message, apply the change, and build.</td></tr><tr><td><code>GET /api/scene</code></td><td>The last generated <code>site/scene.json</code>.</td></tr></tbody></table>
+<p>When the engine rejects a value, for example a planet with too few teeth for the module, the reply states the engine error and keeps the old parameters.</p>
 <h2>Generate the documentation site</h2>
 <p>The docs generator reads every top-level markdown file and every <code>docs/*.md</code> file. It writes one HTML page for each file under <code>site/docs/</code>, plus an index. It uses the Python standard library only.</p>
 <pre><code class="language-sh">python3 scripts/build_docs_site.py</code></pre>
@@ -39,12 +53,12 @@
 <p>The check script verifies the scene counts, the viewer files, and the docs outputs.</p>
 <pre><code class="language-sh">python3 site/check.py</code></pre>
 <p>Expected output:</p>
-<pre><code>scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=2202
+<pre><code>scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=70070
 viewer ok: index.html, viewer.js, style.css present
 docs ok: 17 markdown inputs have HTML pages
 check: all checks passed</code></pre>
 <h2>Honesty caveats</h2>
-<ul><li>The label <strong>simulated / schematic</strong> is always visible in the viewer.</li><li>The scene is a snapshot of a simulated design. It is not a built device.</li><li>The atomistic layer is the zero configuration. The viewer does not animate the device transform. At the zero configuration the two agree.</li><li>The projection is a flat schematic. It is not a physical or space-filling render. Atom sizes are not to scale.</li><li>The viewer draws no bonds, no atom types, and no forces.</li><li>The gear pitch circles are design values. They are not measured.</li><li><code>site/scene.json</code>, <code>site/docs/</code>, and the viewer are generated or static. They are not part of <code>just verify</code>.</li><li>No medical claim is made. The output is a design hypothesis.</li></ul>
+<ul><li>The label <strong>simulated / schematic</strong> is always visible in the viewer.</li><li>The scene is a snapshot of a simulated design. It is not a built device.</li><li>The atomistic layer is the zero configuration. The viewer does not animate the device transform. At the zero configuration the two agree.</li><li>The projection is a flat schematic. It is not a physical or space-filling render. An atom dot is drawn at a fixed fraction of the carbon-carbon spacing, not at the true covalent radius.</li><li>The viewer draws no bonds and no forces. The gears are solid hydrogen-capped diamond, so the atom dots form a solid with the crystal thickness; the render is an illustration of that solid.</li><li>The gear pitch circles are design values. They are not measured.</li><li><code>site/scene.json</code>, <code>site/docs/</code>, and the viewer are generated or static. They are not part of <code>just verify</code>. The app parser has its own tests under <code>app/tests/</code>.</li><li>The chat parser is rule-based, not a language model. It accepts the listed commands only. It clamps every value and reports the engine error verbatim.</li><li>No medical claim is made. The output is a design hypothesis.</li></ul>
     </main>
     <footer>
       Generated from <code>docs/viewer.md</code> by

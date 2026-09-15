@@ -512,3 +512,36 @@ Template:
   and the engine error is shown verbatim. The panel and the chat show engine
   output, never an invented number. The parser has its own tests, and
   `just py-test` runs them.
+
+## ADR-0043: The gears are solid hydrogen-capped diamond
+- Status: accepted
+- Date: 2026-09-15
+- Context: The gears were a hollow extruded profile. A reader could not see the
+  diamond material, and the axial spacing was a free parameter, so the layers
+  were not a crystal.
+- Decision: Fill each gear with a real diamond lattice cut to the involute
+  profile in `crates/parts/src/diamond_solid.rs`. One atomic layer is one diamond
+  (001) plane, so the plane spacing is fixed at `a/4 = 8.9175e-11 m` and only the
+  layer count is a parameter. Bond the lattice at the C-C length, then cap every
+  carbon that has fewer than four neighbours with a hydrogen at the C-H length
+  (`1.09e-10 m`). The capping probe tests occupancy at the C-C length and scans
+  the 27 neighbouring grid cells, because a neighbour can sit on a cell
+  boundary.
+- Consequences: Every diamond carbon is exactly four-bonded and every hydrogen
+  exactly one-bonded; the default gear set has 32786 carbons and 37284 hydrogens
+  and obeys the diamond bond angle `109.4712 deg`. The layer spacing is no longer
+  a parameter. The mechanical carrier stays a degree-2 ring and is excluded from
+  the chemistry checks.
+
+## ADR-0044: The viewer level of detail switches on the atom spacing in pixels
+- Status: accepted
+- Date: 2026-09-15
+- Context: The user asked to see real atoms when zoomed in and the schematic when
+  zoomed out, with the two agreeing in size.
+- Decision: `site/viewer.js` measures the projected carbon-carbon spacing in
+  pixels. Above six pixels it draws depth-shaded atoms with the true radii; below
+  six it draws the exact involute schematic. Both use the same profile function
+  and the same world fit, so the switch does not move the geometry.
+- Consequences: The user sees atoms at close zoom and a clean profile at far
+  zoom. The schematic and the atom outline share one code path, so a change to
+  the profile shows in both.

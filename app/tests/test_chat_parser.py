@@ -53,15 +53,17 @@ def test_planet_count():
     assert command.changes == {"planet_count": 4.0}
 
 
-def test_layer_spacing_in_picometres():
+def test_layer_spacing_is_fixed_by_the_crystal():
     command = chat.parse("move the layers 20 pm apart")
-    assert command.intent == "spacing_set"
-    assert command.changes == {"layer_spacing_m": 2.0e-11}
+    assert command.intent is None
+    assert command.changes == {}
+    assert "crystal" in command.reply
 
 
-def test_layer_spacing_leading_words():
+def test_layer_spacing_command_explains_without_a_change():
     command = chat.parse("layer spacing 200 pm")
-    assert command.changes == {"layer_spacing_m": 2.0e-10}
+    assert command.changes == {}
+    assert "crystal" in command.reply
 
 
 def test_reset_returns_the_defaults():

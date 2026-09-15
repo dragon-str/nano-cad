@@ -3,8 +3,8 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **470 Rust tests plus
-106 Python, app and MCP tests pass** (14 Python tests skip without their optional
+Status: **pre-alpha.** The core is built end to end and **471 Rust tests plus
+93 Python and app tests pass** (14 Python tests skip without their optional
 dependency). The 9-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,
 van der Waals, electrostatic, periodic minimum image, velocity Verlet,
@@ -24,9 +24,10 @@ later-phase adapters are started: L0 quantum (PySCF), L3 continuum (structural
 and flow), L4 lumped system (SBML and CellML subsets), FL-01, FL-02 and NM-01,
 RDKit molecule I/O, and a respirocyte seal-leakage model. M8-02 generates the
 90-second video at
-`docs/media/nano-cad-gearbox.mp4`; its atom layer is the gear generator output
-in four verified atomic layers. A 3D viewer, a generated documentation site,
-and an interactive app with a live parameter panel and a chat interface live in
+`docs/media/nano-cad-gearbox.mp4`; its atom layer is the gear generator output,
+a solid hydrogen-capped diamond lattice in four verified atomic layers. A 3D
+viewer with zoom level of detail, a generated documentation site, and an
+interactive app with a live parameter panel and a chat interface live in
 `site/` and `app/`. See `docs/benchmarks.md`, `docs/validation.md`,
 `docs/viewer.md` and `docs/report.md`.
 

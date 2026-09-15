@@ -18,6 +18,12 @@ The viewer draws the three layers of a `nanocad.scene` document.
 The scale slider blends between the layers. The three checkboxes hide or show
 one layer. Drag to rotate, use the wheel to zoom, and double-click to reset.
 
+The atomistic layer has a level of detail. When the projected carbon-carbon
+spacing is six pixels or more, the viewer draws depth-shaded atoms at that
+spacing. Below six pixels it draws the exact involute schematic instead. Both
+use one profile function and one world fit, so the switch does not move the
+geometry.
+
 The scene is the default planetary design: 7 bodies, 6 joints, 3 planets, and
 an analytic sun-to-carrier gear ratio of 3.5.
 
@@ -30,8 +36,8 @@ path. The default path is `site/scene.json`.
 cargo run -p nanocad-jigs --example scene_json -- site/scene.json
 ```
 
-The command prints a one-line summary. The default output has 8340 atoms in
-four axial layers, `4.632e-10 m` thick. The file is a few MB. The example
+The command prints a one-line summary. The default output has 70070 atoms in
+four axial layers, `2.67525e-10 m` thick. The file is a few MB. The example
 creates the parent directory.
 
 The example also accepts `key=value` arguments that override the generator
@@ -83,16 +89,17 @@ python3 app/server.py --port 8000
 ```
 
 Then open `http://localhost:8000/`. The page shows numeric fields for the
-module, the tooth counts, the planet count, the number of atomic layers, and
-the layer spacing. Change a field to rebuild the gears. The chat box accepts
-short commands:
+module, the tooth counts, the planet count, and the number of atomic layers.
+Change a field to rebuild the gears. The chat box accepts short commands:
 
 - `one atomic layer thicker` or `make it 2 layers thinner`
 - `6 atoms thick` or `layers to 8`
 - `add more teeth to the gears` or `sun teeth to 30`
 - `4 planets`
-- `move the layers 20 pm apart`
 - `reset`
+
+One atomic layer is one diamond (001) plane. The crystal fixes the spacing at
+89.175 pm, so the layer count is the free control and the spacing is not.
 
 The parser is rule-based and honest: it recognizes these commands and clamps
 each value to a stated limit. It returns the new state and says why. A command
@@ -137,7 +144,7 @@ python3 site/check.py
 Expected output:
 
 ```
-scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=8340
+scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=70070
 viewer ok: index.html, viewer.js, style.css present
 docs ok: 17 markdown inputs have HTML pages
 check: all checks passed
@@ -150,10 +157,11 @@ check: all checks passed
 - The atomistic layer is the zero configuration. The viewer does not animate
   the device transform. At the zero configuration the two agree.
 - The projection is a flat schematic. It is not a physical or space-filling
-  render. Atom sizes are not to scale.
-- The viewer draws no bonds, no atom types, and no forces. The gears have a
-  stated axial thickness, so the atom dots form a thin solid; the render is
-  still schematic.
+  render. An atom dot is drawn at a fixed fraction of the carbon-carbon spacing,
+  not at the true covalent radius.
+- The viewer draws no bonds and no forces. The gears are solid
+  hydrogen-capped diamond, so the atom dots form a solid with the crystal
+  thickness; the render is an illustration of that solid.
 - The gear pitch circles are design values. They are not measured.
 - `site/scene.json`, `site/docs/`, and the viewer are generated or static. They
   are not part of `just verify`. The app parser has its own tests under

@@ -5,6 +5,7 @@
 //! crate holds SI positions and unit-suffixed names, following ADR-0003.
 #![forbid(unsafe_code)]
 
+pub mod diamond_solid;
 pub mod error;
 pub mod gear_profile;
 pub mod generator;

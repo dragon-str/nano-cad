@@ -492,3 +492,21 @@ Phase 6. All result notes cite the test that measures the number.
   - Verification: `app/tests/test_chat_parser.py` -> 12 pass. The server was
     smoke-tested on `127.0.0.1:8123`: `/api/meta`, `/api/build?layers=6`, and a
     `/api/chat` message all returned 200 and a new scene. See ADR-0041.
+- [x] **M9-06** Fill the gears with solid hydrogen-capped diamond and switch the
+  viewer between atoms and the schematic by zoom.
+  - Result: `crates/parts/src/diamond_solid.rs` fills each gear with a real
+    diamond lattice cut to the involute profile, bonds it at the C-C length, and
+    caps every under-coordinated carbon with a hydrogen at the C-H length. One
+    atomic layer is one diamond (001) plane, so the plane spacing is fixed at
+    `a/4` and `layer_spacing_m` is no longer a parameter. `site/viewer.js` shows
+    depth-shaded atoms when the projected C-C spacing is six pixels or more and
+    the exact involute schematic below that; both share one profile function and
+    one world fit. `app/chat.py` no longer edits the spacing and explains that
+    the crystal fixes it.
+  - Verification: `cargo test -p nanocad-parts` -> 88 pass, including
+    `every_solid_gear_atom_has_the_exact_diamond_valence`. `just verify` -> all
+    gates passed. `/opt/homebrew/bin/python3 scripts/check_atom_geometry.py`
+    -> PASS: 46618 C-C and 37284 C-H bonds, 0 outside tolerance, 0 carbon not
+    4-bonded, 0 hydrogen not 1-bonded, mean C-C-C angle 109.471221 deg. The app
+    smoke test on `127.0.0.1` returned 200 for `/api/meta`, `/api/build`, and
+    `/api/chat`. See ADR-0043 and ADR-0044.

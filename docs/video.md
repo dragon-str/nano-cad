@@ -81,12 +81,15 @@ schematic drawings of a three-dimensional gear set:
   renderer and the Rust generator share this one phase function. The ring is
   drawn static.
 - **The atomistic layer is the gears themselves as atoms.** The layer draws the
-  `PlanetaryGenerator` output: 8340 carbon atoms and 14481 bonds from
-  `site/scene.json` and `site/scene.bonds.json`, in four centered axial layers,
-  `4.632e-10 m` thick. The renderer maps the scene metres to pixels, so an atom
-  sits on the same involute profile that the schematic draws. It animates the
-  sun, the carrier, and the planets with the fixed-ring rates above. It draws
-  the layer only in shot 1 and shot 8, so the render stays fast.
+  `PlanetaryGenerator` output: 70070 atoms (32786 carbon and 37284 hydrogen) and
+  84061 bonds from `site/scene.json` and `site/scene.bonds.json`, in four
+  centered axial layers, `2.67525e-10 m` thick. Each gear is solid
+  hydrogen-capped diamond cut to the involute profile, so every carbon is
+  four-bonded and every hydrogen one-bonded. The renderer maps the scene metres
+  to pixels, so an atom sits on the same involute profile that the schematic
+  draws. It animates the sun, the carrier, and the planets with the fixed-ring
+  rates above. It draws the layer only in shot 1 and shot 8, so the render stays
+  fast.
 - **The atom layer passes an accuracy gate.** `scripts/check_atom_geometry.py`
   checks the layers. For the gear layer it asserts that each part's tip and root
   radii equal the exact involute profile: sun `5.375e-9` to `6.500e-9 m`,
@@ -121,11 +124,10 @@ generates.
   hypothesis. It does not imply a validated device.
 - **The gear outline is an exact involute profile, not a photorealistic
   render.** It is now the atom positions of the gear: the visible atoms sit on
-  the drawn profile. The `PlanetaryGenerator` is skeletal, so it places carbon
-  on the gear profile at run length, not a full diamond network. Its bond
-  lengths and angles therefore do not equal the diamond values. The
-  `DiamondGenerator` block is the material basis, and its geometry is verified
-  separately.
+  the drawn profile. Each gear is a solid hydrogen-capped diamond lattice with
+  the diamond bond lengths and angles, so the gear atoms obey the diamond
+  chemistry. The `DiamondGenerator` block is the material basis, and its
+  geometry is verified separately.
 - **The three-scale cross-fade is a schematic illustration.** The atomistic
   panel draws the real gear atoms. The interactive viewer is a separate page
   (`site/index.html` with `app/server.py`); the video draws its own panels.
@@ -158,6 +160,6 @@ generates.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The atom layer is the gear generator output. It has 8340 atoms and 14481
-  bonds in four axial layers, so it is a skeletal profile, not a dense diamond
-  solid.
+- The atom layer is the gear generator output. It has 70070 atoms and 84061
+  bonds in four axial layers, so it is a solid hydrogen-capped diamond lattice,
+  not a skeletal profile.

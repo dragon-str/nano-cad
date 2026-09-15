@@ -4,6 +4,7 @@ use std::ops::Range;
 use nanocad_model::{Atom, Bond, BondType, Element, Part, Topology};
 use nanocad_units::Unit;
 
+use crate::diamond_solid;
 use crate::error::PartError;
 use crate::gear_profile::GearProfile;
 use crate::generator::PartGenerator;
@@ -288,15 +289,6 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
         true,
         "number of atomic layers in the gear thickness",
     ),
-    ParameterSpec::new(
-        "layer_spacing_m",
-        Some(Unit::Metre),
-        1.544e-10,
-        0.1e-10,
-        5.0e-9,
-        false,
-        "separation between adjacent atomic layers in metres",
-    ),
 ];
 
 /// A generated planetary set with the atom ranges of each body.
@@ -339,7 +331,7 @@ impl PlanetaryGenerator {
         let samples_per_arc = resolved.require("samples_per_arc")? as usize;
         let carrier_offset_m = resolved.require("carrier_offset_m")?;
         let layers = resolved.require("layers")?.round() as usize;
-        let layer_spacing_m = resolved.require("layer_spacing_m")?;
+        let layer_spacing_m = diamond_solid::diamond_plane_spacing_m();
         if layers == 0 {
             return Err(PartError::InvalidGeometry(
                 "layer count must be at least one".to_owned(),
@@ -359,13 +351,14 @@ impl PlanetaryGenerator {
         let sun_profile = GearProfile::new(module_m, sun_teeth, pressure_angle_rad)?;
         let sun_points =
             trim_closed_loop(sun_profile.outline_points(samples_per_flank, samples_per_arc)?);
-        let sun_indices = add_extruded_loop(
+        let sun_indices = add_solid_gear(
             &mut topology,
             &sun_points,
+            false,
+            None,
             0.0,
             [0.0, 0.0],
             layers,
-            layer_spacing_m,
             "sun",
         )?;
         let sun_atoms = index_range(&sun_indices);
@@ -382,13 +375,14 @@ impl PlanetaryGenerator {
         for planet in 0..planet_count {
             let angle_rad = design.planet_angle_rad(planet) + half_tooth_rad;
             let center_m = design.planet_center_m(planet);
-            let indices = add_extruded_loop(
+            let indices = add_solid_gear(
                 &mut topology,
                 &planet_points,
+                false,
+                None,
                 angle_rad,
                 center_m,
                 layers,
-                layer_spacing_m,
                 "planet",
             )?;
             planet_atoms.push(index_range(&indices));
@@ -398,13 +392,18 @@ impl PlanetaryGenerator {
         let external_ring =
             trim_closed_loop(ring_profile.outline_points(samples_per_flank, samples_per_arc)?);
         let internal_ring = reflect_to_internal(&external_ring, design.ring_pitch_radius_m());
-        let ring_indices = add_extruded_loop(
+        // The ring is the diamond between the internal outline and an outer rim.
+        let ring_rim_m = design.ring_pitch_radius_m()
+            + 1.5 * module_m
+            + 4.0 * diamond_solid::DIAMOND_LATTICE_CONSTANT_M;
+        let ring_indices = add_solid_gear(
             &mut topology,
             &internal_ring,
+            true,
+            Some(ring_rim_m),
             0.0,
             [0.0, 0.0],
             layers,
-            layer_spacing_m,
             "ring",
         )?;
         let ring_atoms = index_range(&ring_indices);
@@ -491,69 +490,44 @@ fn reflect_to_internal(points_m: &[[f64; 2]], pitch_radius_m: f64) -> Vec<[f64; 
         .collect()
 }
 
-/// Extrudes a closed loop into `layers` parallel planes and bonds the layers.
+/// Fills a gear outline with a hydrogen-capped diamond solid.
 ///
-/// The gear thickness is `(layers - 1) * spacing_m`. Each plane holds one copy
-/// of the outline, and every atom bonds to the atom directly above it. This
-/// makes the axial atom count exact and controllable. The solid between the
-/// outline and the axis stays empty; the part is skeletal, not filled.
-fn add_extruded_loop(
+/// The gear is a real piece of diamond, not a skeletal loop. Every interior
+/// carbon has four bonds at the diamond bond length, and every surface carbon
+/// is capped with hydrogen. `internal` selects a ring: the solid is the area
+/// inside `outer_radius_m` and outside the outline.
+#[allow(clippy::too_many_arguments)]
+fn add_solid_gear(
     topology: &mut Topology,
-    points_m: &[[f64; 2]],
+    outline_m: &[[f64; 2]],
+    internal: bool,
+    outer_radius_m: Option<f64>,
     rotation_rad: f64,
     center_m: [f64; 2],
     layers: usize,
-    spacing_m: f64,
     atom_type: &str,
 ) -> Result<Vec<u32>, PartError> {
-    let layers = layers.max(1);
-    let half_span_m = 0.5 * (layers - 1) as f64 * spacing_m;
-    let mut all_indices = Vec::with_capacity(points_m.len() * layers);
-    let mut previous: Option<Vec<u32>> = None;
-    for layer in 0..layers {
-        let z_m = layer as f64 * spacing_m - half_span_m;
-        let indices = add_closed_loop(topology, points_m, z_m, rotation_rad, center_m, atom_type)?;
-        if let Some(previous_indices) = &previous {
-            for (lower, upper) in previous_indices.iter().zip(indices.iter()) {
-                topology.add_bond(Bond::new(*lower, *upper, 1, BondType::Single))?;
-            }
-        }
-        all_indices.extend_from_slice(&indices);
-        previous = Some(indices);
+    let local_m = diamond_solid::fill_profile(outline_m, internal, outer_radius_m, layers);
+    let mut indices = Vec::with_capacity(local_m.len());
+    for point in local_m {
+        indices.push(topology.add_atom(Atom::new(Element::CARBON, point, 0.0, atom_type)));
     }
-    Ok(all_indices)
-}
-
-/// Adds a closed loop of carbon atoms and bonds it around. Returns the indices.
-fn add_closed_loop(
-    topology: &mut Topology,
-    points_m: &[[f64; 2]],
-    z_m: f64,
-    rotation_rad: f64,
-    center_m: [f64; 2],
-    atom_type: &str,
-) -> Result<Vec<u32>, PartError> {
+    // Bond and cap in the gear's local frame. The tetrahedral direction
+    // lookup reads the crystal axes, so it must run before the rotation.
+    let capped = diamond_solid::bond_and_cap(topology, &indices)?;
+    indices.extend(capped);
     let (sin_rot, cos_rot) = rotation_rad.sin_cos();
-    let mut indices = Vec::with_capacity(points_m.len());
-    for point in points_m {
-        let x_m = point[0] * cos_rot - point[1] * sin_rot + center_m[0];
-        let y_m = point[0] * sin_rot + point[1] * cos_rot + center_m[1];
-        indices.push(topology.add_atom(Atom::new(
-            Element::CARBON,
-            [x_m, y_m, z_m],
-            0.0,
-            atom_type,
-        )));
-    }
-    let count = indices.len();
-    for position in 0..count {
-        let u = indices[position];
-        let v = indices[(position + 1) % count];
-        topology.add_bond(Bond::new(u, v, 1, BondType::Single))?;
+    for &index in &indices {
+        if let Some(point) = topology.position_m(index as usize) {
+            let x_m = point[0] * cos_rot - point[1] * sin_rot + center_m[0];
+            let y_m = point[0] * sin_rot + point[1] * cos_rot + center_m[1];
+            let z_m =
+                point[2] - 0.5 * (layers - 1) as f64 * diamond_solid::diamond_plane_spacing_m();
+            topology.set_position_m(index as usize, [x_m, y_m, z_m])?;
+        }
     }
     Ok(indices)
 }
-
 /// Adds a uniform closed ring of carbon atoms and bonds it around.
 fn add_ring(
     topology: &mut Topology,
@@ -828,7 +802,7 @@ mod tests {
     fn a_generator_reports_its_identity() {
         assert_eq!(PlanetaryGenerator.id(), "planetary");
         assert_eq!(PlanetaryGenerator.name(), "Planetary gear set");
-        assert_eq!(PlanetaryGenerator.parameters().len(), 10);
+        assert_eq!(PlanetaryGenerator.parameters().len(), 9);
     }
 
     /// The in-plane radius of the atom nearest a world direction, in metres.
@@ -902,9 +876,7 @@ mod tests {
 
     #[test]
     fn the_gear_thickness_is_the_axial_layer_span() {
-        let parameters = default_parameters()
-            .with("layers", 5.0)
-            .with("layer_spacing_m", 2.0e-10);
+        let parameters = default_parameters().with("layers", 5.0);
         let build = PlanetaryGenerator.build(&parameters).expect("generate");
         assert_eq!(
             build.part.metadata.get("layers").map(String::as_str),
@@ -912,16 +884,63 @@ mod tests {
         );
         assert_eq!(
             build.part.metadata.get("thickness_m").map(String::as_str),
-            Some("8.000000e-10")
+            Some("3.567000e-10")
         );
         let mut z_values: Vec<i64> = build
             .sun_atoms
             .clone()
+            .filter(|&index| build.part.topology.element(index) == Some(Element::CARBON))
             .filter_map(|index| build.part.topology.position_m(index))
             .map(|position_m| (position_m[2] * 1.0e10).round() as i64)
             .collect();
         z_values.sort_unstable();
         z_values.dedup();
-        assert_eq!(z_values, vec![-4, -2, 0, 2, 4]);
+        assert_eq!(z_values, vec![-2, -1, 0, 1, 2]);
+    }
+
+    #[test]
+    fn every_solid_gear_atom_has_the_exact_diamond_valence() {
+        let build = PlanetaryGenerator
+            .build(&default_parameters())
+            .expect("generate");
+        let topology = &build.part.topology;
+        let mut degree = vec![0usize; topology.atom_count()];
+        for bond in topology.bonds() {
+            degree[bond.u as usize] += 1;
+            degree[bond.v as usize] += 1;
+        }
+        let mut diamond: Vec<usize> = build.sun_atoms.clone().collect();
+        for range in &build.planet_atoms {
+            diamond.extend(range.clone());
+        }
+        diamond.extend(build.ring_atoms.clone());
+        let mut carbons = 0usize;
+        let mut hydrogens = 0usize;
+        for &index in &diamond {
+            match topology.element(index) {
+                Some(Element::CARBON) => {
+                    assert_eq!(
+                        degree[index], 4,
+                        "carbon {index} has degree {}",
+                        degree[index]
+                    );
+                    carbons += 1;
+                }
+                Some(Element::HYDROGEN) => {
+                    assert_eq!(
+                        degree[index], 1,
+                        "hydrogen {index} has degree {}",
+                        degree[index]
+                    );
+                    hydrogens += 1;
+                }
+                other => panic!("unexpected element {other:?} in a solid gear"),
+            }
+        }
+        assert!(carbons > 1000, "only {carbons} carbons in the solid gears");
+        assert!(
+            hydrogens > 1000,
+            "only {hydrogens} hydrogens in the solid gears"
+        );
     }
 }
