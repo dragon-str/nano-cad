@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nano-cad gearbox — 90-second video script and storyboard - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>nano-cad gearbox — 90-second video script and storyboard</h1>
+<p>This document is the M8-02 storyboard. It is the script and the storyboard for a 90-second video about the nano-cad planetary gearbox. The generated video is a real artifact at <code>docs/media/nano-cad-gearbox.mp4</code>. Regenerate it with <code>sh scripts/make_video.sh</code>. See <code>docs/video.md</code> for the usage, the honesty caveats, and what is generated rather than captured.</p>
+<p>The video is produced from this script by a renderer, not by a camera. The narration is synthetic text-to-speech. The visuals are schematic drawings. No physical device is filmed.</p>
+<blockquote><p><strong>Claim rule.</strong> The narration says "simulated". The narration never claims a physical device or a medical validation. Every number on screen cites its source in <code>docs/report.md</code> or <code>TASKS.md</code>.</p></blockquote>
+<h2>Format</h2>
+<table><thead><tr><th>Item</th><th>Value</th></tr></thead><tbody><tr><td>Total length</td><td>90 seconds</td></tr><tr><td>Aspect ratio</td><td>16:9</td></tr><tr><td>Frame rate</td><td>30 frames per second</td></tr><tr><td>Audio</td><td>Voice-over plus captions</td></tr><tr><td>Captions</td><td>Burned in, and also a sidecar <code>.srt</code></td></tr><tr><td>On-screen text</td><td>Monospace for commands and output</td></tr></tbody></table>
+<h2>Time budget</h2>
+<p>The shot list sums to 90 seconds.</p>
+<table><thead><tr><th>Shot</th><th>Start (s)</th><th>End (s)</th><th>Length (s)</th></tr></thead><tbody><tr><td>1. Cold open: the simulated gearbox</td><td>0</td><td>8</td><td>8</td></tr><tr><td>2. What this is: the five levels</td><td>8</td><td>19</td><td>11</td></tr><tr><td>3. Clean checkout and one command</td><td>19</td><td>29</td><td>10</td></tr><tr><td>4. The Rust gates pass</td><td>29</td><td>40</td><td>11</td></tr><tr><td>5. The agent generates the gear set</td><td>40</td><td>52</td><td>12</td></tr><tr><td>6. The agent assembles the L2 device</td><td>52</td><td>62</td><td>10</td></tr><tr><td>7. The agent measures the gear ratio</td><td>62</td><td>72</td><td>10</td></tr><tr><td>8. URDF and the three-scale scene</td><td>72</td><td>82</td><td>10</td></tr><tr><td>9. Benchmark timings</td><td>82</td><td>88</td><td>6</td></tr><tr><td>10. Caveats and closing card</td><td>88</td><td>90</td><td>2</td></tr><tr><td><strong>Total</strong></td><td></td><td></td><td><strong>90</strong></td></tr></tbody></table>
+<h2>Shot list and narration</h2>
+<h3>Shot 1 — Cold open: the simulated gearbox (0 to 8 s)</h3>
+<p><strong>Visual.</strong> A slow orbit of the three-scale scene. The atomistic layer cross-fades to the device layer. The gears turn. Overlay: <code>simulated</code>.</p>
+<p><strong>Narration.</strong> "This is a planetary gearbox. It is simulated at the atomic scale and at the device scale. The sun gear turns. The planets turn. The carrier turns."</p>
+<p><strong>On-screen text.</strong> <code>simulated</code>, <code>sun ratio 3.500000000</code>.</p>
+<p><strong>Source for the number.</strong> <code>TASKS.md</code> M6-06 and <code>docs/reproduce.md</code>.</p>
+<h3>Shot 2 — What this is: the five levels (8 to 19 s)</h3>
+<p><strong>Visual.</strong> An animated diagram of L0 to L1 to L2 to L3 to L4. L0, L3, and L4 are gray and marked "later". L1 and L2 light up.</p>
+<p><strong>Narration.</strong> "nano-cad is a multiscale design tool. It has five model levels. Only L1, the atomistic engine, and L2, the device layer, are implemented. L0, L3, and L4 are later work."</p>
+<p><strong>On-screen text.</strong> <code>L0 quantum — later</code>, <code>L1 atomistic — implemented</code>, <code>L2 device — implemented</code>, <code>L3 continuum — later</code>, <code>L4 system — later</code>.</p>
+<p><strong>Source.</strong> <code>ARCHITECTURE.md</code> and <code>docs/glossary.md</code>.</p>
+<h3>Shot 3 — Clean checkout and one command (19 to 29 s)</h3>
+<p><strong>Visual.</strong> A terminal in a clean directory. The narrator types the clone and then the reproduce command. The terminal prints the seven steps.</p>
+<p><strong>Command on screen.</strong></p>
+<pre><code class="language-sh">git clone https://github.com/dragon-str/nano-cad
+cd nano-cad
+just reproduce</code></pre>
+<p><strong>Narration.</strong> "A clean checkout reproduces the whole demo with one command. The first run needs network access. It downloads the build and test tools."</p>
+<p><strong>On-screen text.</strong> <code>7 steps</code>, <code>needs network on the first run</code>.</p>
+<p><strong>Source.</strong> <code>docs/reproduce.md</code> and <code>README.md</code>. The repository URL is &lt;https://github.com/dragon-str/nano-cad&gt;.</p>
+<h3>Shot 4 — The Rust gates pass (29 to 40 s)</h3>
+<p><strong>Visual.</strong> The terminal runs the test gates. The test summary lines scroll. The finite-difference tests are highlighted.</p>
+<p><strong>Commands on screen.</strong></p>
+<pre><code class="language-sh">cargo test --workspace
+sh scripts/reproduce.sh</code></pre>
+<p><strong>Narration.</strong> "Every force term has a finite-difference gradient test. Every integrator has an energy-conservation test. The tests are a merge gate, not a phase."</p>
+<p><strong>On-screen text.</strong> <code>bond 1.28e-17 N</code>, <code>angle 8.3e-18 N</code>, <code>total 5.7e-17 N</code>, <code>NVE drift 1.278e-5</code>.</p>
+<p><strong>Source for the numbers.</strong> <code>TASKS.md</code> M2-02, M2-03, M2-08, and M2-10.</p>
+<h3>Shot 5 — The agent generates the gear set (40 to 52 s)</h3>
+<p><strong>Visual.</strong> A split screen. Left: the JSON-RPC request. Right: an animation of the sun, planets, and ring appearing. The handle <code>part-1</code> appears.</p>
+<p><strong>Command on screen.</strong></p>
+<pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:2,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;generate_gear&quot;,&quot;arguments&quot;:{&quot;name&quot;:&quot;planetary&quot;,&quot;specs&quot;:{&quot;planet_count&quot;:3}}}}</code></pre>
+<p><strong>Narration.</strong> "The agent calls typed tools. It never edits coordinates. It asks for a planetary set with three planets. The generator returns the atoms and the bonds."</p>
+<p><strong>On-screen text.</strong> <code>sun 24</code>, <code>planet 18</code>, <code>ring 60</code>, <code>planets 3</code>.</p>
+<p><strong>Source.</strong> <code>TASKS.md</code> M4-06, <code>docs/three-scale.md</code>, and <code>mcp/README.md</code>.</p>
+<h3>Shot 6 — The agent assembles the L2 device (52 to 62 s)</h3>
+<p><strong>Visual.</strong> The JSON-RPC request, then the device view. Seven bodies and six joints appear. Revolute joints are marked with axis arrows.</p>
+<p><strong>Command on screen.</strong></p>
+<pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:3,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;assemble_planetary&quot;,&quot;arguments&quot;:{&quot;specs&quot;:{&quot;planet_count&quot;:3}}}}</code></pre>
+<p><strong>Narration.</strong> "The agent assembles the L2 device. The device has seven bodies and six joints. The constraints are position-level projections."</p>
+<p><strong>On-screen text.</strong> <code>7 bodies</code>, <code>6 joints</code>, <code>position-level projection</code>.</p>
+<p><strong>Source.</strong> <code>TASKS.md</code> M7-04, M8-01, and <code>mcp/tests/test_agent_demo.py</code>.</p>
+<h3>Shot 7 — The agent measures the gear ratio (62 to 72 s)</h3>
+<p><strong>Visual.</strong> The JSON-RPC request, then the running device with a live ratio readout. The readout settles at 3.500000000.</p>
+<p><strong>Command on screen.</strong></p>
+<pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:4,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;measure_gear_ratio&quot;,&quot;arguments&quot;:{&quot;assembly_id&quot;:&quot;assembly-1&quot;}}}</code></pre>
+<p><strong>Narration.</strong> "The agent drives the sun and measures the sun-to-carrier ratio. The analytic ratio is three point five. The simulated ratio is three point five. The relative error is one point one four six times ten to the minus ten."</p>
+<p><strong>On-screen text.</strong> <code>analytic 3.500000000</code>, <code>measured 3.500000000</code>, <code>relative error 1.146e-10</code>, <code>tolerance 1.0e-3</code>.</p>
+<p><strong>Source for the numbers.</strong> <code>TASKS.md</code> M6-06 and <code>docs/reproduce.md</code>.</p>
+<h3>Shot 8 — URDF and the three-scale scene (72 to 82 s)</h3>
+<p><strong>Visual.</strong> The JSON-RPC request, then the URDF tree. Next, the three-scale scene cross-fades from atoms to bodies to pitch circles.</p>
+<p><strong>Command on screen.</strong></p>
+<pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:5,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;export_urdf&quot;,&quot;arguments&quot;:{&quot;assembly_id&quot;:&quot;assembly-1&quot;}}}</code></pre>
+<p><strong>Narration.</strong> "The agent exports a URDF with seven links and six joints. The scene export carries three layers: atomistic, device, and coarse. A viewer animates across them."</p>
+<p><strong>On-screen text.</strong> <code>URDF: 7 links, 6 joints</code>, <code>atomistic</code>, <code>device</code>, <code>coarse</code>.</p>
+<p><strong>Source.</strong> <code>TASKS.md</code> M8-01, <code>docs/three-scale.md</code>, and <code>mcp/tests/test_agent_demo.py</code>.</p>
+<h3>Shot 9 — Benchmark timings (82 to 88 s)</h3>
+<p><strong>Visual.</strong> A terminal runs the benchmark. A bar chart draws the three means.</p>
+<p><strong>Commands on screen.</strong></p>
+<pre><code class="language-sh">cargo bench -p nanocad-engine
+./scripts/bench.sh</code></pre>
+<p><strong>Narration.</strong> "The engine benchmark runs on a periodic water box with six hundred atoms. The serial force pass takes six hundred eighty microseconds. The four-worker pass takes three hundred seventy-one microseconds."</p>
+<p><strong>On-screen text.</strong> <code>energy 680.97 us</code>, <code>serial 679.83 us</code>, <code>4-worker 370.97 us</code>, <code>Apple M4, 10 cores</code>.</p>
+<p><strong>Source for the numbers.</strong> <code>benchmarks/results/2026-09-14-engine-timings.txt</code> and <code>docs/benchmarks.md</code>.</p>
+<p><strong>Caveat on screen.</strong> <code>one host; your numbers will differ</code>.</p>
+<h3>Shot 10 — Caveats and closing card (88 to 90 s)</h3>
+<p><strong>Visual.</strong> Closing card. The title. The repository. The word <code>simulated</code>.</p>
+<p><strong>Narration.</strong> "All results are simulated. The OpenMM cross-check agrees to 1e-14 relative, but it is a coding check, not a physics validation. This is a design hypothesis, not a validated device."</p>
+<p><strong>On-screen text.</strong> <code>simulated</code>, <code>Apache-2.0</code>, <code>github.com/dragon-str/nano-cad</code>.</p>
+<p><strong>Source.</strong> <code>PLAN.md</code>, <code>README.md</code>, and <code>TASKS.md</code> M2-11. The repository URL is &lt;https://github.com/dragon-str/nano-cad&gt;.</p>
+<h2>Full command list</h2>
+<p>These commands appear on screen. They come from <code>docs/reproduce.md</code> and <code>mcp/tools.json</code>.</p>
+<table><thead><tr><th>Shot</th><th>Command or message</th><th>Source</th></tr></thead><tbody><tr><td>3</td><td><code>git clone https://github.com/dragon-str/nano-cad</code></td><td>repository URL</td></tr><tr><td>3</td><td><code>cd nano-cad</code></td><td>repository path</td></tr><tr><td>3</td><td><code>just reproduce</code></td><td><code>docs/reproduce.md</code>, <code>README.md</code></td></tr><tr><td>4</td><td><code>cargo test --workspace</code></td><td><code>docs/reproduce.md</code>, <code>justfile</code></td></tr><tr><td>4</td><td><code>sh scripts/reproduce.sh</code></td><td><code>docs/reproduce.md</code></td></tr><tr><td>4</td><td><code>python -m pytest mcp/tests/test_reproduce_script.py</code></td><td><code>docs/reproduce.md</code></td></tr><tr><td>4</td><td><code>python -m pytest mcp/tests</code></td><td><code>mcp/README.md</code></td></tr><tr><td>5</td><td>JSON-RPC <code>generate_gear</code></td><td><code>mcp/tools.json</code>, <code>mcp/README.md</code></td></tr><tr><td>5</td><td><code>initialize</code> handshake</td><td><code>mcp/README.md</code></td></tr><tr><td>6</td><td>JSON-RPC <code>assemble_planetary</code></td><td><code>mcp/tools.json</code></td></tr><tr><td>7</td><td>JSON-RPC <code>measure_gear_ratio</code></td><td><code>mcp/tools.json</code></td></tr><tr><td>8</td><td>JSON-RPC <code>export_urdf</code></td><td><code>mcp/tools.json</code></td></tr><tr><td>9</td><td><code>cargo bench -p nanocad-engine</code></td><td><code>docs/benchmarks.md</code></td></tr><tr><td>9</td><td><code>./scripts/bench.sh</code></td><td><code>docs/benchmarks.md</code></td></tr></tbody></table>
+<p>The JSON-RPC messages follow the shape in <code>mcp/README.md</code>:</p>
+<pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:1,&quot;method&quot;:&quot;initialize&quot;,&quot;params&quot;:{&quot;protocolVersion&quot;:&quot;2025-06-18&quot;,&quot;capabilities&quot;:{},&quot;clientInfo&quot;:{&quot;name&quot;:&quot;demo&quot;,&quot;version&quot;:&quot;1.0&quot;}}}</code></pre>
+<p>The handle names are <code>part-1</code>, <code>document-1</code>, and <code>assembly-1</code>. Source: <code>mcp/README.md</code>.</p>
+<h2>Assets needed</h2>
+<h3>Rendered assets</h3>
+<ul><li>A three-scale scene JSON file from <code>build_scene</code>. The default design has 7 bodies, 6 joints, and 3 planets. Source: <code>TASKS.md</code> M8-01.</li><li>A rendered orbit of the device layer, 8 seconds, 16:9.</li><li>A rendered cross-fade from the atomistic layer to the coarse layer, 4 seconds.</li><li>A rendered planetary set with 24 sun teeth, 18 planet teeth, and 60 ring teeth. Source: <code>docs/three-scale.md</code>.</li><li>A rendered running device with a live ratio readout.</li><li>A URDF tree graphic with 7 links and 6 joints. Source: <code>TASKS.md</code> M7-04.</li><li>A bar chart of the three benchmark means. Source: <code>benchmarks/results/2026-09-14-engine-timings.txt</code>.</li></ul>
+<h3>Screen recordings</h3>
+<ul><li>A clean terminal session for shot 3.</li><li>A terminal session of <code>cargo test --workspace</code> for shot 4.</li><li>A terminal session of <code>cargo bench -p nanocad-engine</code> for shot 9.</li><li>A terminal session that sends the JSON-RPC messages, or a screen-capture of an MCP client.</li></ul>
+<h3>Text and graphics</h3>
+<ul><li>The L0 to L4 animated diagram.</li><li>The count-up text: <code>1.28e-17 N</code>, <code>8.3e-18 N</code>, <code>5.7e-17 N</code>, <code>1.278e-5</code>.</li><li>The title card and the closing card.</li><li>The word <code>simulated</code>, shown in shots 1 and 10.</li><li>The caveat line <code>one host; your numbers will differ</code>.</li></ul>
+<h3>Audio</h3>
+<ul><li>Voice-over recording, 90 seconds.</li><li>Background music, low volume, royalty-free.</li><li>A caption file, <code>.srt</code>.</li></ul>
+<h3>Files and tools</h3>
+<ul><li>A terminal with a monospace font that shows <code>µs</code> and <code>e</code> notation.</li><li>The repository at a known commit.</li><li>A machine that can run <code>just reproduce</code>.</li></ul>
+<h2>Production caveats</h2>
+<ul><li>The video must not show a physical device. No physical device exists.</li><li>The video must label every result as simulated.</li><li>The video shows the repository URL &lt;https://github.com/dragon-str/nano-cad&gt;.</li><li>The benchmark shot must show the host and the caveat. The timings are from one Apple M4 host. Source: <code>docs/benchmarks.md</code>.</li><li>Shot 4 may state the OpenMM cross-check, but must call it a coding check, not a physics validation. Source: <code>benchmarks/results/openmm-water-crosscheck.txt</code>.</li><li>The disk estimate in shot 3 is an estimate. The sources do not give it.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/video-script.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

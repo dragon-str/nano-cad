@@ -29,7 +29,7 @@ pub use planetary::{
 };
 pub use registry::{gear_generator, gear_generators, generate_gear};
 pub use respirocyte::{
-    respirocyte_pump, respirocyte_rotor, respirocyte_tank, RespirocytePump,
+    respirocyte_pump, respirocyte_rotor, respirocyte_tank, AnnularGapFlow, RespirocytePump,
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
     RespirocyteTankGenerator,
 };

@@ -77,6 +77,11 @@ impl ElectrostaticTerm {
         &self.cutoff
     }
 
+    /// Returns the per-atom charges, in SI coulombs.
+    pub(crate) fn charges_c(&self) -> &[f64] {
+        &self.charges_c
+    }
+
     /// Returns the periodic box.
     pub fn periodic_box(&self) -> &PeriodicBox {
         &self.periodic_box

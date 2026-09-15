@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ARCHITECTURE.md - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>ARCHITECTURE.md</h1>
+<h2>Overview</h2>
+<p>The system has one headless core and five model levels. Every level reads and writes the parameter schema in <code>PARAMETERS.md</code>. The core serves three clients: the GUI, the CLI, and the agent.</p>
+<pre><code>L0 Quantum adapter      PySCF / xTB via ASE
+L1 Atomistic engine     our Rust engine (parts, forces, jigs)
+L2 Device layer         rigid bodies, joints, parameter handoff
+L3 Continuum adapter    external FEA / flow solvers
+L4 System layer         lumped ODE models (CellML / SBML interop)
+
+Core: document model, part generators, constraints, units, formats,
+      parameter store, Python API, CLI, MCP server</code></pre>
+<h2>Repo layout</h2>
+<pre><code>nano-cad/
+  AGENTS.md README.md PLAN.md ARCHITECTURE.md PARAMETERS.md TASKS.md DECISIONS.md
+  Cargo.toml                 # workspace
+  justfile                   # task runner: just verify, just bench
+  crates/
+    units/                   # SI units and conversions
+    model/                   # document model: atoms, bonds, topology, parts
+    format/                  # NCZ, MMP, XYZ, PDB, URDF
+    engine/                  # L1: cell list, pair list, forces, integrators
+    jigs/                    # anchors, motors, springs, rigid bodies, device, URDF, scene, nanomedicine
+    parts/                   # parametric generators: gear, nanotube, lattice, respirocyte
+    params/                  # parameter store, provenance, verification
+    python/                  # PyO3 bindings -&gt; the nanocad package
+    cli/                     # the nanocad command line
+  python/
+    nanocad/                 # the Python package and the L0/L3/L4 adapters
+    tests/
+  mcp/                       # stdio JSON-RPC MCP server wrapping the API
+  scripts/                   # reproducible shell entry points (bench, ...)
+  tests/
+    golden/                  # regression inputs and outputs
+  benchmarks/
+  docs/</code></pre>
+<h2>Data model</h2>
+<ul><li><code>Document</code>: versioned, serializable design graph. Immutable updates give free undo and redo. It is separate from simulation state.</li><li><code>Part</code>: a named collection of atoms and bonds, plus a material and metadata.</li><li><code>Assembly</code>: parts placed by transforms, with constraints and mates.</li><li><code>Atom</code>: element, position, charge, type. Stored in struct-of-arrays form.</li><li><code>Bond</code>: two atom indices, order, type.</li><li><code>Constraint</code> / <code>Jig</code>: anchor, motor, spring, thermostat, rigid body, joint.</li><li><code>Quantity</code>: value plus unit. Internally SI.</li></ul>
+<p>Topology uses indices, never pointers. Positions and forces are contiguous arrays. Pair lists are flat 32-bit index arrays.</p>
+<h2>L1 engine</h2>
+<ul><li>Cell list on a grid, plus a Verlet skin. Rebuild the pair list when any atom moves more than half the skin.</li><li>Flat pair list of <code>u32</code> indices for cache locality.</li><li>Force terms: bond stretch, angle bend, torsion, out-of-plane, van der Waals (Buckingham or MM4), electrostatic with a cutoff.</li><li>Integrators: velocity Verlet. Thermostats: Langevin and Berendsen.</li><li>Minimizer: conjugate gradient, then L-BFGS near the minimum.</li><li>Parallel: multi-threaded force accumulation with per-thread buffers and a reduction. Provide a deterministic reduction mode for reproducible runs.</li><li>SIMD: start scalar. Add portable SIMD after correctness.</li></ul>
+<h2>L2 device layer</h2>
+<ul><li>Rigid-body dynamics with position and orientation integration.</li><li>Joints: revolute, prismatic, fixed, gear coupling.</li><li>Parameters come from L1 by the extraction pipeline in <code>PARAMETERS.md</code>.</li><li>Export a multibody model to URDF for external tools.</li></ul>
+<h2>Stack and dependencies</h2>
+<table><thead><tr><th>Component</th><th>Choice</th><th>License</th><th>Why</th></tr></thead><tbody><tr><td>Core language</td><td>Rust</td><td>Apache-2.0 (ours)</td><td>safety, speed, threads</td></tr><tr><td>Python bindings</td><td>PyO3 / maturin</td><td>Apache-2.0 / MIT</td><td>scripting and science interop</td></tr><tr><td>Standard MD and GPU</td><td>OpenMM</td><td>MIT</td><td>solved problem, GPU on Apple</td></tr><tr><td>QM and file interop</td><td>ASE</td><td>LGPL-2.1+</td><td>one interface to many codes</td></tr><tr><td>Quantum</td><td>PySCF or xTB</td><td>BSD / LGPL-3.0</td><td>L0 work</td></tr><tr><td>Chemistry and formats</td><td>RDKit</td><td>BSD</td><td>molecules and file formats</td></tr><tr><td>Linear algebra</td><td>nalgebra / faer</td><td>Apache-2.0 / MIT</td><td>dense and sparse</td></tr><tr><td>Task runner</td><td>just</td><td>MIT</td><td>simple commands</td></tr><tr><td>Python lint</td><td>ruff, black</td><td>MIT</td><td>fast, standard</td></tr><tr><td>Python build</td><td>maturin</td><td>MIT/Apache-2.0</td><td>PyO3 packaging</td></tr><tr><td>Rust errors</td><td>thiserror</td><td>MIT/Apache-2.0</td><td>library error types</td></tr><tr><td>Benchmarks</td><td>criterion</td><td>MIT/Apache-2.0</td><td>statistics for timings</td></tr><tr><td>Serialization</td><td>serde, serde_json</td><td>MIT/Apache-2.0</td><td>parameter and NCZ metadata</td></tr><tr><td>NCZ container</td><td>zip 7.2.0</td><td>MIT</td><td>NCZ is a stored zip archive</td></tr><tr><td>PyO3</td><td>pyo3 0.29 (optional, <code>python</code> feature)</td><td>MIT/Apache-2.0</td><td>M7-01 bindings, abi3-py3.10</td></tr></tbody></table>
+<p><code>zip</code> is pinned to 7.x for MSRV 1.83; zip 8 needs Rust 1.88. <code>pyo3</code> is an optional dependency behind the <code>python</code> feature, so the default Rust gates do not need a Python interpreter (ADR-0016). No linear-algebra dependency is used yet: the jigs device code hand-rolls <code>[f64; 3]</code> and a quaternion.</p>
+<p>Check every new dependency for its license. Record it here. Keep LGPL use dynamic-link only.</p>
+<h2>Interfaces</h2>
+<p>One headless API. Three clients call it.</p>
+<p>Agent tools exposed through MCP (all typed):</p>
+<ul><li><code>create_part</code>, <code>generate_gear</code>, <code>generate_nanotube</code>, <code>generate_lattice</code></li><li><code>relax</code>, <code>run_md</code>, <code>minimize</code></li><li><code>add_jig</code>, <code>add_constraint</code>, <code>assemble</code></li><li><code>measure</code>, <code>extract_parameters</code></li><li><code>convert_units</code>, <code>save</code>, <code>load</code>, <code>list_parts</code>, <code>export</code></li></ul>
+<p>The agent calls these tools. It never edits raw coordinates.</p>
+<h2>Formats</h2>
+<ul><li><code>NCZ</code>: native, versioned. A zip of JSON metadata and binary arrays. Little endian. A header carries the schema version.</li><li><code>MMP</code>: import and export for NanoEngineer interop.</li><li><code>XYZ</code>, <code>PDB</code>: through ASE.</li><li><code>URDF</code>: export for the device level.</li><li><code>CellML</code>, <code>SBML</code>: later, for L4.</li></ul>
+<h2>Compute and performance strategy</h2>
+<ul><li>Correct scalar code first, with a benchmark and reference outputs.</li><li>Then flat arrays and structure-of-arrays.</li><li>Then multi-thread the force loop.</li><li>Then add SIMD.</li><li>Then consider the GPU through OpenMM for standard systems.</li><li>Numerical type: <code>f64</code> for accumulation and correctness. <code>f32</code> only behind a measured flag.</li></ul>
+<h2>Agent interface</h2>
+<ul><li>The Python package exposes the tools.</li><li>An MCP server wraps the package.</li><li>The agent gives an intent in words. The tool layer converts it to typed operations. The core validates every result.</li><li>The agent must show its work and its uncertainty. Treat output as a proposal.</li></ul>
+<h2>Verification architecture</h2>
+<ul><li>Finite-difference gradient test per force term, in <code>cargo test</code>.</li><li>Energy-conservation test for each integrator, NVE drift within a set bound.</li><li>Reference benchmarks against OpenMM and GROMACS CPU.</li><li>Golden regression files with hashes for import and export.</li><li>Sanitizers for any C or FFI boundary.</li><li>A public benchmark page with timing and hardware.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>ARCHITECTURE.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

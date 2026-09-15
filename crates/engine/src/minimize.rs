@@ -6,6 +6,12 @@ const CURVATURE_C2: f64 = 0.4;
 const MAX_LINE_SEARCH_ITERATIONS: usize = 80;
 const MAX_ALPHA_M: f64 = 1.0e-8;
 
+/// The number of correction pairs the L-BFGS stage keeps.
+///
+/// The memory is fixed at ten pairs, as `ARCHITECTURE.md` requires. Older
+/// pairs are dropped first.
+const LBFGS_MEMORY: usize = 10;
+
 /// Options for the conjugate-gradient minimizer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MinimizeOptions {
@@ -40,6 +46,22 @@ pub struct MinimizeResult {
     pub converged: bool,
 }
 
+/// The minimization algorithm to run.
+///
+/// [`MinimizeMethod::ConjugateGradientThenLbfgs`] splits the iteration budget
+/// in half: the conjugate-gradient stage runs first, and the L-BFGS stage
+/// continues from its result. A converged first stage skips the second stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MinimizeMethod {
+    /// Nonlinear conjugate gradient only.
+    ConjugateGradient,
+    /// Limited-memory BFGS only, with ten correction pairs.
+    Lbfgs,
+    /// Conjugate gradient first, then L-BFGS from the result.
+    #[default]
+    ConjugateGradientThenLbfgs,
+}
+
 /// Minimizes the total potential of a system in place.
 ///
 /// The method is nonlinear conjugate gradient with a Polak-Ribiere+ update and
@@ -50,7 +72,64 @@ pub struct MinimizeResult {
 /// The function returns the final energy, the final gradient norm, the
 /// iteration count, and whether the gradient norm reached the tolerance. An
 /// invalid option or a line-search failure returns an error. It never panics.
+///
+/// This call keeps the original conjugate-gradient behavior. Use
+/// [`minimize_with`] to select L-BFGS or the conjugate-gradient-then-L-BFGS
+/// hybrid.
 pub fn minimize(
+    system: &mut System,
+    positions_m: &mut [f64],
+    options: &MinimizeOptions,
+) -> Result<MinimizeResult, EngineError> {
+    minimize_with(
+        system,
+        positions_m,
+        options,
+        MinimizeMethod::ConjugateGradient,
+    )
+}
+
+/// Minimizes the total potential of a system in place with a selected method.
+///
+/// See [`minimize`] for the contract. [`MinimizeMethod::Lbfgs`] uses the
+/// limited-memory BFGS two-loop recursion with `m = 10` and the same
+/// strong-Wolfe line search. The step is normalized before the search, so the
+/// line-search step is a length in metres.
+pub fn minimize_with(
+    system: &mut System,
+    positions_m: &mut [f64],
+    options: &MinimizeOptions,
+    method: MinimizeMethod,
+) -> Result<MinimizeResult, EngineError> {
+    match method {
+        MinimizeMethod::ConjugateGradient => run_conjugate_gradient(system, positions_m, options),
+        MinimizeMethod::Lbfgs => run_lbfgs(system, positions_m, options),
+        MinimizeMethod::ConjugateGradientThenLbfgs => {
+            let cg_budget = (options.max_iterations / 2).max(1);
+            let cg_options = MinimizeOptions {
+                max_iterations: cg_budget,
+                ..*options
+            };
+            let cg = run_conjugate_gradient(system, positions_m, &cg_options)?;
+            if cg.converged || cg_budget >= options.max_iterations {
+                return Ok(cg);
+            }
+            let lbfgs_options = MinimizeOptions {
+                max_iterations: options.max_iterations - cg_budget,
+                ..*options
+            };
+            let lbfgs = run_lbfgs(system, positions_m, &lbfgs_options)?;
+            Ok(MinimizeResult {
+                energy_j: lbfgs.energy_j,
+                gradient_norm_n: lbfgs.gradient_norm_n,
+                iterations: cg_budget + lbfgs.iterations,
+                converged: lbfgs.converged,
+            })
+        }
+    }
+}
+
+fn run_conjugate_gradient(
     system: &mut System,
     positions_m: &mut [f64],
     options: &MinimizeOptions,
@@ -140,6 +219,161 @@ pub fn minimize(
         iterations,
         converged,
     })
+}
+
+fn run_lbfgs(
+    system: &mut System,
+    positions_m: &mut [f64],
+    options: &MinimizeOptions,
+) -> Result<MinimizeResult, EngineError> {
+    validate_options(options)?;
+    if positions_m.len() != 3 * system.atom_count() {
+        return Err(EngineError::BufferSizeMismatch {
+            len: positions_m.len(),
+            expected: 3 * system.atom_count(),
+        });
+    }
+
+    let coordinate_count = positions_m.len();
+    let (mut energy_j, mut gradient) = system.energy_and_gradient_j(positions_m)?;
+    let mut gradient_norm_n = infinity_norm(&gradient);
+    if gradient_norm_n <= options.gradient_tolerance_n {
+        return Ok(MinimizeResult {
+            energy_j,
+            gradient_norm_n,
+            iterations: 0,
+            converged: true,
+        });
+    }
+
+    let mut step_history: Vec<Vec<f64>> = Vec::new();
+    let mut gradient_history: Vec<Vec<f64>> = Vec::new();
+    let mut rho_history: Vec<f64> = Vec::new();
+    let mut iterations = 0;
+    let mut converged = false;
+
+    while iterations < options.max_iterations {
+        iterations += 1;
+        let mut direction =
+            two_loop_recursion(&gradient, &step_history, &gradient_history, &rho_history);
+        for value in &mut direction {
+            *value = -*value;
+        }
+
+        let mut slope = dot(&gradient, &direction);
+        if !slope.is_finite() || slope >= 0.0 {
+            step_history.clear();
+            gradient_history.clear();
+            rho_history.clear();
+            direction.copy_from_slice(&gradient);
+            for value in &mut direction {
+                *value = -*value;
+            }
+            slope = dot(&gradient, &direction);
+        }
+
+        let norm = l2_norm(&direction);
+        if norm <= 0.0 {
+            break;
+        }
+        let search_direction: Vec<f64> = direction.iter().map(|value| value / norm).collect();
+        let slope_unit = slope / norm;
+
+        let outcome = line_search(
+            system,
+            positions_m,
+            &search_direction,
+            energy_j,
+            slope_unit,
+            options.initial_step_m,
+            iterations,
+        )?;
+
+        let step: Vec<f64> = search_direction
+            .iter()
+            .map(|value| outcome.alpha_m * value)
+            .collect();
+        let previous_gradient = std::mem::replace(&mut gradient, outcome.gradient);
+        for coordinate in 0..coordinate_count {
+            positions_m[coordinate] += step[coordinate];
+        }
+        energy_j = outcome.energy_j;
+
+        let mut gradient_change = vec![0.0; coordinate_count];
+        for coordinate in 0..coordinate_count {
+            gradient_change[coordinate] = gradient[coordinate] - previous_gradient[coordinate];
+        }
+        let curvature = dot(&step, &gradient_change);
+        if curvature.is_finite() && curvature > 0.0 {
+            if step_history.len() == LBFGS_MEMORY {
+                step_history.remove(0);
+                gradient_history.remove(0);
+                rho_history.remove(0);
+            }
+            rho_history.push(1.0 / curvature);
+            step_history.push(step);
+            gradient_history.push(gradient_change);
+        }
+
+        gradient_norm_n = infinity_norm(&gradient);
+        if gradient_norm_n <= options.gradient_tolerance_n {
+            converged = true;
+            break;
+        }
+    }
+
+    Ok(MinimizeResult {
+        energy_j,
+        gradient_norm_n,
+        iterations,
+        converged,
+    })
+}
+
+/// Runs the L-BFGS two-loop recursion.
+///
+/// The result is `H_k g_k`, where `H_k` is the limited-memory inverse Hessian
+/// approximation. The caller negates it to get the descent direction. The
+/// initial Hessian scale uses the newest correction pair.
+fn two_loop_recursion(
+    gradient: &[f64],
+    step_history: &[Vec<f64>],
+    gradient_history: &[Vec<f64>],
+    rho_history: &[f64],
+) -> Vec<f64> {
+    let mut q = gradient.to_vec();
+    let pair_count = step_history.len();
+    let mut alpha = vec![0.0; pair_count];
+    for index in (0..pair_count).rev() {
+        alpha[index] = rho_history[index] * dot(&step_history[index], &q);
+        for coordinate in 0..q.len() {
+            q[coordinate] -= alpha[index] * gradient_history[index][coordinate];
+        }
+    }
+
+    let scale = if pair_count > 0 {
+        let newest = pair_count - 1;
+        let curvature = dot(&step_history[newest], &gradient_history[newest]);
+        let gradient_norm_sq_m2 = dot(&gradient_history[newest], &gradient_history[newest]);
+        if gradient_norm_sq_m2 > 0.0 {
+            curvature / gradient_norm_sq_m2
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    for value in &mut q {
+        *value *= scale;
+    }
+
+    for index in 0..pair_count {
+        let beta = rho_history[index] * dot(&gradient_history[index], &q);
+        for coordinate in 0..q.len() {
+            q[coordinate] += step_history[index][coordinate] * (alpha[index] - beta);
+        }
+    }
+    q
 }
 
 struct LineSearchOutcome {
@@ -424,5 +658,110 @@ mod tests {
         assert!(result.energy_j < perturbed_energy_j);
         assert!(result.gradient_norm_n <= options.gradient_tolerance_n);
         assert!(result.converged);
+    }
+
+    fn stiff_chain(positions_m: &[f64], masses_kg: &[f64]) -> System {
+        use crate::angle_bend::{AngleBendParams, AngleBendTerm};
+        use crate::bond_stretch::BondStretchTerm;
+
+        let atom_count = positions_m.len() / 3;
+        let mut system = System::with_masses_kg(atom_count, masses_kg).expect("valid masses");
+        let mut bonds = BondStretchTerm::new();
+        for [u, v] in [[0u32, 1u32], [1, 2], [2, 3], [3, 4], [4, 5]] {
+            bonds.add_bond(u, v, 1.0e7, 1.5e-10).expect("valid bond");
+        }
+        system.set_bond_stretch(bonds).expect("fits");
+        let triples = [[0u32, 1u32, 2u32], [1, 2, 3], [2, 3, 4], [3, 4, 5]];
+        let params: Vec<AngleBendParams> = triples
+            .iter()
+            .map(|_| AngleBendParams::new(5.0e-17, 1.9))
+            .collect();
+        let angles = AngleBendTerm::from_triples(&triples, &params).expect("valid angles");
+        system.set_angle_bend(angles).expect("fits");
+        system
+    }
+
+    fn stiff_start_m() -> Vec<f64> {
+        let positions_m = small_molecule_positions_m();
+        let mut perturbed_m = positions_m.clone();
+        let mut rng = crate::test_support::Rng::new(0x571FF);
+        for value in &mut perturbed_m {
+            *value += rng.symmetric(6.0e-11);
+        }
+        perturbed_m
+    }
+
+    #[test]
+    fn lbfgs_reaches_a_tighter_gradient_than_conjugate_gradient_on_a_stiff_system() {
+        let masses = vec![CARBON_MASS_KG; 6];
+        let mut system = stiff_chain(&small_molecule_positions_m(), &masses);
+        let options = MinimizeOptions {
+            max_iterations: 40,
+            gradient_tolerance_n: 1.0e-24,
+            initial_step_m: 1.0e-14,
+        };
+
+        let mut cg_positions_m = stiff_start_m();
+        let cg = minimize_with(
+            &mut system,
+            &mut cg_positions_m,
+            &options,
+            MinimizeMethod::ConjugateGradient,
+        )
+        .expect("valid minimization");
+
+        let mut lbfgs_positions_m = stiff_start_m();
+        let lbfgs = minimize_with(
+            &mut system,
+            &mut lbfgs_positions_m,
+            &options,
+            MinimizeMethod::Lbfgs,
+        )
+        .expect("valid minimization");
+
+        println!(
+            "stiff system: conjugate gradient {} N in {} iterations, L-BFGS {} N in {} iterations",
+            cg.gradient_norm_n, cg.iterations, lbfgs.gradient_norm_n, lbfgs.iterations
+        );
+        assert!(
+            lbfgs.gradient_norm_n < cg.gradient_norm_n,
+            "L-BFGS {} N is not below conjugate gradient {} N",
+            lbfgs.gradient_norm_n,
+            cg.gradient_norm_n
+        );
+    }
+
+    #[test]
+    fn the_hybrid_method_converges_on_a_standard_small_molecule() {
+        let positions_m = small_molecule_positions_m();
+        let masses = vec![CARBON_MASS_KG; 6];
+        let mut system = full_system(&positions_m, &masses);
+        let start_energy_j = system.energy_j(&positions_m).expect("valid");
+
+        let mut perturbed_m = positions_m.clone();
+        let mut rng = crate::test_support::Rng::new(0x2B1A5);
+        for value in &mut perturbed_m {
+            *value += rng.symmetric(2.0e-12);
+        }
+        let perturbed_energy_j = system.energy_j(&perturbed_m).expect("valid");
+        let options = MinimizeOptions {
+            max_iterations: 500,
+            gradient_tolerance_n: 1.0e-14,
+            initial_step_m: 1.0e-13,
+        };
+        let result = minimize_with(
+            &mut system,
+            &mut perturbed_m,
+            &options,
+            MinimizeMethod::ConjugateGradientThenLbfgs,
+        )
+        .expect("valid minimization");
+        println!(
+            "hybrid small molecule: start {start_energy_j:e} J, perturbed {perturbed_energy_j:e} J, final {:e} J, gradient {:e} N, iterations {}",
+            result.energy_j, result.gradient_norm_n, result.iterations
+        );
+        assert!(result.converged);
+        assert!(result.energy_j < perturbed_energy_j);
+        assert!(result.gradient_norm_n <= options.gradient_tolerance_n);
     }
 }

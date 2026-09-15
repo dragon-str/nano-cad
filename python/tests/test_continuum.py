@@ -319,3 +319,189 @@ def test_voxelize_rejects_bad_input() -> None:
         ca.voxelize_atom_list(["Xx"], [0.0, 0.0, 0.0])
     with pytest.raises(TypeError):
         ca.voxelize_part(object())
+
+
+PLATE_LENGTH_M = 1.0
+PLATE_HEIGHT_M = 0.05
+PLATE_THICKNESS_M = 1.0
+PLATE_MODULUS_PA = 200.0e9
+PLATE_POISSON = 0.3
+PLATE_TIP_LOAD_N = 100.0
+
+CHANNEL_2D_HEIGHT_M = 1.0e-3
+CHANNEL_2D_LENGTH_M = 1.0
+CHANNEL_2D_DROP_PA = 1.0
+
+
+def test_solve_plane_stress_cantilever_matches_a_refined_reference() -> None:
+    pytest.importorskip("scipy")
+    result = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+        elements_x=160,
+    )
+    assert result["method"] == "plane_stress_q4_fem_scipy"
+    assert result["validation"] == "cross-checked"
+    assert result["converged"] is True
+    assert result["relative_error"] < 1.0e-2
+    assert result["reference_tip_deflection_m"] > result["tip_deflection_m"]
+
+
+def test_solve_plane_stress_cantilever_approaches_euler_bernoulli() -> None:
+    pytest.importorskip("scipy")
+    result = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+        elements_x=160,
+    )
+    assert result["relative_error_vs_euler_bernoulli"] < 1.0e-2
+    assert result["tip_deflection_m"] < result["analytic_tip_deflection_m"]
+
+
+def test_solve_plane_stress_cantilever_converges_with_the_mesh() -> None:
+    pytest.importorskip("scipy")
+    coarse = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+        elements_x=80,
+        refinement=1,
+    )
+    fine = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+        elements_x=160,
+        refinement=1,
+    )
+    assert (
+        fine["relative_error_vs_euler_bernoulli"]
+        < coarse["relative_error_vs_euler_bernoulli"]
+    )
+
+
+def test_solve_plane_stress_cantilever_stress_matches_the_beam() -> None:
+    pytest.importorskip("scipy")
+    result = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+        elements_x=320,
+    )
+    relative = (
+        abs(result["max_axial_stress_pa"] - result["analytic_max_axial_stress_pa"])
+        / result["analytic_max_axial_stress_pa"]
+    )
+    assert relative < 2.0e-2
+
+
+def test_solve_plane_stress_cantilever_rejects_bad_input() -> None:
+    with pytest.raises(ValueError):
+        ca.solve_plane_stress_cantilever(
+            -1.0, PLATE_HEIGHT_M, PLATE_THICKNESS_M, PLATE_MODULUS_PA, 0.3, 1.0
+        )
+    with pytest.raises(ValueError):
+        ca.solve_plane_stress_cantilever(
+            PLATE_LENGTH_M,
+            PLATE_HEIGHT_M,
+            PLATE_THICKNESS_M,
+            PLATE_MODULUS_PA,
+            0.6,
+            1.0,
+        )
+
+
+def test_solve_poiseuille_2d_matches_the_parabola() -> None:
+    pytest.importorskip("scipy")
+    result = ca.solve_poiseuille_2d(
+        CHANNEL_2D_LENGTH_M,
+        CHANNEL_2D_HEIGHT_M,
+        WATER_VISCOSITY_PA_S,
+        CHANNEL_2D_DROP_PA,
+        elements_x=16,
+        elements_y=64,
+    )
+    assert result["method"] == "poiseuille_2d_stokes_finite_difference_scipy"
+    assert result["validation"] == "cross-checked"
+    assert result["converged"] is True
+    assert result["relative_error"] < 1.0e-3
+    assert result["max_velocity_m_s"] == pytest.approx(
+        result["analytic_max_velocity_m_s"], rel=1.0e-3
+    )
+    assert result["mean_velocity_m_s"] == pytest.approx(
+        result["analytic_mean_velocity_m_s"], rel=1.0e-3
+    )
+    profile_m_s = np.asarray(result["velocity_profile_m_s"])
+    assert profile_m_s[0] == pytest.approx(profile_m_s[-1], rel=1.0e-12)
+
+
+def test_solve_poiseuille_2d_converges_second_order() -> None:
+    pytest.importorskip("scipy")
+    coarse = ca.solve_poiseuille_2d(
+        CHANNEL_2D_LENGTH_M,
+        CHANNEL_2D_HEIGHT_M,
+        WATER_VISCOSITY_PA_S,
+        CHANNEL_2D_DROP_PA,
+        elements_x=16,
+        elements_y=32,
+    )
+    fine = ca.solve_poiseuille_2d(
+        CHANNEL_2D_LENGTH_M,
+        CHANNEL_2D_HEIGHT_M,
+        WATER_VISCOSITY_PA_S,
+        CHANNEL_2D_DROP_PA,
+        elements_x=16,
+        elements_y=64,
+    )
+    ratio = coarse["relative_error"] / fine["relative_error"]
+    assert 3.5 < ratio < 4.5
+
+
+def test_solve_poiseuille_2d_needs_a_mesh() -> None:
+    with pytest.raises(ValueError):
+        ca.solve_poiseuille_2d(1.0, 1.0e-3, 1.0e-3, 1.0, elements_y=1)
+
+
+def test_continuum_falls_back_without_scipy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ca, "_SCIPY_AVAILABLE", False)
+    plate = ca.solve_plane_stress_cantilever(
+        PLATE_LENGTH_M,
+        PLATE_HEIGHT_M,
+        PLATE_THICKNESS_M,
+        PLATE_MODULUS_PA,
+        PLATE_POISSON,
+        PLATE_TIP_LOAD_N,
+    )
+    assert plate["validation"] == "unverified"
+    assert plate["method"] == "plane_stress_cantilever_closed_form_fallback"
+    assert plate["tip_deflection_m"] == pytest.approx(
+        plate["analytic_tip_deflection_m"], rel=1.0e-12
+    )
+    flow = ca.solve_poiseuille_2d(
+        CHANNEL_2D_LENGTH_M,
+        CHANNEL_2D_HEIGHT_M,
+        WATER_VISCOSITY_PA_S,
+        CHANNEL_2D_DROP_PA,
+    )
+    assert flow["validation"] == "unverified"
+    assert flow["method"] == "poiseuille_2d_closed_form_fallback"
+    assert flow["velocity_profile_m_s"] == pytest.approx(
+        flow["analytic_velocity_profile_m_s"], rel=1.0e-12
+    )

@@ -329,3 +329,117 @@ Template:
 - Consequences: The host is a single-sphere Stokes model with no wall
   correction, no Brownian noise, and no hydrodynamic interaction. The energy
   balance closes only to the integrator order.
+
+## ADR-0029: L-BFGS is a second minimization stage with explicit selection
+- Status: accepted
+- Date: 2026-09-14
+- Context: Conjugate gradient alone stalls on stiff systems. ENG-01 needs a
+  tighter gradient without changing the default behavior of `minimize`.
+- Decision: Add `MinimizeMethod` and `minimize_with` in
+  `crates/engine/src/minimize.rs`. `ConjugateGradientThenLbfgs` is the new
+  default for the new entry point. The old `minimize` stays conjugate-gradient.
+- Consequences: The callers choose the method. The hybrid reaches 5.9049e-15 N
+  on the stiff test. The library keeps one behavior change, at a named call.
+
+## ADR-0030: The parallel force reduction uses a canonical pair-block partition
+- Status: accepted
+- Date: 2026-09-14
+- Context: A naive parallel reduction was non-deterministic, so tests and
+  simulations could not repeat. ENG-02 needs both determinism and speed.
+- Decision: Partition the pair list into canonical blocks and sum the same
+  per-block partials in serial and in parallel. The serial path also sums the
+  partials, so the two paths agree bit for bit.
+- Consequences: The result is deterministic for one, two, four and eight
+  workers. The serial path changed, so its old accumulation order is gone. The
+  speedup is about 1.98x on eight workers on an Apple M4.
+
+## ADR-0031: The nonbonded kernel is scalar plus a portable multi-lane path
+- Status: accepted
+- Date: 2026-09-14
+- Context: ENG-03 needs a faster inner loop. `std::simd` is the natural tool
+  but it is nightly-only, and the MSRV is 1.85 on a stable rustc.
+- Decision: Write a four-lane unrolled Buckingham plus electrostatic kernel and
+  keep a scalar fallback. Both paths are bit-identical.
+- Consequences: The crate builds on stable. The `std::simd` version is deferred
+  until it reaches stable or the MSRV moves. The hand-written lanes are more
+  code to maintain.
+
+## ADR-0032: nanocad-format imports and exports PDB
+- Status: accepted
+- Date: 2026-09-14
+- Context: IO-01 needs to exchange structures with the wider molecular tooling.
+- Decision: Add `crates/format/src/pdb.rs` with `import_pdb` and `export_pdb`
+  over ATOM, HETATM, CONECT and CRYST1. Map lengths at the Angstrom boundary.
+- Consequences: Charge is lost because PDB has no charge field. Multi-part
+  documents do not round-trip. A malformed line raises `FormatError::PdbParse`
+  with the line number.
+
+## ADR-0033: RDKit is an optional Python adapter
+- Status: accepted
+- Date: 2026-09-14
+- Context: IO-02 needs cheminformatics interchange without making RDKit a core
+  dependency.
+- Decision: Put the RDKit conversion in `python/nanocad/rdkit_adapter.py`. The
+  import is lazy and the tests skip when RDKit is absent.
+- Consequences: The core stays free of the dependency. The adapter is tested in
+  `/tmp/nc-qm-venv`, which has RDKit 2026.03.6, and skipped in the plain venv.
+
+## ADR-0034: The lumped model exports an honest CellML subset
+- Status: accepted
+- Date: 2026-09-14
+- Context: IO-03 needs a second standard interchange format for L4.
+- Decision: Add `to_cellml` and `from_cellml` in
+  `python/nanocad/lumped_adapter.py`. The subset has no reaction element. The
+  units attribute is dimensionless and a `nanocad:unit` attribute carries the
+  true unit.
+- Consequences: Foreign CellML that uses unsupported elements is rejected with
+  a typed error. The unit carries through the round trip only under our
+  extension attribute.
+
+## ADR-0035: A fixed joint and a velocity-level constraint pass
+- Status: accepted
+- Date: 2026-09-14
+- Context: DEV-01 needs a weld and a drift-free constraint solution.
+- Decision: Add `FixedJoint` and `ConstraintOptions { velocity_pass }` in
+  `crates/jigs/src/device.rs`, on by default. The pass projects the constraint
+  velocity to zero for revolute, prismatic, gear and fixed joints.
+- Consequences: The revolute constraint velocity falls from 1.118 to 0. The
+  gear residual is 2.78e-17. The pass adds one linear solve for each step.
+
+## ADR-0036: OpenMM and GROMACS are cross-checks, not engine backends
+- Status: accepted
+- Date: 2026-09-14
+- Context: ENG-04 and VAL-01 need an independent number for the electrostatics
+  and a second opinion on the potential. The engine stays the one core.
+- Decision: Add `python/nanocad/pme_adapter.py` for OpenMM PME and
+  `benchmarks/gromacs/` for the GROMACS water-box check. Neither is a backend.
+  GROMACS 2026.3 cannot use Buckingham with the Verlet cutoff scheme, so that
+  driver records SKIP and writes no number.
+- Consequences: OpenMM PME agrees at 2.42e-4 relative at 10 nm. The GROMACS
+  check is honestly open. No false number enters the docs.
+
+## ADR-0037: The respirocyte seal is an annular-gap leakage model
+- Status: accepted
+- Date: 2026-09-14
+- Context: FL-03 and NM-02 need a leak estimate and thermal motion without a
+  full fluid solver.
+- Decision: Add `AnnularGapFlow` to `crates/parts/src/respirocyte.rs` and
+  Brownian motion to `HostEnvironment`. Use the pressure-driven and Couette
+  closed forms from Bird, Stewart and Lightfoot.
+- Consequences: The bearing leakage is 9.114807e-20 m^3/s and matches the hand
+  value. The model is one-dimensional and laminar. The Brownian variance is
+  within 3.46e-2 of kBT/m at the test temperature.
+
+## ADR-0038: The video atom layer uses DiamondGenerator; the gear stays skeletal
+- Status: accepted
+- Date: 2026-09-14
+- Context: M9-02 needs a physically accurate atom layer. `PlanetaryGenerator`
+  returns a skeletal gear outline with nearest-neighbour distances from
+  5.28e-11 m to 3.72e-10 m and polygon angles, so it is not a bonded solid.
+- Decision: Build the atom layer from `DiamondGenerator` in
+  `crates/parts/src/lattice.rs`, and gate it with
+  `scripts/check_atom_geometry.py`. State the limitation in `docs/video.md`.
+- Consequences: The atom layer is real diamond: 216 atoms, 333 bonds, mean C-C
+  distance 1.544556e-10 m and mean bond angle 109.471221 degrees. The gear shape
+  is still not chemically accurate. A diamondoid gear generator with surface
+  passivation is a separate research task.

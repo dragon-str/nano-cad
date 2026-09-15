@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reproduce the demo - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Reproduce the demo</h1>
+<p>This page tells a stranger how to reproduce the nano-cad demo from a clean checkout. It lists the prerequisites, the exact commands, what each step proves, and what the demo does <strong>not</strong> reproduce.</p>
+<p>The demo is the planetary gearbox. An agent builds it through the MCP tool surface only. The measured result is the sun-to-carrier gear ratio.</p>
+<h2>Prerequisites</h2>
+<table><thead><tr><th>Item</th><th>Requirement</th></tr></thead><tbody><tr><td>Operating system</td><td>Linux or macOS with a POSIX <code>/bin/sh</code>.</td></tr><tr><td>Rust</td><td><code>cargo</code> and <code>rustc</code> on <code>PATH</code>. Install through &lt;https://rustup.rs&gt;. The workspace needs Rust 1.85 or newer (MSRV in <code>Cargo.toml</code>).</td></tr><tr><td>Python</td><td><code>python3</code>, version 3.10 or newer.</td></tr><tr><td>Network</td><td>Needed on the first run only. The script downloads <code>maturin</code> and <code>pytest</code> from PyPI.</td></tr><tr><td>Disk</td><td>About 1 GB for the Rust <code>target/</code> directory and the virtual environment.</td></tr></tbody></table>
+<p>You need no prebuilt artifact. The script builds the extension and the Rust crates from source.</p>
+<h2>Commands</h2>
+<p>From the repository root:</p>
+<pre><code class="language-sh">just reproduce</code></pre>
+<p>The recipe calls <code>scripts/reproduce.sh</code>. You can run the script directly:</p>
+<pre><code class="language-sh">sh scripts/reproduce.sh</code></pre>
+<p>The script uses the virtual environment at <code>&amp;lt;repo&amp;gt;/.venv</code> by default. Set <code>NCAD_VENV</code> to use another location:</p>
+<pre><code class="language-sh">NCAD_VENV=/tmp/ncvenv sh scripts/reproduce.sh</code></pre>
+<p>The script exits nonzero when any step fails. It prints one clear line for each step.</p>
+<h2>What each step proves</h2>
+<table><thead><tr><th>Step</th><th>Action</th><th>It proves</th></tr></thead><tbody><tr><td>1</td><td>Check <code>cargo</code>, <code>rustc</code>, <code>python3</code></td><td>The host has the toolchains. A missing tool stops the run with exit 127.</td></tr><tr><td>2</td><td>Create or reuse the Python virtual environment</td><td>The demo runs in an isolated environment and does not touch the system Python.</td></tr><tr><td>3</td><td>Install <code>maturin</code> and <code>pytest</code></td><td>The build and test tools are present. This step needs network access on the first run.</td></tr><tr><td>4</td><td>Build the extension with <code>maturin develop</code> from <code>python/</code></td><td>The PyO3 bindings compile and install as <code>nanocad._core</code>. The build must run from <code>python/</code>, because the <code>pyproject.toml</code> there sets <code>module-name</code> and <code>python-source</code>.</td></tr><tr><td>5</td><td><code>cargo test --workspace</code></td><td>Every Rust gate passes: units, model, formats, engine, jigs, parts, params, CLI. This includes the finite-difference gradient tests and the gear-ratio test.</td></tr><tr><td>6</td><td><code>pytest mcp/tests/test_agent_demo.py</code></td><td>The agent builds the gearbox through <code>call_tool</code> only, with no direct core import. It builds the part, assembles the L2 device, measures the ratio, relaxes a lattice, saves and loads NCZ, and exports URDF.</td></tr><tr><td>7</td><td>Print the key result</td><td>The measured gear ratio is inside tolerance.</td></tr></tbody></table>
+<h2>Expected result</h2>
+<p>The last line is the measured result. The numbers below came from a run on Apple M4 with Python 3.14 and cargo 1.98.1:</p>
+<pre><code>==&gt; Step 7/7: key measured result
+REPRODUCE OK: gearbox demo: analytic_ratio 3.500000000 measured_ratio 3.500000000 relative_error 1.146e-10 tolerance 1.0e-03
+The agent built the planetary gearbox through the MCP tool surface only.</code></pre>
+<p>The demo also exports a URDF with 7 links and 6 joints. Your timing will differ. The ratio and the URDF structure must not.</p>
+<h2>The guard test</h2>
+<p>The script must not pass silently. <code>mcp/tests/test_reproduce_script.py</code> checks two things:</p>
+<ul><li><code>sh -n</code> accepts the script (valid POSIX syntax).</li><li>The script exits nonzero and reports <code>cargo</code> when <code>cargo</code> is absent from <code>PATH</code>.</li></ul>
+<p>Run it with:</p>
+<pre><code class="language-sh">python -m pytest mcp/tests/test_reproduce_script.py</code></pre>
+<h2>What is NOT reproduced</h2>
+<ul><li><strong>The 90-second video (M8-02).</strong> The video and its script are a separate artifact. This script reproduces the computation, not the recording.</li><li><strong>The written report (M8-03).</strong> The report is a separate document.</li><li><strong>The three-scale export (M8-01).</strong> It is not done yet.</li><li><strong>The benchmark numbers.</strong> See <code>docs/benchmarks.md</code>. Every timing number is machine-specific. This script does not run <code>cargo bench</code>.</li><li><strong>The OpenMM cross-check (M2-11).</strong> OpenMM is not installed. The water-box self-check runs, but the cross-check waits on an OpenMM install.</li><li><strong>The public benchmark page.</strong> It reports one machine and one toolchain.</li></ul>
+<h2>Known caveats</h2>
+<ul><li><strong>The first run needs network access.</strong> The script downloads <code>maturin</code> and <code>pytest</code>. A later run reuses the virtual environment and skips the download.</li><li><strong>The <code>maturin</code> build must run from <code>python/</code>.</strong> A build from the repository root with <code>--manifest-path</code> misnames the module. The script changes to <code>python/</code> before it calls maturin.</li><li><strong>The build is a release build.</strong> <code>maturin develop --release</code> takes longer to compile than a debug build. The demo then runs fast.</li><li><strong><code>cargo test --workspace</code> does not build the Python feature.</strong> The <code>pyo3</code> dependency is optional and stays off for the default Rust gates (ADR-0012). The extension is built only in step 4, by maturin.</li><li><strong>The tree must compile when you run the script.</strong> If another change is mid-edit, step 5 fails. Wait for the tree to become green and retry.</li><li><strong>The script writes <code>&amp;lt;repo&amp;gt;/.venv</code> and <code>target/</code>.</strong> Both are gitignored.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/reproduce.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

@@ -12,7 +12,8 @@ use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 
 use nanocad_format::{
-    export_mmp, export_xyz, import_mmp, import_xyz, read_ncz, write_ncz, FormatError,
+    export_mmp, export_pdb, export_xyz, import_mmp, import_pdb, import_xyz, read_ncz, write_ncz,
+    FormatError,
 };
 use nanocad_model::{Document, Element};
 use thiserror::Error;
@@ -29,7 +30,7 @@ Options:
   -h, --help             Print this help.
   -V, --version          Print the version.
 
-The file format comes from the extension: .ncz, .mmp, or .xyz
+The file format comes from the extension: .ncz, .mmp, .xyz, or .pdb
 ";
 
 /// Returns the crate version string.
@@ -46,6 +47,8 @@ pub enum FileFormat {
     Mmp,
     /// The plain XYZ text.
     Xyz,
+    /// The Protein Data Bank coordinate text.
+    Pdb,
 }
 
 impl FileFormat {
@@ -55,6 +58,7 @@ impl FileFormat {
             Self::Ncz => "ncz",
             Self::Mmp => "mmp",
             Self::Xyz => "xyz",
+            Self::Pdb => "pdb",
         }
     }
 
@@ -65,6 +69,7 @@ impl FileFormat {
             "ncz" => Some(Self::Ncz),
             "mmp" => Some(Self::Mmp),
             "xyz" => Some(Self::Xyz),
+            "pdb" => Some(Self::Pdb),
             _ => None,
         }
     }
@@ -80,7 +85,7 @@ pub enum CliError {
     #[error("{0}")]
     Usage(String),
     /// The file extension is not one of the supported formats.
-    #[error("unrecognized file extension in {path:?}; expected .ncz, .mmp, or .xyz")]
+    #[error("unrecognized file extension in {path:?}; expected .ncz, .mmp, .xyz, or .pdb")]
     UnknownExtension {
         /// The offending path.
         path: String,
@@ -237,6 +242,16 @@ fn read_document(path: &str, format: FileFormat) -> Result<Document, CliError> {
                 source,
             })
         }
+        FileFormat::Pdb => {
+            let text = fs::read_to_string(path).map_err(|source| CliError::Read {
+                path: path.to_owned(),
+                source,
+            })?;
+            import_pdb(&text).map_err(|source| CliError::Parse {
+                path: path.to_owned(),
+                source,
+            })
+        }
     }
 }
 
@@ -269,6 +284,16 @@ fn write_document(path: &str, format: FileFormat, document: &Document) -> Result
         }
         FileFormat::Xyz => {
             let text = export_xyz(document).map_err(|source| CliError::Encode {
+                path: path.to_owned(),
+                source,
+            })?;
+            fs::write(path, text).map_err(|source| CliError::Write {
+                path: path.to_owned(),
+                source,
+            })
+        }
+        FileFormat::Pdb => {
+            let text = export_pdb(document).map_err(|source| CliError::Encode {
                 path: path.to_owned(),
                 source,
             })?;
@@ -338,7 +363,9 @@ mod tests {
         assert_eq!(FileFormat::from_path("part.ncz"), Some(FileFormat::Ncz));
         assert_eq!(FileFormat::from_path("PART.MMP"), Some(FileFormat::Mmp));
         assert_eq!(FileFormat::from_path("./a/b.xyz"), Some(FileFormat::Xyz));
-        assert_eq!(FileFormat::from_path("part.pdb"), None);
+        assert_eq!(FileFormat::from_path("part.pdb"), Some(FileFormat::Pdb));
+        assert_eq!(FileFormat::from_path("PART.PDB"), Some(FileFormat::Pdb));
+        assert_eq!(FileFormat::from_path("part.foo"), None);
         assert_eq!(FileFormat::from_path("noext"), None);
     }
 
@@ -360,7 +387,7 @@ mod tests {
     fn a_bad_extension_exits_with_one() {
         let mut out = Vec::new();
         let mut err = Vec::new();
-        let args = vec!["convert".to_owned(), "a.pdb".to_owned(), "b.ncz".to_owned()];
+        let args = vec!["convert".to_owned(), "a.foo".to_owned(), "b.ncz".to_owned()];
         let code = run(&args, &mut out, &mut err);
         assert_eq!(code, 1);
         assert!(String::from_utf8_lossy(&err).contains("unrecognized file extension"));

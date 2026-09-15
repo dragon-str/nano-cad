@@ -1,0 +1,90 @@
+GROMACS water-box cross-check
+(ARCHITECTURE.md: "Reference benchmarks against OpenMM and GROMACS CPU")
+======================================================================
+
+Date: 2026-09-14
+
+Result: SKIP. GROMACS is installed, but it cannot express the nanocad model.
+No agreement is recorded, because GROMACS produced no energy or forces.
+
+Host
+----
+Machine:  Apple M4, arm64
+OS:       macOS 26.6.2 (build 25G83)
+Rust:     cargo/rustc from ~/.cargo/bin
+
+Install
+-------
+Command:  brew install gromacs
+Result:   success, bottled build (gromacs 2026.3_1), under one minute
+Binary:   /opt/homebrew/bin/gmx
+Version:  2026.3-Homebrew, mixed/single precision, ARM_NEON_ASIMD
+License:  LGPL-2.1-or-later (separate program; no code copied)
+
+Why GROMACS cannot run the model
+--------------------------------
+The nanocad vdW term is Buckingham: U = A exp(-B r) - C / r^6.
+The installed GROMACS reports, from `gmx mdrun`:
+
+    The Verlet cutoff-scheme does not (yet) support Buckingham
+
+GROMACS removed the group cutoff scheme in 2020, and Buckingham was only ever
+supported with that scheme. Separately, GROMACS 2026 implements only the
+potential-shift modifier, not a switching function (the reference manual keeps
+the switch formula for a future release). The nanocad custom switching
+polynomial therefore has no GROMACS equivalent. A tabulated nonbonded
+potential (`vdwtype = User`) is also unavailable with the Verlet scheme in
+2026; the GROMACS developers state it returns in the 2027 release.
+
+For these reasons the harness cannot record a measured agreement. It prints
+SKIP and exits zero. This is the honest outcome, not a fake comparison.
+
+What the harness does verify
+----------------------------
+1. `gmx grompp` accepts the exact topology: 200 molecules, 600 atoms, nbfunc 2
+   (Buckingham), the same charges, the same harmonic bond and angle, 3 excluded
+   intra-molecular pairs per molecule, and the same cubic box and cutoff.
+2. The Coulomb constant converts exactly: GROMACS 138.935458 matches nanocad
+   138.935458 kJ/mol/nm/e^2 at the printed precision.
+3. The switch-correction function is consistent with an independent Python
+   evaluation of the reference model: bonded plus switched non-bonded energy
+   equals the recorded nanocad energy to 6.75e-15 relative, and the correction
+   equals the plain-cutoff minus switched value to machine precision. Reproduce
+   with: python3 benchmarks/gromacs/selftest_switch.py
+
+Driver output
+-------------
+nanocad <-> GROMACS water-box cross-check
+  GROMACS:            2026.3-Homebrew
+  binary:             /opt/homebrew/bin/gmx
+  workdir:            /tmp/nanocad-gmx-work
+  molecules:          200
+  atoms:              600
+  box (nm):           1.88332593692
+  cutoff (nm):        0.659164077922
+  Coulomb constant:   GROMACS 138.935458 vs nanocad 138.935458 kJ/mol/nm/e^2
+SKIP: GROMACS cannot express the nanocad model.
+  Reason: the nanocad vdW term is Buckingham, and the Verlet
+  cutoff scheme in GROMACS does not support Buckingham. Switch
+  functions are also absent (only potential-shift is implemented),
+  so the nanocad custom switching polynomial has no equivalent.
+  Exact GROMACS message:
+
+
+    -------------------------------------------------------
+    Program:     gmx mdrun, version 2026.3-Homebrew
+    Source file: src/gromacs/mdlib/forcerec.cpp (line 983)
+
+    Fatal error:
+    The Verlet cutoff-scheme does not (yet) support Buckingham
+
+    For more information and tips for troubleshooting, please check the GROMACS
+    website at https://manual.gromacs.org/current/user-guide/run-time-errors.html
+    -------------------------------------------------------
+
+Reproduce
+---------
+brew install gromacs
+python3 benchmarks/gromacs/compare_water_box.py
+
+On a machine without GROMACS the same command prints SKIP and exits zero.

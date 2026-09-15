@@ -10,7 +10,8 @@
 //! gradient are zero, and it supplies torque-distributed forces instead.
 //!
 //! The `device` module holds the L2 layer: rigid bodies and revolute,
-//! prismatic, and gear joints. See [`RigidBody`] and [`RigidBodySystem`].
+//! prismatic, fixed, and gear joints. See [`RigidBody`],
+//! [`RigidBodySystem`], and [`ConstraintOptions`].
 #![forbid(unsafe_code)]
 
 mod anchor;
@@ -32,8 +33,8 @@ pub use assembly::{
     RING_PART_ID, SUN_PART_ID,
 };
 pub use device::{
-    DeviceError, GearConstraint, GearCoupling, GearTerm, PrismaticJoint, Quat, RevoluteJoint,
-    RigidBody, RigidBodySystem,
+    ConstraintOptions, DeviceError, FixedJoint, GearConstraint, GearCoupling, GearTerm,
+    PrismaticJoint, Quat, RevoluteJoint, RigidBody, RigidBodySystem,
 };
 pub use error::JigError;
 pub use jig::{Jig, JigKind};

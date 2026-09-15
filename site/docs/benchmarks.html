@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Benchmarks - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Benchmarks</h1>
+<p>This page reports the engine timings for nano-cad. It states the hardware, the toolchain, the build profile, the exact command, and what each metric measures. You can reproduce every number on your own machine. Your numbers will differ.</p>
+<h2>Scope and caveat</h2>
+<ul><li>All numbers below were measured on the machine that the record names. They are <strong>not</strong> universal. Do not compare them across machines.</li><li><code>cargo bench</code> is <strong>timing only</strong>. It is not a merge gate.</li><li>The parallel force path is <strong>opt-in</strong>. The default engine path is serial.</li><li>The build profile is <code>bench</code>, which is the release profile with thin LTO and one codegen unit.</li></ul>
+<h2>Machine and toolchain</h2>
+<p>The recorded run is <code>benchmarks/results/2026-09-14-engine-timings.txt</code>. It is the M2-12 engine timing record.</p>
+<table><thead><tr><th>Item</th><th>Value</th><th>Source</th></tr></thead><tbody><tr><td>Date (UTC)</td><td>2026-09-15T00:40:09Z</td><td><code>2026-09-14-engine-timings.txt</code></td></tr><tr><td>Host</td><td>Apple M4, 10 logical cores</td><td><code>2026-09-14-engine-timings.txt</code></td></tr><tr><td>OS</td><td>macOS 26.6.2 (build 25G83)</td><td><code>2026-09-14-engine-timings.txt</code></td></tr><tr><td>Build profile</td><td><code>bench</code> (release, LTO thin, codegen-units 1)</td><td><code>2026-09-14-engine-timings.txt</code></td></tr><tr><td>Bench tag</td><td><code>nanocad-engine v0.1.0</code></td><td><code>2026-09-14-engine-timings.txt</code></td></tr><tr><td>Toolchain</td><td>cargo 1.98.1; rustc 1.98.1</td><td><code>20260915T010005Z-engine-timings.txt</code></td></tr></tbody></table>
+<p>The M2-12 record did not capture the toolchain. The reproduction record <code>benchmarks/results/20260915T010005Z-engine-timings.txt</code> captured it. That reproduction ran on the same M4 host and reports cargo 1.98.1 (797e8a9bc 2026-08-05) and rustc 1.98.1 (48a229cea 2026-09-01).</p>
+<h2>How to reproduce</h2>
+<p>Run the whole workspace benchmark set:</p>
+<pre><code>just bench</code></pre>
+<p>Run only the engine benchmark:</p>
+<pre><code>cargo bench -p nanocad-engine</code></pre>
+<p>Run the engine benchmark with the recorded settings and write a timestamped record under <code>benchmarks/results/</code>:</p>
+<pre><code>./scripts/bench.sh</code></pre>
+<p>The script uses POSIX shell. It stops with an error when <code>cargo</code> is not on the PATH. It writes one file per run. The file name starts with the UTC timestamp <code>YYYYMMDDTHHMMSSZ</code>.</p>
+<p>Criterion writes its full report to <code>target/criterion/</code>. Open <code>target/criterion/report/index.html</code> in a browser. The record files hold the summary only, because the raw report is large and machine-specific.</p>
+<h2>Reference case</h2>
+<p>Every engine benchmark uses the same reference case.</p>
+<ul><li>A periodic SPC-like water box.</li><li>200 molecules, 600 atoms.</li><li>Box side 1.884e-9 m.</li><li>Temperature 300 K.</li><li>Seed <code>0xB3C0</code> for the velocity draw, so the setup is reproducible.</li><li>The neighbor pair list holds 30827 pairs.</li></ul>
+<p>Source: <code>2026-09-14-engine-timings.txt</code> and <code>crates/engine/benches/engine_bench.rs</code>.</p>
+<h2>Metric definitions</h2>
+<p>Each benchmark times one full call. The timer covers the call only. It does not cover the box construction.</p>
+<table><thead><tr><th>Benchmark</th><th>Function</th><th>What it times</th></tr></thead><tbody><tr><td><code>water_200_energy_and_gradient</code></td><td><code>System::energy_and_gradient_j</code></td><td>One pass that returns the total potential energy in joules and the full gradient in newtons. It sums the bond, angle, torsion, out-of-plane, van der Waals, and electrostatic terms.</td></tr><tr><td><code>water_200_forces_serial</code></td><td><code>System::forces_n</code></td><td>The total force vector in newtons, the negative of the gradient, on the default serial path.</td></tr><tr><td><code>water_200_forces_parallel_4</code></td><td><code>System::forces_n_parallel</code></td><td>The same total force vector, with a deterministic parallel reduction over 4 workers. The result is bit-identical run to run and independent of the thread count.</td></tr></tbody></table>
+<p><code>forces_n</code> computes the gradient and then negates it. Therefore the serial forces time and the energy-and-gradient time are almost the same number. The parallel benchmark measures the neighbor-pair-list reduction; the bonded terms stay serial.</p>
+<h2>Measured numbers</h2>
+<p>Machine: Apple M4, 10 logical cores. Profile: <code>bench</code>. Command:</p>
+<pre><code>cargo bench -p nanocad-engine --bench engine_bench -- --warm-up-time 0.5 --measurement-time 1.0 --sample-size 20</code></pre>
+<p>Criterion reports a mean and a 95% confidence interval <code>[lower mean upper]</code>. The 95% level is Criterion's default. All times are microseconds (us).</p>
+<table><thead><tr><th>Benchmark</th><th>Mean</th><th>Lower bound</th><th>Upper bound</th></tr></thead><tbody><tr><td><code>water_200_energy_and_gradient</code></td><td>680.97 us</td><td>677.92 us</td><td>685.88 us</td></tr><tr><td><code>water_200_forces_serial</code></td><td>679.83 us</td><td>678.45 us</td><td>681.14 us</td></tr><tr><td><code>water_200_forces_parallel_4</code></td><td>370.97 us</td><td>369.07 us</td><td>373.05 us</td></tr></tbody></table>
+<p>Source: <code>benchmarks/results/2026-09-14-engine-timings.txt</code>.</p>
+<p>The 4-worker deterministic reduction is about 1.83x faster than the serial path on this host. Source: the note in <code>2026-09-14-engine-timings.txt</code>.</p>
+<h2>Variance</h2>
+<ul><li>Criterion runs 20 samples in the recorded run. The 95% confidence intervals above show the spread.</li><li>The intervals are narrow for the energy and serial benchmarks, about 1% of the mean (computed from the intervals above).</li><li>The parallel benchmark varies more, because thread scheduling and the machine load change between runs.</li><li>A second run on the same host gave means of 653.02 us (energy), 660.21 us (serial), and 303.08 us (parallel). Source: <code>benchmarks/results/20260915T010005Z-engine-timings.txt</code>. The parallel mean moved from 370.97 us to 303.08 us, a decrease of about 18% (computed from the two cited means). Treat the parallel number as the least stable.</li><li>Close other programs before you compare two runs.</li></ul>
+<h2>Traceability</h2>
+<table><thead><tr><th>Number</th><th>Value</th><th>File</th></tr></thead><tbody><tr><td>Energy mean</td><td>680.97 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Energy interval</td><td>677.92 to 685.88 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Serial mean</td><td>679.83 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Serial interval</td><td>678.45 to 681.14 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>4-worker mean</td><td>370.97 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>4-worker interval</td><td>369.07 to 373.05 us</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Speedup</td><td>about 1.83x</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Host and OS</td><td>Apple M4, 10 cores, macOS 26.6.2</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Atoms, box, pairs</td><td>600 atoms, 1.884e-9 m, 30827 pairs</td><td><code>benchmarks/results/2026-09-14-engine-timings.txt</code></td></tr><tr><td>Toolchain</td><td>cargo 1.98.1, rustc 1.98.1</td><td><code>benchmarks/results/20260915T010005Z-engine-timings.txt</code></td></tr><tr><td>Reproduction means</td><td>653.02, 660.21, 303.08 us</td><td><code>benchmarks/results/20260915T010005Z-engine-timings.txt</code></td></tr></tbody></table>
+<p><strong>Your numbers will differ.</strong> This page reports one machine and one toolchain.</p>
+    </main>
+    <footer>
+      Generated from <code>docs/benchmarks.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

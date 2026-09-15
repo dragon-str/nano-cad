@@ -48,6 +48,20 @@ SBML subset
 The subset is deliberately small.  The document is well-formed XML and uses
 only the elements listed above.  It is not schema-validated against the full
 SBML schema, and it does not claim SBML compliance beyond that subset.
+
+CellML subset
+-------------
+``to_cellml`` emits CellML 2.0 elements: ``model``, one ``component``, a
+``variable`` for time, each state and each parameter, and one ``math`` with
+``apply``/``eq``/``diff``/``bvar`` and MathML ``cn``/``ci``/``apply``.  CellML
+has no reaction element, so the writer folds the reactions into one derivative
+equation per state.  ``from_cellml`` rebuilds one reaction per state from that
+derivative, so the ODE system round-trips but the original reaction split does
+not.  The CellML ``units`` attribute is ``dimensionless``; the real unit
+string rides in a ``nanocad:unit`` attribute, as in the SBML path.
+
+The subset is deliberately small.  It is not schema-validated, and it does not
+claim CellML compliance beyond the listed elements.
 """
 
 from __future__ import annotations
@@ -74,6 +88,7 @@ __all__ = [
     "XmlParseError",
     "derivatives",
     "evaluate",
+    "from_cellml",
     "from_sbml",
     "initial_state",
     "parse_expression",
@@ -81,14 +96,17 @@ __all__ = [
     "rk4_step",
     "simulate",
     "species_ids",
+    "to_cellml",
     "to_sbml",
     "two_compartment_pressures",
     "variables",
 ]
 
 _SBML_NS = "http://www.sbml.org/sbml/level3/version1/core"
+_CELLML_NS = "http://www.cellml.org/cellml/2.0#"
 _MATHML_NS = "http://www.w3.org/1998/Math/MathML"
 _NANOCAD_NS = "https://nanocad.org/sbml-ext"
+_CELLML_NANOCAD_NS = "https://nanocad.org/cellml-ext"
 _OP_TO_TAG = {"+": "plus", "-": "minus", "*": "times", "/": "divide", "^": "power"}
 _TAG_TO_OP = {tag: op for op, tag in _OP_TO_TAG.items()}
 
@@ -881,6 +899,234 @@ def _validate_model(model: Model) -> None:
                 raise ModelFormatError(
                     f"reaction {reaction.id!r} uses unknown name {name!r}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# CellML serialisation.  See the module docstring for the supported subset.
+# ---------------------------------------------------------------------------
+def to_cellml(model: Model) -> str:
+    """Serialize ``model`` to a documented CellML 2.0 subset.
+
+    The output holds one ``<model>``, one ``<component>`` with one
+    ``<variable>`` per state, parameter and time, and one ``<math>`` with one
+    derivative equation per state.  CellML has no reaction element, so the
+    writer folds the reactions into the derivative equations.  The real unit
+    of each variable rides in a ``nanocad:unit`` attribute, and the CellML
+    ``units`` attribute stays ``dimensionless``.  Name and compartment ride in
+    ``nanocad:name`` and ``nanocad:compartment``.
+    """
+    root = ET.Element(
+        "model",
+        {
+            "xmlns": _CELLML_NS,
+            "xmlns:nanocad": _CELLML_NANOCAD_NS,
+            "name": model.name or model.id,
+        },
+    )
+    component = ET.SubElement(root, "component", {"name": model.id or "model"})
+    ET.SubElement(
+        component,
+        "variable",
+        {
+            "name": "time",
+            "units": "second",
+            "nanocad:unit": "s",
+        },
+    )
+    for species in model.species:
+        ET.SubElement(
+            component,
+            "variable",
+            {
+                "name": species.id,
+                "units": "dimensionless",
+                "initial_value": repr(species.initial_value_si),
+                "nanocad:unit": species.unit,
+                "nanocad:name": species.name,
+                "nanocad:compartment": species.compartment,
+            },
+        )
+    for parameter in model.parameters:
+        ET.SubElement(
+            component,
+            "variable",
+            {
+                "name": parameter.id,
+                "units": "dimensionless",
+                "initial_value": repr(parameter.value_si),
+                "nanocad:unit": parameter.unit,
+                "nanocad:name": parameter.name,
+            },
+        )
+
+    math_element = ET.SubElement(component, "math", {"xmlns": _MATHML_NS})
+    for species in model.species:
+        equation = ET.SubElement(math_element, "apply")
+        ET.SubElement(equation, "eq")
+        derivative = ET.SubElement(equation, "apply")
+        ET.SubElement(derivative, "diff")
+        bvar = ET.SubElement(derivative, "bvar")
+        ET.SubElement(bvar, "ci").text = "time"
+        ET.SubElement(derivative, "ci").text = species.id
+        equation.append(_to_mathml(_derivative_expression(model, species.id)))
+
+    ET.indent(root, space="  ")
+    body = ET.tostring(root, encoding="unicode")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + body
+
+
+def _derivative_expression(model: Model, species_id: str) -> Expr:
+    """Fold every reaction term of one species into a single expression."""
+    terms: list[Expr] = []
+    for reaction in model.reactions:
+        for name, coefficient in reaction.stoichiometry:
+            if name == species_id:
+                terms.append(BinOp("*", Num(coefficient), reaction.rate_law))
+    if not terms:
+        return Num(0.0)
+    result = terms[0]
+    for term in terms[1:]:
+        result = BinOp("+", result, term)
+    return result
+
+
+def from_cellml(xml: str) -> Model:
+    """Parse a CellML 2.0 subset document into a :class:`Model`.
+
+    Raise :class:`XmlParseError` for malformed XML.  Raise
+    :class:`ModelFormatError` or :class:`ExpressionError` when the document is
+    well-formed but outside the supported subset.
+
+    CellML carries a derivative equation for each state and no reaction.  This
+    reader rebuilds one reaction per state whose rate law is that derivative.
+    The ODE system is therefore preserved, but the original reaction split is
+    not.
+    """
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise XmlParseError(f"malformed XML: {exc}") from exc
+
+    if _local(root.tag) != "model":
+        raise ModelFormatError(
+            f"expected <model> root element, found <{_local(root.tag)}>"
+        )
+    components = _children(root, "component")
+    if not components:
+        raise ModelFormatError("document has no <component> element")
+
+    model_id = root.get("name") or "model"
+    name = root.get("name") or model_id
+
+    variables: dict[str, ET.Element] = {}
+    for component in components:
+        for variable in _children(component, "variable"):
+            variable_name = variable.get("name")
+            if not variable_name:
+                raise ModelFormatError("a <variable> has no name")
+            if variable_name in variables:
+                raise ModelFormatError(f"duplicate variable {variable_name!r}")
+            variables[variable_name] = variable
+
+    derivatives: dict[str, Expr] = {}
+    for component in components:
+        for math_element in _children(component, "math"):
+            for equation in _children(math_element, "apply"):
+                parts = list(equation)
+                if not parts or _local(parts[0].tag) != "eq":
+                    continue
+                if len(parts) < 3:
+                    raise ExpressionError("an <eq> needs two sides")
+                target = _cellml_diff_target(parts[1])
+                if target is None:
+                    continue
+                derivatives[target] = _from_mathml(parts[2])
+
+    species: list[Species] = []
+    parameters: list[Parameter] = []
+    for variable_name, variable in variables.items():
+        if variable_name == "time":
+            continue
+        if variable_name in derivatives:
+            text = variable.get("initial_value")
+            if text is None:
+                raise ModelFormatError(
+                    f"state variable {variable_name!r} has no initial_value"
+                )
+            try:
+                initial_value = float(text)
+            except ValueError as exc:
+                raise ModelFormatError(
+                    f"state variable {variable_name!r} has a non-numeric "
+                    f"initial_value {text!r}"
+                ) from exc
+            species.append(
+                Species(
+                    id=variable_name,
+                    name=_extension_of(variable, "name", variable_name),
+                    initial_value_si=initial_value,
+                    unit=_unit_of(variable),
+                    compartment=_extension_of(variable, "compartment", "environment"),
+                )
+            )
+        elif variable.get("initial_value") is not None:
+            text = variable.get("initial_value", "0")
+            try:
+                value = float(text)
+            except ValueError as exc:
+                raise ModelFormatError(
+                    f"parameter {variable_name!r} has a non-numeric value {text!r}"
+                ) from exc
+            parameters.append(
+                Parameter(
+                    id=variable_name,
+                    name=_extension_of(variable, "name", variable_name),
+                    value_si=value,
+                    unit=_unit_of(variable),
+                )
+            )
+
+    reactions = tuple(
+        Reaction(
+            id=f"rate_of_{species_state.id}",
+            name=f"Rate of {species_state.name}",
+            stoichiometry=((species_state.id, 1.0),),
+            rate_law=derivatives[species_state.id],
+        )
+        for species_state in species
+    )
+    model = Model(
+        id=model_id,
+        name=name,
+        species=tuple(species),
+        parameters=tuple(parameters),
+        reactions=reactions,
+    )
+    _validate_model(model)
+    return model
+
+
+def _cellml_diff_target(lhs: ET.Element) -> str | None:
+    """Return the state name of a ``diff`` expression, or None."""
+    if _local(lhs.tag) != "apply":
+        return None
+    parts = list(lhs)
+    if not parts or _local(parts[0].tag) != "diff":
+        return None
+    for child in parts[1:]:
+        if _local(child.tag) == "ci":
+            text = (child.text or "").strip()
+            if text:
+                return text
+    return None
+
+
+def _extension_of(element: ET.Element, local_name: str, default: str) -> str:
+    """Read a namespaced extension attribute such as ``nanocad:name``."""
+    for key, value in element.attrib.items():
+        if "}" in key and _local(key) == local_name:
+            return value
+    return default
 
 
 # ---------------------------------------------------------------------------

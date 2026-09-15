@@ -121,6 +121,78 @@ def test_from_sbml_unsupported_mathml_raises_expression_error() -> None:
         lumped.from_sbml(document)
 
 
+def test_cellml_round_trip_preserves_the_dynamics() -> None:
+    model = _model()
+    parsed = lumped.from_cellml(lumped.to_cellml(model))
+    assert [item.id for item in parsed.species] == [item.id for item in model.species]
+    for original, restored in zip(model.species, parsed.species, strict=True):
+        assert restored.initial_value_si == original.initial_value_si
+        assert restored.unit == original.unit
+        assert restored.name == original.name
+        assert restored.compartment == original.compartment
+    for original, restored in zip(model.parameters, parsed.parameters, strict=True):
+        assert restored.id == original.id
+        assert restored.value_si == original.value_si
+        assert restored.unit == original.unit
+    state = lumped.initial_state(model)
+    assert lumped.derivatives(parsed, state) == pytest.approx(
+        lumped.derivatives(model, state)
+    )
+
+
+def test_cellml_document_is_well_formed() -> None:
+    document = lumped.to_cellml(_model())
+    root = ET.fromstring(document)
+    assert root.tag.rsplit("}", 1)[-1] == "model"
+    assert document.startswith("<?xml")
+
+
+def test_from_cellml_malformed_xml_raises_typed_error() -> None:
+    with pytest.raises(lumped.XmlParseError):
+        lumped.from_cellml("<model><component></model>")
+    with pytest.raises(lumped.XmlParseError):
+        lumped.from_cellml("not xml at all <<<")
+
+
+def test_from_cellml_missing_component_raises_format_error() -> None:
+    with pytest.raises(lumped.ModelFormatError):
+        lumped.from_cellml(
+            '<model xmlns="http://www.cellml.org/cellml/2.0#" name="m"/>'
+        )
+    with pytest.raises(lumped.ModelFormatError):
+        lumped.from_cellml("<html/>")
+
+
+def test_from_cellml_unknown_math_operator_raises_expression_error() -> None:
+    document = lumped.to_cellml(_model()).replace("<divide />", "<log />")
+    with pytest.raises(lumped.ExpressionError):
+        lumped.from_cellml(document)
+
+
+def test_from_cellml_unknown_name_raises_format_error() -> None:
+    document = lumped.to_cellml(_model()).replace(
+        "<ci>resistance_pa_s_per_m3</ci>", "<ci>ghost</ci>"
+    )
+    with pytest.raises(lumped.ModelFormatError):
+        lumped.from_cellml(document)
+
+
+def test_from_cellml_state_without_initial_value_raises() -> None:
+    xml = (
+        '<model xmlns="http://www.cellml.org/cellml/2.0#" name="m">'
+        '<component name="c">'
+        '<variable name="time" units="second"/>'
+        '<variable name="x" units="dimensionless"/>'
+        '<variable name="k" units="dimensionless" initial_value="1"/>'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<apply><eq/><apply><diff/><bvar><ci>time</ci></bvar><ci>x</ci></apply>"
+        "<apply><times/><ci>k</ci><ci>x</ci></apply></apply>"
+        "</math></component></model>"
+    )
+    with pytest.raises(lumped.ModelFormatError):
+        lumped.from_cellml(xml)
+
+
 def test_expression_parser_rejects_bad_text() -> None:
     with pytest.raises(lumped.ExpressionError):
         lumped.parse_expression("1 +")

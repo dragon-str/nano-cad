@@ -44,24 +44,29 @@ fn bench_water_serial_forces(c: &mut Criterion) {
     });
 }
 
-fn bench_water_parallel_forces(c: &mut Criterion) {
+fn bench_water_worker_scaling(c: &mut Criterion) {
     let mut water = spc_water_box(MOLECULE_COUNT, box_length_m(MOLECULE_COUNT), 300.0, SEED)
         .expect("valid water box");
     let positions_m = water.positions_m().to_vec();
-    c.bench_function("water_200_forces_parallel_4", |b| {
-        b.iter(|| {
-            water
-                .system_mut()
-                .forces_n_parallel(black_box(&positions_m), 4)
-                .expect("valid")
-        })
-    });
+    for worker_count in [1_usize, 2, 4, 8] {
+        c.bench_function(
+            &format!("water_200_forces_parallel_{worker_count}_workers"),
+            |b| {
+                b.iter(|| {
+                    water
+                        .system_mut()
+                        .forces_n_parallel(black_box(&positions_m), worker_count)
+                        .expect("valid")
+                })
+            },
+        );
+    }
 }
 
 criterion_group!(
     benches,
     bench_water_energy_and_gradient,
     bench_water_serial_forces,
-    bench_water_parallel_forces
+    bench_water_worker_scaling
 );
 criterion_main!(benches);

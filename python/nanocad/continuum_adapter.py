@@ -1,33 +1,67 @@
 """Continuum adapter: lift atomistic or part data to continuum models.
 
-Pure Python plus NumPy.  This module does not import ``nanocad._core`` at
-import time, so a plain atom list works without the compiled extension.  The
-core is imported lazily only when a caller passes a raw core object.
+Pure Python plus NumPy, and SciPy only when it is present.  This module does
+not import ``nanocad._core`` at import time, so a plain atom list works
+without the compiled extension.  The core is imported lazily only when a
+caller passes a raw core object.  SciPy is found by ``find_spec`` and
+imported lazily inside the solver that uses it, so the module imports with
+only NumPy and the standard library.
 
 Units are SI.  Every returned dictionary key carries a unit suffix.
 
 Structural models
     * Axial bar with linear finite elements.
     * Euler-Bernoulli cantilever beam with Hermite finite elements.
+    * Two-dimensional plane-stress cantilever with bilinear quads, solved
+      with ``scipy.sparse``.  Without SciPy the function falls back to the
+      closed-form Euler-Bernoulli beam.
 
 Flow models
     * Hagen-Poiseuille flow in a circular tube.
     * Plane Poiseuille flow in a straight channel.
+    * Two-dimensional steady Stokes flow in a plane channel, solved by finite
+      differences with ``scipy.sparse``.  Without SciPy the function falls
+      back to the closed-form plane-Poiseuille parabola.
 
 The structural models compare the finite-element result with the exact closed
-form.  The flow model compares a finite-difference solution with the exact
-Hagen-Poiseuille or plane-Poiseuille result.
+form or with a refined-mesh reference.  The flow models compare a
+finite-difference solution with the exact Hagen-Poiseuille or plane-Poiseuille
+result.
 
-Every result carries ``method`` and ``validation``.  A result is
+Every result carries ``method`` and ``validation``.  A SciPy-backed result is
 ``cross-checked`` only when the code compares it with the exact analytic
-solution.  Otherwise it is ``unverified``.
+solution or with a refined-mesh reference.  A closed-form fallback is
+``unverified`` because no independent computation ran.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import math
 
 import numpy as np
+
+try:
+    _SCIPY_AVAILABLE: bool = importlib.util.find_spec("scipy") is not None
+except (ImportError, ValueError):  # pragma: no cover - unusual install state
+    _SCIPY_AVAILABLE = False
+
+
+def _load_scipy() -> tuple[object, object] | None:
+    """Import ``scipy.sparse`` and ``scipy.sparse.linalg`` lazily.
+
+    Returns ``None`` when SciPy is absent or fails to import.  The caller then
+    uses a closed-form fallback.
+    """
+    if not _SCIPY_AVAILABLE:
+        return None
+    try:
+        import scipy.sparse as sparse
+        import scipy.sparse.linalg as sparse_linalg
+    except ImportError:
+        return None
+    return sparse, sparse_linalg
+
 
 AMU_TO_KG = 1.66053906660e-27
 
@@ -318,6 +352,315 @@ def solve_euler_bernoulli(
     return result
 
 
+def _q4_plane_stress_element(
+    coordinates_m: np.ndarray,
+    elastic_modulus_pa: float,
+    poisson_ratio: float,
+    thickness_m: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return the stiffness and the center strain matrix of one Q4 element.
+
+    ``coordinates_m`` holds the four node positions in counter-clockwise order
+    as a ``(4, 2)`` array.  The element is a plane-stress bilinear quad with
+    2-by-2 Gauss integration.  The stiffness is ``(8, 8)``, ordered
+    ``ux0, uy0, ux1, uy1, ...``.  The strain matrix is ``(3, 8)`` at the
+    element center.
+    """
+    constitutive = (
+        elastic_modulus_pa
+        / (1.0 - poisson_ratio**2)
+        * np.array(
+            [
+                [1.0, poisson_ratio, 0.0],
+                [poisson_ratio, 1.0, 0.0],
+                [0.0, 0.0, 0.5 * (1.0 - poisson_ratio)],
+            ]
+        )
+    )
+    stiffness = np.zeros((8, 8))
+    gauss = (-1.0 / math.sqrt(3.0), 1.0 / math.sqrt(3.0))
+
+    def strain_matrix(xi: float, eta: float) -> np.ndarray:
+        dnatural = np.array(
+            [
+                [
+                    -0.25 * (1.0 - eta),
+                    0.25 * (1.0 - eta),
+                    0.25 * (1.0 + eta),
+                    -0.25 * (1.0 + eta),
+                ],
+                [
+                    -0.25 * (1.0 - xi),
+                    -0.25 * (1.0 + xi),
+                    0.25 * (1.0 + xi),
+                    0.25 * (1.0 - xi),
+                ],
+            ]
+        )
+        jacobian = dnatural @ coordinates_m
+        dphysical = np.linalg.solve(jacobian.T, dnatural)
+        matrix = np.zeros((3, 8))
+        matrix[0, 0::2] = dphysical[0]
+        matrix[1, 1::2] = dphysical[1]
+        matrix[2, 0::2] = dphysical[1]
+        matrix[2, 1::2] = dphysical[0]
+        return matrix
+
+    for xi in gauss:
+        for eta in gauss:
+            matrix = strain_matrix(xi, eta)
+            jacobian = (
+                np.array(
+                    [
+                        [
+                            -0.25 * (1.0 - eta),
+                            0.25 * (1.0 - eta),
+                            0.25 * (1.0 + eta),
+                            -0.25 * (1.0 + eta),
+                        ],
+                        [
+                            -0.25 * (1.0 - xi),
+                            -0.25 * (1.0 + xi),
+                            0.25 * (1.0 + xi),
+                            0.25 * (1.0 - xi),
+                        ],
+                    ]
+                )
+                @ coordinates_m
+            )
+            stiffness += (
+                matrix.T @ constitutive @ matrix * np.linalg.det(jacobian) * thickness_m
+            )
+    return stiffness, strain_matrix(0.0, 0.0)
+
+
+def _plane_stress_cantilever_mesh(
+    length_m: float,
+    height_m: float,
+    thickness_m: float,
+    elastic_modulus_pa: float,
+    poisson_ratio: float,
+    tip_load_n: float,
+    elements_x: int,
+    elements_y: int,
+) -> tuple[float, float]:
+    """Solve one Q4 plane-stress cantilever mesh.
+
+    The left edge is fully clamped.  A transverse load is distributed over the
+    right edge.  Returns ``(tip_deflection_m, max_axial_stress_pa)``.  The tip
+    deflection is the mean vertical displacement of the right edge.
+    """
+    scipy_modules = _load_scipy()
+    if scipy_modules is None:  # pragma: no cover - guarded by the caller
+        raise RuntimeError("scipy is not available")
+    sparse, sparse_linalg = scipy_modules
+
+    node_x = np.linspace(0.0, length_m, elements_x + 1)
+    node_y = np.linspace(-0.5 * height_m, 0.5 * height_m, elements_y + 1)
+    coordinates_m = np.array(
+        [
+            [node_x[i], node_y[j]]
+            for j in range(elements_y + 1)
+            for i in range(elements_x + 1)
+        ]
+    )
+    node_count = (elements_x + 1) * (elements_y + 1)
+
+    def node_id(i: int, j: int) -> int:
+        return j * (elements_x + 1) + i
+
+    rows: list[int] = []
+    cols: list[int] = []
+    values: list[float] = []
+    elements: list[tuple[list[int], np.ndarray]] = []
+    for j in range(elements_y):
+        for i in range(elements_x):
+            nodes = [
+                node_id(i, j),
+                node_id(i + 1, j),
+                node_id(i + 1, j + 1),
+                node_id(i, j + 1),
+            ]
+            stiffness, center_strain = _q4_plane_stress_element(
+                coordinates_m[nodes], elastic_modulus_pa, poisson_ratio, thickness_m
+            )
+            dofs: list[int] = []
+            for node in nodes:
+                dofs += [2 * node, 2 * node + 1]
+            elements.append((dofs, center_strain))
+            for r in range(8):
+                for c in range(8):
+                    rows.append(dofs[r])
+                    cols.append(dofs[c])
+                    values.append(stiffness[r, c])
+
+    stiffness = sparse.coo_matrix(
+        (values, (rows, cols)), shape=(2 * node_count, 2 * node_count)
+    ).tocsr()
+    load_n = np.zeros(2 * node_count)
+    for j in range(elements_y + 1):
+        weight = 0.5 / elements_y if j in (0, elements_y) else 1.0 / elements_y
+        load_n[2 * node_id(elements_x, j) + 1] = tip_load_n * weight
+
+    free = np.ones(2 * node_count, dtype=bool)
+    for j in range(elements_y + 1):
+        node = node_id(0, j)
+        free[2 * node] = False
+        free[2 * node + 1] = False
+    free_dofs = np.where(free)[0]
+    displacement = np.zeros(2 * node_count)
+    displacement[free_dofs] = sparse_linalg.spsolve(
+        stiffness[free_dofs][:, free_dofs], load_n[free_dofs]
+    )
+
+    constitutive = (
+        elastic_modulus_pa
+        / (1.0 - poisson_ratio**2)
+        * np.array(
+            [
+                [1.0, poisson_ratio, 0.0],
+                [poisson_ratio, 1.0, 0.0],
+                [0.0, 0.0, 0.5 * (1.0 - poisson_ratio)],
+            ]
+        )
+    )
+    max_axial_stress_pa = 0.0
+    for dofs, center_strain in elements:
+        stress = constitutive @ (center_strain @ displacement[dofs])
+        max_axial_stress_pa = max(max_axial_stress_pa, abs(float(stress[0])))
+
+    tip_nodes = [node_id(elements_x, j) for j in range(elements_y + 1)]
+    tip_deflection_m = float(
+        np.mean([displacement[2 * node + 1] for node in tip_nodes])
+    )
+    return tip_deflection_m, max_axial_stress_pa
+
+
+def solve_plane_stress_cantilever(
+    length_m: float,
+    height_m: float,
+    thickness_m: float,
+    elastic_modulus_pa: float,
+    poisson_ratio: float,
+    tip_load_n: float,
+    elements_x: int = 160,
+    elements_y: int | None = None,
+    refinement: int = 2,
+    convergence_tolerance: float = 1.0e-2,
+) -> dict:
+    """Solve a cantilever plate in plane stress with bilinear quads.
+
+    The mesh is a structured grid of Q4 plane-stress elements.  The left edge
+    is fully clamped.  A transverse tip load is distributed over the right
+    edge.  ``scipy.sparse`` assembles and solves the linear system.
+
+    Units: ``length_m`` [m], ``height_m`` [m], ``thickness_m`` [m],
+    ``elastic_modulus_pa`` [Pa], ``poisson_ratio`` [-], ``tip_load_n`` [N].
+
+    The SciPy result is ``cross-checked`` against a refined mesh.  The
+    dictionary also reports the Euler-Bernoulli closed form and the
+    Timoshenko (shear-corrected) value.  When SciPy is absent the function
+    returns the Euler-Bernoulli closed form and labels it ``unverified``.
+
+    Limitations: the Q4 element locks in shear, so the tip deflection is too
+    stiff on a coarse mesh.  The point load is distributed to reduce the local
+    boundary singularity.  Convergence to the Euler-Bernoulli value is from
+    below and is slow near the clamped edge.
+    """
+    length_m = _require_positive(length_m, "length_m")
+    height_m = _require_positive(height_m, "height_m")
+    thickness_m = _require_positive(thickness_m, "thickness_m")
+    elastic_modulus_pa = _require_positive(elastic_modulus_pa, "elastic_modulus_pa")
+    if not -1.0 < poisson_ratio < 0.5:
+        raise ValueError("poisson_ratio must be between -1 and 0.5")
+    if elements_x < 1:
+        raise ValueError("elements_x must be at least 1")
+    if elements_y is None:
+        elements_y = max(1, int(round(elements_x * height_m / length_m)))
+    if elements_y < 1:
+        raise ValueError("elements_y must be at least 1")
+    if refinement < 1:
+        raise ValueError("refinement must be at least 1")
+
+    inertia_m4 = thickness_m * height_m**3 / 12.0
+    analytic_tip_m = tip_load_n * length_m**3 / (3.0 * elastic_modulus_pa * inertia_m4)
+    analytic_stress_pa = abs(tip_load_n) * length_m * (0.5 * height_m) / inertia_m4
+    shear_modulus_pa = elastic_modulus_pa / (2.0 * (1.0 + poisson_ratio))
+    timoshenko_tip_m = analytic_tip_m + tip_load_n * length_m / (
+        5.0 / 6.0 * shear_modulus_pa * height_m * thickness_m
+    )
+
+    scipy_modules = _load_scipy()
+    if scipy_modules is None:
+        return {
+            "length_m": length_m,
+            "height_m": height_m,
+            "thickness_m": thickness_m,
+            "elastic_modulus_pa": elastic_modulus_pa,
+            "poisson_ratio": poisson_ratio,
+            "tip_load_n": float(tip_load_n),
+            "elements_x": elements_x,
+            "elements_y": elements_y,
+            "tip_deflection_m": analytic_tip_m,
+            "max_axial_stress_pa": analytic_stress_pa,
+            "analytic_tip_deflection_m": analytic_tip_m,
+            "timoshenko_tip_deflection_m": timoshenko_tip_m,
+            "analytic_max_axial_stress_pa": analytic_stress_pa,
+            "relative_error": 0.0,
+            "converged": False,
+            "fallback_reason": "scipy is not importable",
+            "method": "plane_stress_cantilever_closed_form_fallback",
+            "validation": "unverified",
+        }
+
+    tip_m, stress_pa = _plane_stress_cantilever_mesh(
+        length_m,
+        height_m,
+        thickness_m,
+        elastic_modulus_pa,
+        poisson_ratio,
+        tip_load_n,
+        elements_x,
+        elements_y,
+    )
+    reference_tip_m, reference_stress_pa = _plane_stress_cantilever_mesh(
+        length_m,
+        height_m,
+        thickness_m,
+        elastic_modulus_pa,
+        poisson_ratio,
+        tip_load_n,
+        elements_x * refinement,
+        elements_y * refinement,
+    )
+    relative_error = _relative_error(tip_m, reference_tip_m)
+    converged = relative_error <= convergence_tolerance
+
+    return {
+        "length_m": length_m,
+        "height_m": height_m,
+        "thickness_m": thickness_m,
+        "elastic_modulus_pa": elastic_modulus_pa,
+        "poisson_ratio": poisson_ratio,
+        "tip_load_n": float(tip_load_n),
+        "elements_x": elements_x,
+        "elements_y": elements_y,
+        "refinement": refinement,
+        "tip_deflection_m": tip_m,
+        "max_axial_stress_pa": stress_pa,
+        "reference_tip_deflection_m": reference_tip_m,
+        "reference_max_axial_stress_pa": reference_stress_pa,
+        "analytic_tip_deflection_m": analytic_tip_m,
+        "timoshenko_tip_deflection_m": timoshenko_tip_m,
+        "analytic_max_axial_stress_pa": analytic_stress_pa,
+        "relative_error": relative_error,
+        "relative_error_vs_euler_bernoulli": _relative_error(tip_m, analytic_tip_m),
+        "converged": converged,
+        "method": "plane_stress_q4_fem_scipy",
+        "validation": "cross-checked" if converged else "unverified",
+    }
+
+
 def _solve_tridiagonal(
     lower: np.ndarray, diag: np.ndarray, upper: np.ndarray, rhs: np.ndarray
 ) -> np.ndarray:
@@ -484,6 +827,224 @@ def solve_poiseuille(
         result["half_height_m"] = extent_m
         result["width_m"] = width_m
     return result
+
+
+def solve_poiseuille_2d(
+    length_m: float,
+    channel_height_m: float,
+    viscosity_pa_s: float,
+    pressure_drop_pa: float,
+    elements_x: int = 16,
+    elements_y: int = 64,
+) -> dict:
+    """Solve two-dimensional steady Stokes flow in a plane channel.
+
+    The domain is a channel of height ``channel_height_m`` [m] and length
+    ``length_m`` [m].  It is periodic along the flow.  A pressure gradient
+    ``pressure_drop_pa / length_m`` [Pa/m] drives the flow.  The walls at the
+    top and the bottom are no-slip.  A staggered finite-difference grid
+    (MAC) gives the velocity and the pressure.  ``scipy.sparse`` solves the
+    coupled saddle-point system.
+
+    The velocity profile is ``cross-checked`` against the exact plane
+    Poiseuille parabola ``u(y) = G (H - y) y / (2 mu)``.  When SciPy is
+    absent the function returns that closed form and labels it
+    ``unverified``.
+
+    Limitations: the flow is steady and Stokes (no inertia).  The wall
+    boundary condition is linear, so the solution is second order in the wall
+    spacing.  The channel is fully developed; there is no entrance region.
+    """
+    length_m = _require_positive(length_m, "length_m")
+    channel_height_m = _require_positive(channel_height_m, "channel_height_m")
+    viscosity_pa_s = _require_positive(viscosity_pa_s, "viscosity_pa_s")
+    pressure_drop_pa = _require_positive(pressure_drop_pa, "pressure_drop_pa")
+    if elements_x < 1:
+        raise ValueError("elements_x must be at least 1")
+    if elements_y < 2:
+        raise ValueError("elements_y must be at least 2")
+
+    gradient_pa_per_m = pressure_drop_pa / length_m
+    step_y_m = channel_height_m / elements_y
+    coordinate_m = (np.arange(elements_y) + 0.5) * step_y_m
+    analytic_profile_m_s = (
+        gradient_pa_per_m
+        / (2.0 * viscosity_pa_s)
+        * coordinate_m
+        * (channel_height_m - coordinate_m)
+    )
+    analytic_max_m_s = gradient_pa_per_m * channel_height_m**2 / (8.0 * viscosity_pa_s)
+    analytic_mean_m_s = 2.0 / 3.0 * analytic_max_m_s
+    analytic_flow_rate_m2_s = (
+        gradient_pa_per_m * channel_height_m**3 / (12.0 * viscosity_pa_s)
+    )
+
+    scipy_modules = _load_scipy()
+    if scipy_modules is None:
+        return {
+            "geometry": "channel_2d",
+            "length_m": length_m,
+            "channel_height_m": channel_height_m,
+            "viscosity_pa_s": viscosity_pa_s,
+            "pressure_drop_pa": pressure_drop_pa,
+            "elements_x": elements_x,
+            "elements_y": elements_y,
+            "coordinate_m": coordinate_m.tolist(),
+            "velocity_profile_m_s": analytic_profile_m_s.tolist(),
+            "analytic_velocity_profile_m_s": analytic_profile_m_s.tolist(),
+            "max_velocity_m_s": analytic_max_m_s,
+            "mean_velocity_m_s": analytic_mean_m_s,
+            "flow_rate_per_unit_width_m2_s": analytic_flow_rate_m2_s,
+            "analytic_max_velocity_m_s": analytic_max_m_s,
+            "analytic_mean_velocity_m_s": analytic_mean_m_s,
+            "analytic_flow_rate_per_unit_width_m2_s": analytic_flow_rate_m2_s,
+            "relative_error": 0.0,
+            "converged": False,
+            "fallback_reason": "scipy is not importable",
+            "method": "poiseuille_2d_closed_form_fallback",
+            "validation": "unverified",
+        }
+
+    sparse, sparse_linalg = scipy_modules
+    velocity_profile_m_s = _solve_channel_stokes(
+        length_m,
+        channel_height_m,
+        viscosity_pa_s,
+        gradient_pa_per_m,
+        elements_x,
+        elements_y,
+        sparse,
+        sparse_linalg,
+    )
+    max_velocity_m_s = float(velocity_profile_m_s.max())
+    relative_error = (
+        float(np.max(np.abs(velocity_profile_m_s - analytic_profile_m_s)))
+        / analytic_max_m_s
+    )
+    profile_with_walls = np.concatenate([[0.0], velocity_profile_m_s, [0.0]])
+    coordinate_with_walls = np.concatenate([[0.0], coordinate_m, [channel_height_m]])
+    flow_rate_m2_s = float(np.trapezoid(profile_with_walls, coordinate_with_walls))
+
+    return {
+        "geometry": "channel_2d",
+        "length_m": length_m,
+        "channel_height_m": channel_height_m,
+        "viscosity_pa_s": viscosity_pa_s,
+        "pressure_drop_pa": pressure_drop_pa,
+        "elements_x": elements_x,
+        "elements_y": elements_y,
+        "coordinate_m": coordinate_m.tolist(),
+        "velocity_profile_m_s": velocity_profile_m_s.tolist(),
+        "analytic_velocity_profile_m_s": analytic_profile_m_s.tolist(),
+        "max_velocity_m_s": max_velocity_m_s,
+        "mean_velocity_m_s": flow_rate_m2_s / channel_height_m,
+        "flow_rate_per_unit_width_m2_s": flow_rate_m2_s,
+        "analytic_max_velocity_m_s": analytic_max_m_s,
+        "analytic_mean_velocity_m_s": analytic_mean_m_s,
+        "analytic_flow_rate_per_unit_width_m2_s": analytic_flow_rate_m2_s,
+        "relative_error": relative_error,
+        "converged": relative_error < 1.0e-3,
+        "method": "poiseuille_2d_stokes_finite_difference_scipy",
+        "validation": "cross-checked" if relative_error < 1.0e-3 else "unverified",
+    }
+
+
+def _solve_channel_stokes(
+    length_m: float,
+    height_m: float,
+    viscosity_pa_s: float,
+    gradient_pa_per_m: float,
+    elements_x: int,
+    elements_y: int,
+    sparse: object,
+    sparse_linalg: object,
+) -> np.ndarray:
+    """Solve the staggered-grid steady Stokes system for a plane channel.
+
+    Returns the streamwise velocity at the cell centers of the first column.
+    The system is periodic along x.  The pressure is pinned at one cell to
+    remove its nullspace.  Neighbouring x-cells repeat the same solution.
+    """
+    step_x_m = length_m / elements_x
+    step_y_m = height_m / elements_y
+    u_count = elements_x * elements_y
+    v_count = elements_x * (elements_y - 1)
+    p_count = elements_x * elements_y
+    size = u_count + v_count + p_count
+
+    def u_id(i: int, j: int) -> int:
+        return j * elements_x + i
+
+    def v_id(i: int, j: int) -> int:
+        return u_count + (j - 1) * elements_x + i
+
+    def p_id(i: int, j: int) -> int:
+        return u_count + v_count + j * elements_x + i
+
+    matrix = sparse.lil_matrix((size, size))
+    rhs = np.zeros(size)
+    inverse_x_sq = viscosity_pa_s / step_x_m**2
+    inverse_y_sq = viscosity_pa_s / step_y_m**2
+
+    for j in range(elements_y):
+        for i in range(elements_x):
+            row = u_id(i, j)
+            left = (i - 1) % elements_x
+            right = (i + 1) % elements_x
+            matrix[row, u_id(left, j)] += inverse_x_sq
+            matrix[row, u_id(right, j)] += inverse_x_sq
+            matrix[row, row] -= 2.0 * inverse_x_sq
+            if j == 0:
+                matrix[row, row] -= 3.0 * inverse_y_sq
+                if elements_y > 1:
+                    matrix[row, u_id(i, 1)] += inverse_y_sq
+            elif j == elements_y - 1:
+                matrix[row, row] -= 3.0 * inverse_y_sq
+                matrix[row, u_id(i, elements_y - 2)] += inverse_y_sq
+            else:
+                matrix[row, u_id(i, j - 1)] += inverse_y_sq
+                matrix[row, u_id(i, j + 1)] += inverse_y_sq
+                matrix[row, row] -= 2.0 * inverse_y_sq
+            matrix[row, p_id(i, j)] -= 1.0 / step_x_m
+            matrix[row, p_id(left, j)] += 1.0 / step_x_m
+            rhs[row] = -gradient_pa_per_m
+
+    for j in range(1, elements_y):
+        for i in range(elements_x):
+            row = v_id(i, j)
+            left = (i - 1) % elements_x
+            right = (i + 1) % elements_x
+            matrix[row, v_id(left, j)] += inverse_x_sq
+            matrix[row, v_id(right, j)] += inverse_x_sq
+            matrix[row, row] -= 2.0 * inverse_x_sq
+            if j > 1:
+                matrix[row, v_id(i, j - 1)] += inverse_y_sq
+            if j < elements_y - 1:
+                matrix[row, v_id(i, j + 1)] += inverse_y_sq
+            matrix[row, p_id(i, j)] -= 1.0 / step_y_m
+            matrix[row, p_id(i, j - 1)] += 1.0 / step_y_m
+
+    for j in range(elements_y):
+        for i in range(elements_x):
+            row = p_id(i, j)
+            right = (i + 1) % elements_x
+            matrix[row, u_id(right, j)] += 1.0 / step_x_m
+            matrix[row, u_id(i, j)] -= 1.0 / step_x_m
+            if j == 0:
+                matrix[row, v_id(i, 1)] += 1.0 / step_y_m
+            elif j == elements_y - 1:
+                matrix[row, v_id(i, j)] -= 1.0 / step_y_m
+            else:
+                matrix[row, v_id(i, j)] -= 1.0 / step_y_m
+                matrix[row, v_id(i, j + 1)] += 1.0 / step_y_m
+
+    pin = p_id(0, 0)
+    matrix.rows[pin] = [pin]
+    matrix.data[pin] = [1.0]
+    rhs[pin] = 0.0
+
+    solution = sparse_linalg.spsolve(matrix.tocsr(), rhs)
+    return np.array([solution[u_id(0, j)] for j in range(elements_y)])
 
 
 def _element_mass_kg(symbol_or_number: str | int) -> float:

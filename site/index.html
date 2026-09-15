@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nano-CAD three-scale viewer (simulated / schematic)</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="viewer-body">
+    <header class="viewer-header">
+      <h1>Nano-CAD planetary gearbox</h1>
+      <span class="badge">simulated / schematic</span>
+      <nav>
+        <a href="docs/index.html">Docs</a>
+        &middot;
+        <a href="viewer.js">Source</a>
+      </nav>
+    </header>
+
+    <div id="app">
+      <canvas id="canvas"></canvas>
+
+      <aside id="panel">
+        <h2>Layers</h2>
+        <div class="layer-row">
+          <input type="checkbox" id="toggle-atomistic" checked />
+          <label for="toggle-atomistic"
+            ><span class="swatch" style="background: #4ec9b0"></span>Atomistic
+            (L1)</label
+          >
+        </div>
+        <div class="layer-row">
+          <input type="checkbox" id="toggle-device" checked />
+          <label for="toggle-device"
+            ><span class="swatch" style="background: #58a6ff"></span>Device
+            (L2)</label
+          >
+        </div>
+        <div class="layer-row">
+          <input type="checkbox" id="toggle-coarse" checked />
+          <label for="toggle-coarse"
+            ><span class="swatch" style="background: #f0b429"></span>Coarse
+            (handoff)</label
+          >
+        </div>
+
+        <h2>Scale slider</h2>
+        <input
+          type="range"
+          id="layer-slider"
+          min="0"
+          max="2"
+          step="0.01"
+          value="0"
+        />
+        <div class="hint" id="slider-label">Atomistic (L1)</div>
+
+        <h2>Readout</h2>
+        <div id="readout">Waiting for scene.json ...</div>
+        <div id="message"></div>
+
+        <div id="load-fallback" hidden>
+          <strong>Could not load scene.json automatically.</strong>
+          <p id="fallback-note">
+            A browser blocks <code>fetch</code> from <code>file://</code>. Pick
+            the file below, or serve the folder:<br />
+            <code>python3 -m http.server 8000 --directory site</code>
+          </p>
+          <input
+            type="file"
+            id="file-input"
+            accept=".json,application/json"
+          />
+        </div>
+
+        <h2>Controls</h2>
+        <div class="hint">
+          Drag to rotate &middot; wheel to zoom &middot; double-click to reset.
+        </div>
+      </aside>
+    </div>
+
+    <script src="viewer.js"></script>
+  </body>
+</html>

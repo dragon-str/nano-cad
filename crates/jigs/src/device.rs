@@ -18,9 +18,14 @@
 //! **position-level projection**. After integration, the solver runs a number
 //! of Gauss-Seidel passes. Each pass removes the constraint error in the
 //! mass-weighted least-squares sense. This method is simple and directly
-//! drives the position error to zero. It does not remove the constraint error
-//! velocity, so a constrained free body can carry a small residual velocity
-//! between steps. Callers that need this must add a velocity-level pass.
+//! drives the position error to zero.
+//!
+//! The position projection does not remove the constraint error velocity, so a
+//! constrained free body can carry a small residual velocity between steps.
+//! An optional **velocity-level pass** runs after the position projection. It
+//! removes the constraint-violating relative velocities with the same
+//! mass-weighted projection. The pass is on by default. See
+//! [`ConstraintOptions`].
 //!
 //! # Joints
 //!
@@ -28,6 +33,8 @@
 //!   coincident. One degree of freedom.
 //! - [`PrismaticJoint`]: translation along one axis only, relative orientation
 //!   fixed. One degree of freedom.
+//! - [`FixedJoint`]: a weld. The anchor points stay coincident and the relative
+//!   orientation stays fixed. Zero degrees of freedom.
 //! - [`GearCoupling`]: two revolute joints obey
 //!   `r_a * theta_a + r_b * theta_b = 0`.
 //!
@@ -245,6 +252,38 @@ impl std::ops::Add for Quat {
     }
 }
 
+/// Options that select the device constraint solver behaviour.
+///
+/// The velocity-level pass removes the constraint-violating relative velocity
+/// after the position projection. It is on by default. Turn it off to reproduce
+/// the position-level-only solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConstraintOptions {
+    /// Runs the velocity-level correction after the position projection.
+    pub velocity_pass: bool,
+}
+
+impl ConstraintOptions {
+    /// Builds the default options: the velocity pass is on.
+    pub const fn new() -> Self {
+        Self {
+            velocity_pass: true,
+        }
+    }
+
+    /// Returns these options with the velocity pass set to `velocity_pass`.
+    pub const fn with_velocity_pass(mut self, velocity_pass: bool) -> Self {
+        self.velocity_pass = velocity_pass;
+        self
+    }
+}
+
+impl Default for ConstraintOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A rigid body in the L2 device layer.
 ///
 /// `position_m` is the world position of the center of mass.
@@ -433,6 +472,28 @@ impl RigidBody {
         mat3_mul_vec(
             self.inverse_inertia_world(),
             self.angular_momentum_kg_m2_per_s,
+        )
+    }
+
+    /// Adds `delta_rad_per_s` to the world angular velocity.
+    ///
+    /// A fixed body does not change.
+    fn add_angular_velocity_rad_per_s(&mut self, delta_rad_per_s: [f64; 3]) {
+        if self.fixed {
+            return;
+        }
+        self.angular_momentum_kg_m2_per_s = add3(
+            self.angular_momentum_kg_m2_per_s,
+            mat3_mul_vec(self.inertia_world_kg_m2(), delta_rad_per_s),
+        );
+    }
+
+    /// Returns the world velocity of the point at world offset `arm_world_m`
+    /// from the center of mass: `v + omega x arm`.
+    fn point_velocity_m_per_s(&self, arm_world_m: [f64; 3]) -> [f64; 3] {
+        add3(
+            self.linear_velocity_m_per_s,
+            cross(self.angular_velocity_rad_per_s(), arm_world_m),
         )
     }
 
@@ -762,6 +823,83 @@ impl RevoluteJoint {
         Ok(2.0 * sin_half.atan2(relative.w))
     }
 
+    /// Returns the relative angular rate about the common axis in radians per
+    /// second.
+    pub fn angle_rate_rad_per_s(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let axis = a.orientation.rotate(self.axis_a_body);
+        let relative = sub3(
+            b.angular_velocity_rad_per_s(),
+            a.angular_velocity_rad_per_s(),
+        );
+        Ok(dot(relative, axis))
+    }
+
+    /// Returns the magnitude of the relative anchor velocity in metres per
+    /// second. A satisfied joint returns zero.
+    pub fn anchor_velocity_error_m_per_s(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let arm_a = a
+            .orientation
+            .rotate(sub3(self.anchor_a_body_m, a.center_of_mass_m));
+        let arm_b = b
+            .orientation
+            .rotate(sub3(self.anchor_b_body_m, b.center_of_mass_m));
+        let velocity_a = a.point_velocity_m_per_s(arm_a);
+        let velocity_b = b.point_velocity_m_per_s(arm_b);
+        Ok(norm3(sub3(velocity_b, velocity_a)))
+    }
+
+    /// Returns the relative angular rate perpendicular to the common axis in
+    /// radians per second. A satisfied joint returns zero.
+    pub fn axis_velocity_error_rad_per_s(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let axis = self.axis_a_world(bodies)?;
+        let relative = sub3(
+            b.angular_velocity_rad_per_s(),
+            a.angular_velocity_rad_per_s(),
+        );
+        let along = scale3(axis, dot(relative, axis));
+        Ok(norm3(sub3(relative, along)))
+    }
+
+    /// Removes the constraint-violating relative velocity.
+    ///
+    /// The method removes the relative anchor velocity and the relative angular
+    /// rate perpendicular to the common axis. It uses the same mass-weighted
+    /// projection as [`RevoluteJoint::project`]. The rotation about the axis
+    /// stays free.
+    pub fn project_velocity(
+        &self,
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let local_a = sub3(
+            self.anchor_a_body_m,
+            body_at(bodies, self.body_a)?.center_of_mass_m,
+        );
+        let local_b = sub3(
+            self.anchor_b_body_m,
+            body_at(bodies, self.body_b)?.center_of_mass_m,
+        );
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        project_point_velocity_rows(
+            bodies,
+            self.body_a,
+            local_a,
+            self.body_b,
+            local_b,
+            &axes,
+            relaxation,
+        )?;
+        let axis = self.axis_a_world(bodies)?;
+        let (u, v) = perpendicular_basis(axis);
+        project_angular_velocity_rows(bodies, self.body_a, self.body_b, &[u, v], relaxation)
+    }
+
     /// Projects the joint error to zero in the mass-weighted least-squares sense.
     ///
     /// The anchor point uses three point rows. The axis uses the shortest
@@ -950,6 +1088,73 @@ impl PrismaticJoint {
         Ok(angle)
     }
 
+    /// Returns the relative anchor velocity perpendicular to the axis in metres
+    /// per second. A satisfied joint returns zero.
+    pub fn velocity_error_m_per_s(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let arm_a = a
+            .orientation
+            .rotate(sub3(self.anchor_a_body_m, a.center_of_mass_m));
+        let arm_b = b
+            .orientation
+            .rotate(sub3(self.anchor_b_body_m, b.center_of_mass_m));
+        let velocity_a = a.point_velocity_m_per_s(arm_a);
+        let velocity_b = b.point_velocity_m_per_s(arm_b);
+        let axis = self.axis_a_world(bodies)?;
+        let relative = sub3(velocity_b, velocity_a);
+        let along = scale3(axis, dot(relative, axis));
+        Ok(norm3(sub3(relative, along)))
+    }
+
+    /// Returns the relative angular rate in radians per second. A satisfied
+    /// joint returns zero.
+    pub fn orientation_velocity_error_rad_per_s(
+        &self,
+        bodies: &[RigidBody],
+    ) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        Ok(norm3(sub3(
+            b.angular_velocity_rad_per_s(),
+            a.angular_velocity_rad_per_s(),
+        )))
+    }
+
+    /// Removes the constraint-violating relative velocity.
+    ///
+    /// The method removes the relative anchor velocity perpendicular to the
+    /// axis and the whole relative angular rate. It uses the same mass-weighted
+    /// projection as [`PrismaticJoint::project`]. The translation along the
+    /// axis stays free.
+    pub fn project_velocity(
+        &self,
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let local_a = sub3(
+            self.anchor_a_body_m,
+            body_at(bodies, self.body_a)?.center_of_mass_m,
+        );
+        let local_b = sub3(
+            self.anchor_b_body_m,
+            body_at(bodies, self.body_b)?.center_of_mass_m,
+        );
+        let axis = self.axis_a_world(bodies)?;
+        let (u, v) = perpendicular_basis(axis);
+        project_point_velocity_rows(
+            bodies,
+            self.body_a,
+            local_a,
+            self.body_b,
+            local_b,
+            &[u, v],
+            relaxation,
+        )?;
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        project_angular_velocity_rows(bodies, self.body_a, self.body_b, &axes, relaxation)
+    }
+
     /// Projects the joint error to zero in the mass-weighted least-squares sense.
     pub fn project(&self, bodies: &mut [RigidBody], relaxation: f64) -> Result<(), DeviceError> {
         let local_a = sub3(
@@ -982,6 +1187,257 @@ impl PrismaticJoint {
         let (a, b) = two_bodies_mut(bodies, self.body_a, self.body_b)?;
         let relative = a.orientation.conjugate() * b.orientation;
         let world_delta = a.orientation * relative.conjugate() * a.orientation.conjugate();
+        let (direction, angle) = world_delta.to_axis_angle();
+        if angle <= 1.0e-12 {
+            return Ok(());
+        }
+        let inverse_inertia_a = a.inverse_inertia_world();
+        let inverse_inertia_b = b.inverse_inertia_world();
+        let weight_a = dot(direction, mat3_mul_vec(inverse_inertia_a, direction));
+        let weight_b = dot(direction, mat3_mul_vec(inverse_inertia_b, direction));
+        let total = weight_a + weight_b;
+        if total <= 1.0e-30 {
+            return Ok(());
+        }
+        let fraction_a = weight_a / total;
+        a.apply_rotation_delta(scale3(direction, -fraction_a * angle * relaxation));
+        b.apply_rotation_delta(scale3(direction, (1.0 - fraction_a) * angle * relaxation));
+        Ok(())
+    }
+}
+
+/// A fixed joint (weld) between two bodies.
+///
+/// The joint holds the two anchor points coincident and fixes the relative
+/// orientation. The relative transform of the two bodies is therefore locked:
+/// the position of the anchor of body B in the axes of body A, and the relative
+/// orientation, stay at their construction values. The joint has zero degrees
+/// of freedom.
+///
+/// Each body stores its anchor in its own frame. Build the joint from local
+/// frames, or use [`FixedJoint::from_world`] to weld the bodies at one world
+/// anchor and the current relative orientation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FixedJoint {
+    body_a: usize,
+    body_b: usize,
+    anchor_a_body_m: [f64; 3],
+    anchor_b_body_m: [f64; 3],
+    relative_orientation_a: Quat,
+}
+
+impl FixedJoint {
+    /// Creates a fixed joint from local-frame data.
+    ///
+    /// The two bodies must differ and must exist in `bodies`. The anchors must
+    /// be finite. `relative_orientation_a` is the desired rotation of body B in
+    /// the axes of body A. It must be finite and non-zero.
+    pub fn new(
+        bodies: &[RigidBody],
+        body_a: usize,
+        body_b: usize,
+        anchor_a_body_m: [f64; 3],
+        anchor_b_body_m: [f64; 3],
+        relative_orientation_a: Quat,
+    ) -> Result<Self, DeviceError> {
+        if !relative_orientation_a.is_finite() || relative_orientation_a.norm() <= 1.0e-300 {
+            return Err(DeviceError::InvalidOrientation {
+                norm: relative_orientation_a.norm(),
+            });
+        }
+        let joint = Self {
+            body_a,
+            body_b,
+            anchor_a_body_m: check_anchor(anchor_a_body_m)?,
+            anchor_b_body_m: check_anchor(anchor_b_body_m)?,
+            relative_orientation_a: relative_orientation_a.normalized(),
+        };
+        joint.check_bodies(bodies.len())?;
+        Ok(joint)
+    }
+
+    /// Creates a fixed joint that starts satisfied.
+    ///
+    /// The world `anchor_m` is projected onto each body frame. The relative
+    /// orientation is the current relative orientation. The joint error is zero
+    /// at construction.
+    pub fn from_world(
+        bodies: &[RigidBody],
+        body_a: usize,
+        body_b: usize,
+        anchor_m: [f64; 3],
+    ) -> Result<Self, DeviceError> {
+        let a = body_at(bodies, body_a)?;
+        let b = body_at(bodies, body_b)?;
+        let anchor_a_body_m = a.orientation.inverse_rotate(sub3(anchor_m, a.position_m));
+        let anchor_b_body_m = b.orientation.inverse_rotate(sub3(anchor_m, b.position_m));
+        let relative_orientation_a = a.orientation.conjugate() * b.orientation;
+        Self::new(
+            bodies,
+            body_a,
+            body_b,
+            add3(anchor_a_body_m, a.center_of_mass_m),
+            add3(anchor_b_body_m, b.center_of_mass_m),
+            relative_orientation_a,
+        )
+    }
+
+    fn check_bodies(&self, body_count: usize) -> Result<(), DeviceError> {
+        if self.body_a == self.body_b {
+            return Err(DeviceError::SelfJoint { body: self.body_a });
+        }
+        if self.body_a >= body_count || self.body_b >= body_count {
+            return Err(DeviceError::BodyIndexOutOfBounds {
+                body: self.body_a.max(self.body_b),
+                body_count,
+            });
+        }
+        Ok(())
+    }
+
+    /// Returns the first body index.
+    pub fn body_a(&self) -> usize {
+        self.body_a
+    }
+
+    /// Returns the second body index.
+    pub fn body_b(&self) -> usize {
+        self.body_b
+    }
+
+    /// Returns the desired relative orientation of body B in the axes of body
+    /// A.
+    pub fn relative_orientation(&self) -> Quat {
+        self.relative_orientation_a
+    }
+
+    /// Returns the world anchor point of the first body.
+    pub fn anchor_a_world_m(&self, bodies: &[RigidBody]) -> Result<[f64; 3], DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        Ok(a.point_world_m(self.anchor_a_body_m))
+    }
+
+    /// Returns the world anchor point of the second body.
+    pub fn anchor_b_world_m(&self, bodies: &[RigidBody]) -> Result<[f64; 3], DeviceError> {
+        let b = body_at(bodies, self.body_b)?;
+        Ok(b.point_world_m(self.anchor_b_body_m))
+    }
+
+    /// Returns the distance between the two anchor points in metres.
+    pub fn anchor_error_m(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = self.anchor_a_world_m(bodies)?;
+        let b = self.anchor_b_world_m(bodies)?;
+        Ok(norm3(sub3(b, a)))
+    }
+
+    /// Returns the relative orientation error in radians.
+    pub fn orientation_error_rad(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let relative = a.orientation.conjugate() * b.orientation;
+        let error = self.relative_orientation_a.conjugate() * relative;
+        let (_, angle) = error.to_axis_angle();
+        Ok(angle)
+    }
+
+    /// Returns the magnitude of the relative anchor velocity in metres per
+    /// second. A satisfied joint returns zero.
+    pub fn anchor_velocity_error_m_per_s(&self, bodies: &[RigidBody]) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        let arm_a = a
+            .orientation
+            .rotate(sub3(self.anchor_a_body_m, a.center_of_mass_m));
+        let arm_b = b
+            .orientation
+            .rotate(sub3(self.anchor_b_body_m, b.center_of_mass_m));
+        let velocity_a = a.point_velocity_m_per_s(arm_a);
+        let velocity_b = b.point_velocity_m_per_s(arm_b);
+        Ok(norm3(sub3(velocity_b, velocity_a)))
+    }
+
+    /// Returns the relative angular rate in radians per second. A satisfied
+    /// joint returns zero.
+    pub fn orientation_velocity_error_rad_per_s(
+        &self,
+        bodies: &[RigidBody],
+    ) -> Result<f64, DeviceError> {
+        let a = body_at(bodies, self.body_a)?;
+        let b = body_at(bodies, self.body_b)?;
+        Ok(norm3(sub3(
+            b.angular_velocity_rad_per_s(),
+            a.angular_velocity_rad_per_s(),
+        )))
+    }
+
+    /// Projects the joint error to zero in the mass-weighted least-squares
+    /// sense.
+    ///
+    /// The anchor point uses three point rows. The orientation uses the
+    /// shortest rotation that brings the relative orientation to the stored
+    /// value.
+    pub fn project(&self, bodies: &mut [RigidBody], relaxation: f64) -> Result<(), DeviceError> {
+        let local_a = sub3(
+            self.anchor_a_body_m,
+            body_at(bodies, self.body_a)?.center_of_mass_m,
+        );
+        let local_b = sub3(
+            self.anchor_b_body_m,
+            body_at(bodies, self.body_b)?.center_of_mass_m,
+        );
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        project_point_rows(
+            bodies,
+            self.body_a,
+            local_a,
+            self.body_b,
+            local_b,
+            &axes,
+            relaxation,
+        )?;
+        self.lock_orientation(bodies, relaxation)
+    }
+
+    /// Removes the constraint-violating relative velocity.
+    ///
+    /// The method removes the relative anchor velocity and the whole relative
+    /// angular rate. It uses the same mass-weighted projection as
+    /// [`FixedJoint::project`].
+    pub fn project_velocity(
+        &self,
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let local_a = sub3(
+            self.anchor_a_body_m,
+            body_at(bodies, self.body_a)?.center_of_mass_m,
+        );
+        let local_b = sub3(
+            self.anchor_b_body_m,
+            body_at(bodies, self.body_b)?.center_of_mass_m,
+        );
+        let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        project_point_velocity_rows(
+            bodies,
+            self.body_a,
+            local_a,
+            self.body_b,
+            local_b,
+            &axes,
+            relaxation,
+        )?;
+        project_angular_velocity_rows(bodies, self.body_a, self.body_b, &axes, relaxation)
+    }
+
+    fn lock_orientation(
+        &self,
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let (a, b) = two_bodies_mut(bodies, self.body_a, self.body_b)?;
+        let relative = a.orientation.conjugate() * b.orientation;
+        let correction = self.relative_orientation_a * relative.conjugate();
+        let world_delta = a.orientation * correction * a.orientation.conjugate();
         let (direction, angle) = world_delta.to_axis_angle();
         if angle <= 1.0e-12 {
             return Ok(());
@@ -1092,6 +1548,41 @@ impl GearCoupling {
         let theta_a = self.angle_a_rad(revolute, bodies)?;
         let theta_b = self.angle_b_rad(revolute, bodies)?;
         Ok(self.radius_a_m * theta_a + self.radius_b_m * theta_b)
+    }
+
+    /// Returns the constraint velocity `r_a * dtheta_a + r_b * dtheta_b` in
+    /// metres per second.
+    pub fn velocity_error_m_per_s(
+        &self,
+        revolute: &[RevoluteJoint],
+        bodies: &[RigidBody],
+    ) -> Result<f64, DeviceError> {
+        let rate_a = self
+            .revolute_at(revolute, self.joint_a)?
+            .angle_rate_rad_per_s(bodies)?;
+        let rate_b = self
+            .revolute_at(revolute, self.joint_b)?
+            .angle_rate_rad_per_s(bodies)?;
+        Ok(self.radius_a_m * rate_a + self.radius_b_m * rate_b)
+    }
+
+    /// Removes the constraint-violating relative velocity.
+    ///
+    /// The method applies the same least-squares correction as
+    /// [`GearCoupling::project`] to the joint angle rates.
+    pub fn project_velocity(
+        &self,
+        revolute: &[RevoluteJoint],
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let error = self.velocity_error_m_per_s(revolute, bodies)?;
+        let denominator = self.radius_a_m * self.radius_a_m + self.radius_b_m * self.radius_b_m;
+        let delta_a = -error * self.radius_a_m / denominator * relaxation;
+        let delta_b = -error * self.radius_b_m / denominator * relaxation;
+        apply_joint_velocity_delta(revolute, bodies, self.joint_a, delta_a)?;
+        apply_joint_velocity_delta(revolute, bodies, self.joint_b, delta_b)?;
+        Ok(())
     }
 
     /// Projects the coupling error to zero.
@@ -1225,6 +1716,47 @@ impl GearConstraint {
         Ok(error_m)
     }
 
+    /// Returns the constraint velocity `sum_i c_i * dtheta_i` in metres per
+    /// second.
+    pub fn velocity_error_m_per_s(
+        &self,
+        revolute: &[RevoluteJoint],
+        bodies: &[RigidBody],
+    ) -> Result<f64, DeviceError> {
+        let mut error_m_per_s = 0.0;
+        for term in &self.terms {
+            let joint = revolute_at(revolute, term.joint)?;
+            error_m_per_s += term.coefficient_m * joint.angle_rate_rad_per_s(bodies)?;
+        }
+        Ok(error_m_per_s)
+    }
+
+    /// Removes the constraint-violating relative velocity.
+    ///
+    /// The method applies the same least-squares correction as
+    /// [`GearConstraint::project`] to the joint angle rates.
+    pub fn project_velocity(
+        &self,
+        revolute: &[RevoluteJoint],
+        bodies: &mut [RigidBody],
+        relaxation: f64,
+    ) -> Result<(), DeviceError> {
+        let error_m_per_s = self.velocity_error_m_per_s(revolute, bodies)?;
+        let denominator: f64 = self
+            .terms
+            .iter()
+            .map(|term| term.coefficient_m * term.coefficient_m)
+            .sum();
+        if denominator <= 0.0 {
+            return Ok(());
+        }
+        for term in &self.terms {
+            let delta_rate = -term.coefficient_m * error_m_per_s / denominator * relaxation;
+            apply_joint_velocity_delta(revolute, bodies, term.joint, delta_rate)?;
+        }
+        Ok(())
+    }
+
     /// Projects the constraint error to zero in the least-squares sense.
     pub fn project(
         &self,
@@ -1288,6 +1820,56 @@ fn apply_joint_angle_delta(
     Ok(())
 }
 
+/// Changes the angle rate of one revolute joint by `delta_rad_per_s`.
+///
+/// A positive delta increases the joint angle rate. The method changes the
+/// second body by `+delta_rad_per_s` about the joint axis through the anchor.
+/// When that body is fixed, it changes the first body by `-delta_rad_per_s`
+/// instead, so a fixed body never moves.
+fn apply_joint_velocity_delta(
+    revolute: &[RevoluteJoint],
+    bodies: &mut [RigidBody],
+    joint: usize,
+    delta_rad_per_s: f64,
+) -> Result<(), DeviceError> {
+    let joint = revolute_at(revolute, joint)?;
+    let body_a = joint.body_a();
+    let body_b = joint.body_b();
+    let body_count = bodies.len();
+    let body_b_fixed = bodies
+        .get(body_b)
+        .ok_or(DeviceError::BodyIndexOutOfBounds {
+            body: body_b,
+            body_count,
+        })?
+        .is_fixed();
+    let body_a_fixed = bodies
+        .get(body_a)
+        .ok_or(DeviceError::BodyIndexOutOfBounds {
+            body: body_a,
+            body_count,
+        })?
+        .is_fixed();
+    let axis = joint.axis_a_world(bodies)?;
+    let anchor = joint.anchor_a_world_m(bodies)?;
+    if !body_b_fixed {
+        let body = &mut bodies[body_b];
+        let arm = sub3(body.position_m(), anchor);
+        let angular_velocity = scale3(axis, delta_rad_per_s);
+        body.linear_velocity_m_per_s =
+            add3(body.linear_velocity_m_per_s, cross(angular_velocity, arm));
+        body.add_angular_velocity_rad_per_s(angular_velocity);
+    } else if !body_a_fixed {
+        let body = &mut bodies[body_a];
+        let arm = sub3(body.position_m(), anchor);
+        let angular_velocity = scale3(axis, -delta_rad_per_s);
+        body.linear_velocity_m_per_s =
+            add3(body.linear_velocity_m_per_s, cross(angular_velocity, arm));
+        body.add_angular_velocity_rad_per_s(angular_velocity);
+    }
+    Ok(())
+}
+
 fn revolute_at(revolute: &[RevoluteJoint], joint: usize) -> Result<&RevoluteJoint, DeviceError> {
     revolute
         .get(joint)
@@ -1306,8 +1888,10 @@ pub struct RigidBodySystem {
     bodies: Vec<RigidBody>,
     revolute_joints: Vec<RevoluteJoint>,
     prismatic_joints: Vec<PrismaticJoint>,
+    fixed_joints: Vec<FixedJoint>,
     gear_couplings: Vec<GearCoupling>,
     gear_constraints: Vec<GearConstraint>,
+    options: ConstraintOptions,
 }
 
 impl RigidBodySystem {
@@ -1357,6 +1941,12 @@ impl RigidBodySystem {
     pub fn add_prismatic_joint(&mut self, joint: PrismaticJoint) -> usize {
         self.prismatic_joints.push(joint);
         self.prismatic_joints.len() - 1
+    }
+
+    /// Adds a fixed joint and returns its index.
+    pub fn add_fixed_joint(&mut self, joint: FixedJoint) -> usize {
+        self.fixed_joints.push(joint);
+        self.fixed_joints.len() - 1
     }
 
     /// Adds a gear coupling and returns its index.
@@ -1410,6 +2000,26 @@ impl RigidBodySystem {
         &self.prismatic_joints
     }
 
+    /// Returns the fixed joints.
+    pub fn fixed_joints(&self) -> &[FixedJoint] {
+        &self.fixed_joints
+    }
+
+    /// Returns the constraint solver options.
+    pub fn constraint_options(&self) -> ConstraintOptions {
+        self.options
+    }
+
+    /// Replaces the constraint solver options.
+    pub fn set_constraint_options(&mut self, options: ConstraintOptions) {
+        self.options = options;
+    }
+
+    /// Turns the velocity-level correction pass on or off.
+    pub fn set_velocity_pass(&mut self, velocity_pass: bool) {
+        self.options.velocity_pass = velocity_pass;
+    }
+
     /// Returns the gear couplings.
     pub fn gear_couplings(&self) -> &[GearCoupling] {
         &self.gear_couplings
@@ -1418,13 +2028,20 @@ impl RigidBodySystem {
     /// Advances every body and then projects the constraints.
     ///
     /// `iterations` is the number of Gauss-Seidel passes. A larger value gives
-    /// a smaller constraint error. A value of 4 to 50 is typical.
+    /// a smaller constraint error. A value of 4 to 50 is typical. When the
+    /// velocity pass is on, the solver runs the same number of velocity-level
+    /// passes after the position projection.
     pub fn step(&mut self, dt_s: f64, iterations: usize) -> Result<(), DeviceError> {
         for body in &mut self.bodies {
             body.integrate(dt_s)?;
         }
         for _ in 0..iterations {
             self.project()?;
+        }
+        if self.options.velocity_pass {
+            for _ in 0..iterations {
+                self.project_velocity()?;
+            }
         }
         Ok(())
     }
@@ -1437,11 +2054,34 @@ impl RigidBodySystem {
         for joint in &self.prismatic_joints {
             joint.project(&mut self.bodies, relaxation)?;
         }
+        for joint in &self.fixed_joints {
+            joint.project(&mut self.bodies, relaxation)?;
+        }
         for coupling in &self.gear_couplings {
             coupling.project(&self.revolute_joints, &mut self.bodies, relaxation)?;
         }
         for constraint in &self.gear_constraints {
             constraint.project(&self.revolute_joints, &mut self.bodies, relaxation)?;
+        }
+        Ok(())
+    }
+
+    fn project_velocity(&mut self) -> Result<(), DeviceError> {
+        let relaxation = 1.0;
+        for joint in &self.revolute_joints {
+            joint.project_velocity(&mut self.bodies, relaxation)?;
+        }
+        for joint in &self.prismatic_joints {
+            joint.project_velocity(&mut self.bodies, relaxation)?;
+        }
+        for joint in &self.fixed_joints {
+            joint.project_velocity(&mut self.bodies, relaxation)?;
+        }
+        for coupling in &self.gear_couplings {
+            coupling.project_velocity(&self.revolute_joints, &mut self.bodies, relaxation)?;
+        }
+        for constraint in &self.gear_constraints {
+            constraint.project_velocity(&self.revolute_joints, &mut self.bodies, relaxation)?;
         }
         Ok(())
     }
@@ -1480,6 +2120,101 @@ impl RigidBodySystem {
             max_error_rad = max_error_rad.max(joint.orientation_error_rad(&self.bodies)?);
         }
         Ok(max_error_rad)
+    }
+
+    /// Returns the largest fixed anchor error in metres.
+    pub fn max_fixed_anchor_error_m(&self) -> Result<f64, DeviceError> {
+        let mut max_error_m = 0.0_f64;
+        for joint in &self.fixed_joints {
+            max_error_m = max_error_m.max(joint.anchor_error_m(&self.bodies)?);
+        }
+        Ok(max_error_m)
+    }
+
+    /// Returns the largest fixed orientation error in radians.
+    pub fn max_fixed_orientation_error_rad(&self) -> Result<f64, DeviceError> {
+        let mut max_error_rad = 0.0_f64;
+        for joint in &self.fixed_joints {
+            max_error_rad = max_error_rad.max(joint.orientation_error_rad(&self.bodies)?);
+        }
+        Ok(max_error_rad)
+    }
+
+    /// Returns the largest revolute anchor velocity error in metres per second.
+    pub fn max_revolute_anchor_velocity_m_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.revolute_joints {
+            max_error = max_error.max(joint.anchor_velocity_error_m_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest revolute axis velocity error in radians per second.
+    pub fn max_revolute_axis_velocity_rad_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.revolute_joints {
+            max_error = max_error.max(joint.axis_velocity_error_rad_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest prismatic velocity error in metres per second.
+    pub fn max_prismatic_velocity_m_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.prismatic_joints {
+            max_error = max_error.max(joint.velocity_error_m_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest prismatic orientation velocity error in radians per
+    /// second.
+    pub fn max_prismatic_orientation_velocity_rad_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.prismatic_joints {
+            max_error = max_error.max(joint.orientation_velocity_error_rad_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest fixed anchor velocity error in metres per second.
+    pub fn max_fixed_anchor_velocity_m_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.fixed_joints {
+            max_error = max_error.max(joint.anchor_velocity_error_m_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest fixed orientation velocity error in radians per
+    /// second.
+    pub fn max_fixed_orientation_velocity_rad_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for joint in &self.fixed_joints {
+            max_error = max_error.max(joint.orientation_velocity_error_rad_per_s(&self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest gear coupling velocity error in metres per second.
+    pub fn max_gear_velocity_m_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for coupling in &self.gear_couplings {
+            max_error = max_error
+                .max(coupling.velocity_error_m_per_s(&self.revolute_joints, &self.bodies)?);
+        }
+        Ok(max_error)
+    }
+
+    /// Returns the largest general gear constraint velocity error in metres per
+    /// second.
+    pub fn max_gear_constraint_velocity_m_per_s(&self) -> Result<f64, DeviceError> {
+        let mut max_error = 0.0_f64;
+        for constraint in &self.gear_constraints {
+            max_error = max_error
+                .max(constraint.velocity_error_m_per_s(&self.revolute_joints, &self.bodies)?);
+        }
+        Ok(max_error)
     }
 
     /// Returns the largest gear coupling error in metres.
@@ -1584,6 +2319,90 @@ fn project_point_rows(
         );
         let rotation_b = mat3_mul_vec(b.inverse_inertia_world(), cross(r_b, impulse));
         b.apply_rotation_delta(scale3(rotation_b, -relaxation));
+    }
+    Ok(())
+}
+
+/// Removes the relative point velocity along each row direction.
+///
+/// The method mirrors [`project_point_rows`] on the velocities. The Jacobian
+/// uses the same point mass matrix at the current pose. `local_*_com_m` is the
+/// anchor offset from the center of mass in the body frame.
+fn project_point_velocity_rows(
+    bodies: &mut [RigidBody],
+    body_a: usize,
+    local_a_com_m: [f64; 3],
+    body_b: usize,
+    local_b_com_m: [f64; 3],
+    directions: &[[f64; 3]],
+    relaxation: f64,
+) -> Result<(), DeviceError> {
+    let (a, b) = two_bodies_mut(bodies, body_a, body_b)?;
+    for direction in directions {
+        let r_a = a.orientation.rotate(local_a_com_m);
+        let r_b = b.orientation.rotate(local_b_com_m);
+        let velocity_a = a.point_velocity_m_per_s(r_a);
+        let velocity_b = b.point_velocity_m_per_s(r_b);
+        let error = dot(*direction, sub3(velocity_b, velocity_a));
+        if error == 0.0 {
+            continue;
+        }
+        let stiffness = point_k_matrix(a, b, r_a, r_b);
+        let denominator = dot(*direction, mat3_mul_vec(stiffness, *direction));
+        if denominator <= 1.0e-30 {
+            continue;
+        }
+        let impulse = scale3(*direction, error / denominator);
+        a.linear_velocity_m_per_s = add3(
+            a.linear_velocity_m_per_s,
+            scale3(impulse, a.inverse_mass_kg() * relaxation),
+        );
+        let rotation_a = mat3_mul_vec(a.inverse_inertia_world(), cross(r_a, impulse));
+        a.add_angular_velocity_rad_per_s(scale3(rotation_a, relaxation));
+        b.linear_velocity_m_per_s = sub3(
+            b.linear_velocity_m_per_s,
+            scale3(impulse, b.inverse_mass_kg() * relaxation),
+        );
+        let rotation_b = mat3_mul_vec(b.inverse_inertia_world(), cross(r_b, impulse));
+        b.add_angular_velocity_rad_per_s(scale3(rotation_b, -relaxation));
+    }
+    Ok(())
+}
+
+/// Removes the relative angular velocity along each row direction.
+///
+/// The correction is mass-weighted by the inverse world inertia of each body.
+/// A fixed body has zero inverse inertia, so it does not change.
+fn project_angular_velocity_rows(
+    bodies: &mut [RigidBody],
+    body_a: usize,
+    body_b: usize,
+    directions: &[[f64; 3]],
+    relaxation: f64,
+) -> Result<(), DeviceError> {
+    let (a, b) = two_bodies_mut(bodies, body_a, body_b)?;
+    for direction in directions {
+        let relative = sub3(
+            b.angular_velocity_rad_per_s(),
+            a.angular_velocity_rad_per_s(),
+        );
+        let error = dot(*direction, relative);
+        if error == 0.0 {
+            continue;
+        }
+        let inverse_inertia_a = a.inverse_inertia_world();
+        let inverse_inertia_b = b.inverse_inertia_world();
+        let weight_a = dot(*direction, mat3_mul_vec(inverse_inertia_a, *direction));
+        let weight_b = dot(*direction, mat3_mul_vec(inverse_inertia_b, *direction));
+        let total = weight_a + weight_b;
+        if total <= 1.0e-30 {
+            continue;
+        }
+        let impulse = scale3(*direction, error / total);
+        let delta_a = mat3_mul_vec(inverse_inertia_a, impulse);
+        let delta_b = mat3_mul_vec(inverse_inertia_b, impulse);
+        a.add_angular_velocity_rad_per_s(scale3(delta_a, relaxation));
+        b.add_angular_velocity_rad_per_s(scale3(delta_b, -relaxation));
     }
     Ok(())
 }
@@ -2234,5 +3053,339 @@ mod tests {
             GearConstraint::new([(0, 1.0), (1, f64::NAN)]),
             Err(DeviceError::InvalidGearCoefficient { joint: 1, .. })
         ));
+    }
+
+    fn maximum_kinetic_energy_j(system: &RigidBodySystem) -> f64 {
+        system
+            .bodies()
+            .iter()
+            .map(RigidBody::kinetic_energy_j)
+            .sum()
+    }
+
+    #[test]
+    fn a_fixed_joint_starts_satisfied_and_rejects_bad_setup() {
+        let ground = fixed_ground([0.0, 0.0, 0.0]);
+        let body = diagonal_body(1.0, [1.0, 1.0, 1.0]);
+        let bodies = vec![ground, body];
+        let joint = FixedJoint::from_world(&bodies, 0, 1, [0.0, 0.0, 0.0]).expect("valid joint");
+        assert!(joint.anchor_error_m(&bodies).expect("valid") < 1.0e-15);
+        assert!(joint.orientation_error_rad(&bodies).expect("valid") < 1.0e-15);
+        assert!(matches!(
+            FixedJoint::from_world(&bodies, 0, 0, [0.0; 3]),
+            Err(DeviceError::SelfJoint { .. })
+        ));
+        assert!(matches!(
+            FixedJoint::from_world(&bodies, 0, 5, [0.0; 3]),
+            Err(DeviceError::BodyIndexOutOfBounds { .. })
+        ));
+        assert!(matches!(
+            FixedJoint::new(
+                &bodies,
+                0,
+                1,
+                [0.0; 3],
+                [0.0; 3],
+                Quat::new(0.0, 0.0, 0.0, 0.0)
+            ),
+            Err(DeviceError::InvalidOrientation { .. })
+        ));
+    }
+
+    #[test]
+    fn a_fixed_joint_holds_the_relative_transform_under_force() {
+        let mut body_a = diagonal_body(1.0, [1.0, 1.0, 1.0]);
+        body_a
+            .set_position_m([0.1, 0.0, 0.0])
+            .expect("valid position");
+        let mut body_b = diagonal_body(2.0, [1.0, 1.0, 1.0]);
+        body_b
+            .set_position_m([0.2, 0.1, 0.0])
+            .expect("valid position");
+        body_b
+            .set_orientation(Quat::from_axis_angle([0.0, 0.0, 1.0], 0.3))
+            .expect("valid orientation");
+        let setup = vec![body_a.clone(), body_b.clone()];
+        let joint = FixedJoint::from_world(&setup, 0, 1, [0.15, 0.0, 0.0]).expect("valid joint");
+        let mut system = RigidBodySystem::new();
+        system.add_body(body_a);
+        system.add_body(body_b);
+        system.add_fixed_joint(joint);
+        let initial_relative =
+            system.bodies()[0].orientation().conjugate() * system.bodies()[1].orientation();
+        let initial_offset = sub3(
+            system.bodies()[1].position_m(),
+            system.bodies()[0].position_m(),
+        );
+        let initial_offset_a = system.bodies()[0]
+            .orientation()
+            .inverse_rotate(initial_offset);
+        for _ in 0..2_000 {
+            system
+                .body_mut(1)
+                .expect("body")
+                .add_force_n([1.0, -0.5, 0.25]);
+            system
+                .body_mut(0)
+                .expect("body")
+                .add_torque_n_m([0.0, 0.0, 0.1]);
+            system.step(1.0e-3, 32).expect("valid step");
+        }
+        assert!(system.max_fixed_anchor_error_m().expect("valid") < 1.0e-9);
+        assert!(system.max_fixed_orientation_error_rad().expect("valid") < 1.0e-9);
+        let final_relative =
+            system.bodies()[0].orientation().conjugate() * system.bodies()[1].orientation();
+        let relative_error = (initial_relative.conjugate() * final_relative)
+            .to_axis_angle()
+            .1
+            .abs();
+        assert!(
+            relative_error < 1.0e-9,
+            "relative rotation {relative_error} rad"
+        );
+        let final_offset = sub3(
+            system.bodies()[1].position_m(),
+            system.bodies()[0].position_m(),
+        );
+        let final_offset_a = system.bodies()[0]
+            .orientation()
+            .inverse_rotate(final_offset);
+        assert!(
+            norm3(sub3(final_offset_a, initial_offset_a)) < 1.0e-9,
+            "the weld offset in the frame of body A changed"
+        );
+        assert!(norm3(system.bodies()[1].position_m()) > 1.0e-3);
+    }
+
+    #[test]
+    fn a_chain_with_one_weld_and_one_revolute_behaves_as_expected() {
+        let ground = fixed_ground([0.0, 0.0, 0.0]);
+        let mut arm = diagonal_body(1.0, [0.05, 0.05, 0.05]);
+        arm.set_position_m([0.1, 0.0, 0.0]).expect("valid position");
+        let mut wheel = diagonal_body(1.0, [0.005, 0.005, 0.005]);
+        wheel
+            .set_position_m([0.2, 0.0, 0.0])
+            .expect("valid position");
+        wheel
+            .set_angular_velocity_rad_per_s([0.0, 0.0, 2.0])
+            .expect("valid velocity");
+        let setup = vec![ground.clone(), arm.clone(), wheel.clone()];
+        let weld = FixedJoint::from_world(&setup, 0, 1, [0.1, 0.0, 0.0]).expect("valid weld");
+        let revolute = RevoluteJoint::from_world(&setup, 1, 2, [0.2, 0.0, 0.0], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let mut system = RigidBodySystem::new();
+        system.add_body(ground);
+        system.add_body(arm);
+        system.add_body(wheel);
+        system.add_fixed_joint(weld);
+        system.add_revolute_joint(revolute);
+        for _ in 0..2_000 {
+            system
+                .body_mut(1)
+                .expect("body")
+                .add_torque_n_m([0.0, 0.0, 1.0]);
+            system.step(1.0e-3, 32).expect("valid step");
+        }
+        assert!(system.max_fixed_anchor_error_m().expect("valid") < 1.0e-9);
+        assert!(system.max_fixed_orientation_error_rad().expect("valid") < 1.0e-9);
+        assert!(system.max_revolute_anchor_error_m().expect("valid") < 1.0e-9);
+        assert!(system.max_revolute_axis_error_rad().expect("valid") < 1.0e-9);
+        let arm_position = system.bodies()[1].position_m();
+        assert!(
+            norm3(sub3(arm_position, [0.1, 0.0, 0.0])) < 1.0e-6,
+            "the weld must hold the arm"
+        );
+        let revolute_angle = system.revolute_joints()[0]
+            .angle_rad(system.bodies())
+            .expect("valid");
+        assert!(revolute_angle.abs() > 1.0e-3, "the wheel must turn");
+    }
+
+    fn revolute_velocity_measurement(velocity_pass: bool) -> f64 {
+        let ground = fixed_ground([0.0, 0.0, 0.0]);
+        let mut rotor = diagonal_body(1.0, [0.5, 0.5, 0.5]);
+        rotor
+            .set_position_m([0.1, 0.0, 0.0])
+            .expect("valid position");
+        let setup = vec![ground.clone(), rotor.clone()];
+        let joint = RevoluteJoint::from_world(&setup, 0, 1, [0.0; 3], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let mut system = RigidBodySystem::new();
+        system.add_body(ground);
+        system.add_body(rotor);
+        system.add_revolute_joint(joint);
+        system.set_velocity_pass(velocity_pass);
+        system
+            .body_mut(1)
+            .expect("body")
+            .set_linear_velocity_m_per_s([1.0, 0.5, 0.0])
+            .expect("valid velocity");
+        let mut max_velocity = 0.0_f64;
+        for _ in 0..2_000 {
+            system.step(1.0e-3, 16).expect("valid step");
+            let anchor = system
+                .max_revolute_anchor_velocity_m_per_s()
+                .expect("valid");
+            let axis = system
+                .max_revolute_axis_velocity_rad_per_s()
+                .expect("valid");
+            max_velocity = max_velocity.max(anchor).max(axis);
+        }
+        max_velocity
+    }
+
+    #[test]
+    fn the_velocity_pass_removes_the_revolute_constraint_velocity() {
+        let without_pass = revolute_velocity_measurement(false);
+        let with_pass = revolute_velocity_measurement(true);
+        assert!(
+            with_pass < without_pass,
+            "velocity pass on {with_pass} vs off {without_pass}"
+        );
+        assert!(
+            with_pass < 1.0e-9,
+            "the residual constraint velocity {with_pass} is too large"
+        );
+    }
+
+    fn gear_velocity_measurement(velocity_pass: bool) -> f64 {
+        let ground_a = fixed_ground([0.0, 0.0, 0.0]);
+        let ground_b = fixed_ground([0.2, 0.0, 0.0]);
+        let mut gear_a = diagonal_body(1.0, [0.005, 0.005, 0.005]);
+        let gear_b = diagonal_body(1.0, [0.005, 0.005, 0.005]);
+        gear_a
+            .set_angular_velocity_rad_per_s([0.0, 0.0, 2.0])
+            .expect("valid velocity");
+        let setup = vec![
+            ground_a.clone(),
+            gear_a.clone(),
+            ground_b.clone(),
+            gear_b.clone(),
+        ];
+        let joint_a = RevoluteJoint::from_world(&setup, 0, 1, [0.0; 3], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let joint_b = RevoluteJoint::from_world(&setup, 2, 3, [0.2, 0.0, 0.0], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let coupling = GearCoupling::new(0, 1, 0.05, 0.10).expect("valid coupling");
+        let mut system = RigidBodySystem::new();
+        system.add_body(ground_a);
+        system.add_body(gear_a);
+        system.add_body(ground_b);
+        system.add_body(gear_b);
+        system.add_revolute_joint(joint_a);
+        system.add_revolute_joint(joint_b);
+        system
+            .add_gear_coupling(coupling)
+            .expect("valid coupling index");
+        system.set_velocity_pass(velocity_pass);
+        let mut max_velocity = 0.0_f64;
+        for _ in 0..2_000 {
+            system.step(1.0e-3, 16).expect("valid step");
+            let velocity = system.max_gear_velocity_m_per_s().expect("valid");
+            max_velocity = max_velocity.max(velocity);
+        }
+        max_velocity
+    }
+
+    #[test]
+    fn the_velocity_pass_removes_the_gear_constraint_velocity() {
+        let without_pass = gear_velocity_measurement(false);
+        let with_pass = gear_velocity_measurement(true);
+        assert!(
+            with_pass < without_pass,
+            "velocity pass on {with_pass} vs off {without_pass}"
+        );
+        assert!(
+            with_pass < 1.0e-9,
+            "the residual constraint velocity {with_pass} is too large"
+        );
+    }
+
+    #[test]
+    fn a_gear_coupling_holds_the_ratio_with_the_velocity_pass() {
+        let ground_a = fixed_ground([0.0, 0.0, 0.0]);
+        let ground_b = fixed_ground([0.2, 0.0, 0.0]);
+        let mut gear_a = diagonal_body(1.0, [0.005, 0.005, 0.005]);
+        let gear_b = diagonal_body(1.0, [0.005, 0.005, 0.005]);
+        gear_a
+            .set_angular_velocity_rad_per_s([0.0, 0.0, 2.0])
+            .expect("valid velocity");
+        let setup = vec![
+            ground_a.clone(),
+            gear_a.clone(),
+            ground_b.clone(),
+            gear_b.clone(),
+        ];
+        let joint_a = RevoluteJoint::from_world(&setup, 0, 1, [0.0; 3], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let joint_b = RevoluteJoint::from_world(&setup, 2, 3, [0.2, 0.0, 0.0], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let radius_a_m = 0.05;
+        let radius_b_m = 0.10;
+        let coupling = GearCoupling::new(0, 1, radius_a_m, radius_b_m).expect("valid coupling");
+        let mut system = RigidBodySystem::new();
+        system.add_body(ground_a);
+        system.add_body(gear_a);
+        system.add_body(ground_b);
+        system.add_body(gear_b);
+        system.add_revolute_joint(joint_a);
+        system.add_revolute_joint(joint_b);
+        system
+            .add_gear_coupling(coupling)
+            .expect("valid coupling index");
+        assert!(system.constraint_options().velocity_pass);
+        for _ in 0..2_000 {
+            system.step(1.0e-3, 32).expect("valid step");
+        }
+        assert!(system.max_gear_error_m().expect("valid") < 1.0e-9);
+        let theta_a = system.revolute_joints()[0]
+            .angle_rad(system.bodies())
+            .expect("valid");
+        let theta_b = system.revolute_joints()[1]
+            .angle_rad(system.bodies())
+            .expect("valid");
+        let expected_b = -(radius_a_m / radius_b_m) * theta_a;
+        assert!(
+            (theta_b - expected_b).abs() < 1.0e-6,
+            "theta_a {theta_a} theta_b {theta_b} expected {expected_b}"
+        );
+    }
+
+    #[test]
+    fn the_velocity_pass_keeps_energy_bounded() {
+        let ground = fixed_ground([0.0, 0.0, 0.0]);
+        let mut rotor = diagonal_body(1.0, [0.5, 0.5, 0.5]);
+        rotor
+            .set_position_m([0.1, 0.0, 0.0])
+            .expect("valid position");
+        let omega_rad_per_s = [0.0, 0.0, 2.0];
+        let arm = [0.1, 0.0, 0.0];
+        rotor
+            .set_linear_velocity_m_per_s(cross(omega_rad_per_s, arm))
+            .expect("valid velocity");
+        rotor
+            .set_angular_velocity_rad_per_s(omega_rad_per_s)
+            .expect("valid velocity");
+        let setup = vec![ground.clone(), rotor.clone()];
+        let joint = RevoluteJoint::from_world(&setup, 0, 1, [0.0; 3], [0.0, 0.0, 1.0])
+            .expect("valid joint");
+        let mut system = RigidBodySystem::new();
+        system.add_body(ground);
+        system.add_body(rotor);
+        system.add_revolute_joint(joint);
+        let energy_before = maximum_kinetic_energy_j(&system);
+        assert!(energy_before > 0.0);
+        let mut max_energy = energy_before;
+        for _ in 0..20_000 {
+            system.step(1.0e-3, 16).expect("valid step");
+            let energy = maximum_kinetic_energy_j(&system);
+            assert!(energy.is_finite(), "the kinetic energy is not finite");
+            max_energy = max_energy.max(energy);
+        }
+        assert!(
+            max_energy < energy_before * 2.0,
+            "the kinetic energy grew from {energy_before} to {max_energy}"
+        );
+        assert!(system.max_revolute_anchor_error_m().expect("valid") < 1.0e-9);
     }
 }

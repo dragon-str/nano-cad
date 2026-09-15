@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nano-CAD - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Nano-CAD</h1>
+<p>An open, multiscale, atomically precise CAD and simulation platform for molecular nanotechnology and nanomedicine.</p>
+<p>Status: <strong>pre-alpha.</strong> The core is built end to end and <strong>440 Rust tests plus 75 Python and MCP tests pass</strong>. The 9-crate workspace has: units, the model and the NCZ/MMP/XYZ formats, a force engine (bond, angle, torsion, out-of-plane, van der Waals, electrostatic, periodic minimum image, velocity Verlet, conjugate gradient, Langevin and Berendsen thermostats), part generators (diamond, graphite, nanotube, involute gear, spur gear, planetary set, respirocyte rotor, pump and tank), parameter records and extraction (stiffness, friction, failure, thermal), jigs, rigid-body device joints, URDF and three-scale scene export, the CLI, PyO3 bindings, and an MCP server. An agent builds the planetary gearbox through the tool surface alone and measures the analytic 3.5 gear ratio. A clean checkout reproduces the demo with <code>just reproduce</code>. The periodic water box matches OpenMM 8.6.1 to 1e-14 relative. The later-phase adapters are started: L0 quantum (PySCF), L3 continuum (structural and flow), L4 lumped system (SBML subset), FL-01, FL-02 and NM-01. M8-02 generates the 90-second video at <code>docs/media/nano-cad-gearbox.mp4</code>. See <code>docs/benchmarks.md</code> and <code>docs/report.md</code>.</p>
+<h2>Doctrine</h2>
+<ul><li>Open core under Apache-2.0. Open formats. A governed verified-data library.</li><li>One headless core. The agent, the GUI, and scripts all call the same API.</li><li>Vertical slices before breadth. One part, end to end, before a whole layer.</li><li>Verification first. Every force term needs a finite-difference gradient test.</li><li>SI units internally, with explicit unit types. Never mix Angstrom and nanometre.</li><li>No medical claims. Output is a design hypothesis, not a validated device.</li></ul>
+<h2>Documents</h2>
+<p>Read in this order.</p>
+<table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody><tr><td><code>AGENTS.md</code></td><td>Operating manual for a coding agent. Start here.</td></tr><tr><td><code>PLAN.md</code></td><td>Vision, scope, phases, milestones, risks, funding.</td></tr><tr><td><code>ARCHITECTURE.md</code></td><td>Layers, repo layout, data model, stack, interfaces.</td></tr><tr><td><code>PARAMETERS.md</code></td><td>The multiscale parameter schema. The central contract.</td></tr><tr><td><code>TASKS.md</code></td><td>The iterative backlog. Pick the next unchecked task.</td></tr><tr><td><code>DECISIONS.md</code></td><td>The decision log (ADRs). Record decisions here.</td></tr><tr><td><code>docs/benchmarks.md</code></td><td>Public benchmark page: hardware, timing, caveats.</td></tr></tbody></table>
+<h2>Reproduce the demo</h2>
+<p>A clean checkout reproduces the planetary gearbox demo with one command. The first run needs network access to download <code>maturin</code> and <code>pytest</code>.</p>
+<pre><code class="language-sh">just reproduce</code></pre>
+<p>The script checks the toolchains, builds the extension with maturin from <code>python/</code>, runs the Rust tests, runs the MCP demo test, and prints the measured gear ratio. See <code>docs/reproduce.md</code> for the prerequisites, the exact commands, what each step proves, and what is not reproduced.</p>
+<h2>Start a clean session</h2>
+<p>Point a fresh agent at this repository and give it this prompt:</p>
+<blockquote><p>Read AGENTS.md, then PLAN.md, ARCHITECTURE.md, PARAMETERS.md, TASKS.md, and DECISIONS.md. Work on the first unchecked task in TASKS.md. Follow the work loop in AGENTS.md. Do not copy GPL code. Run the verification commands before you report done.</p></blockquote>
+<h2>License</h2>
+<p>Apache-2.0. See <code>LICENSE</code>. The upstream NanoEngineer code is GPLv2. Do not copy it. Read it for algorithms only, then reimplement.</p>
+    </main>
+    <footer>
+      Generated from <code>README.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

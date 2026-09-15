@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PARAMETERS.md — The Multiscale Parameter Schema - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>PARAMETERS.md — The Multiscale Parameter Schema</h1>
+<p>This schema is the central contract. Every level reads it and writes it. It is the reason the levels stay decoupled. Version it carefully. A change needs a version bump and an ADR.</p>
+<h2>Purpose</h2>
+<p>A lower level computes or measures properties. A higher level consumes them. The schema carries the value, the unit, the provenance, and the uncertainty.</p>
+<h2>Rules</h2>
+<ol><li>Every value has a unit. Internally SI.</li><li>Every value has a provenance record. Who measured or computed it, how, and when.</li><li>Every value has an uncertainty. If unknown, write <code>null</code>, not zero.</li><li>Every record has a schema version.</li><li>A record names the method that produced it: <code>md</code>, <code>dft</code>, <code>experiment</code>, <code>fit</code>, or <code>estimate</code>.</li><li>A record states its validation status: <code>unverified</code>, <code>cross-checked</code>, or <code>certified</code>.</li></ol>
+<h2>Record types</h2>
+<h3>PartRecord (L1 output, L2 input)</h3>
+<pre><code>schema: &quot;nanocad.param.part&quot;
+version: 1
+part_id: string
+geometry_ref: string        # hash of the NCZ part
+material: string
+atoms: integer
+mass_kg: Quantity
+inertia_kg_m2: [Quantity, Quantity, Quantity]
+elastic_modulus_Pa: Quantity
+shear_modulus_Pa: Quantity
+poisson_ratio: Quantity
+failure_stress_Pa: Quantity
+friction_coefficient: Quantity
+thermal_conductivity_W_m_K: Quantity
+specific_heat_J_kg_K: Quantity
+method: enum
+validation: enum
+provenance: Provenance</code></pre>
+<h3>JointRecord (L2 output, L3 input)</h3>
+<p>Revolute or prismatic joints carry stiffness, damping, friction, and backlash. Each is a Quantity with provenance.</p>
+<h3>BodyRecord (L2 output, L3 input)</h3>
+<p>Mass, inertia, center of mass, and the joints that attach the body.</p>
+<h3>SystemRecord (L4)</h3>
+<p>Lumped parameters: capacity, rate constants, diffusion coefficients, and volumes. Units explicit.</p>
+<h3>Provenance</h3>
+<pre><code>Provenance:
+  source: string            # tool, person, or dataset
+  method: enum              # md | dft | experiment | fit | estimate
+  code_version: string
+  force_field: string|null
+  timestamp: ISO-8601
+  uncertainty: Quantity|null
+  validation: enum
+  notes: string</code></pre>
+<h2>The extraction pipeline (L1 to L2)</h2>
+<ol><li>Load the part. Relax it to a minimum.</li><li>Measure stiffness: apply small strains, record the stress response, fit the modulus. Report the fit uncertainty.</li><li>Measure friction: slide one part over another at a set load and speed. Record the mean and the spread.</li><li>Measure failure: increase the load until bonds break. Record the stress.</li><li>Measure thermal properties: run NVT, extract conductivity and specific heat.</li><li>Write a PartRecord. Attach the provenance and the validation status.</li><li>Store the record in the parameter library. Version the library.</li></ol>
+<h2>Example</h2>
+<pre><code>schema: &quot;nanocad.param.part&quot;
+version: 1
+part_id: &quot;gear.sun.diamond.2nm.12t&quot;
+geometry_ref: &quot;sha256:...&quot;
+material: &quot;diamond&quot;
+elastic_modulus_Pa: { value: 1.05e12, unit: &quot;Pa&quot;, uncertainty: 0.08e12 }
+friction_coefficient: { value: 0.05, unit: &quot;1&quot;, uncertainty: 0.02 }
+method: &quot;md&quot;
+validation: &quot;unverified&quot;
+provenance: { source: &quot;nanocad-engine&quot;, code_version: &quot;0.1.0&quot;,
+              force_field: &quot;MM4&quot;, timestamp: &quot;2026-09-13T00:00:00Z&quot; }</code></pre>
+<h2>Versioning</h2>
+<ul><li>The schema version is an integer. Bump it on any breaking change.</li><li>Keep one migration function per version step.</li><li>Golden files pin the current version.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>PARAMETERS.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

@@ -28,7 +28,7 @@ nano-cad/
     units/                   # SI units and conversions
     model/                   # document model: atoms, bonds, topology, parts
     format/                  # NCZ, MMP, XYZ, PDB, URDF
-    engine/                  # L1: cell list, pair list, forces, integrators
+    engine/                  # L1: cell list, pair list, forces, pair kernel, integrators, minimizers
     jigs/                    # anchors, motors, springs, rigid bodies, device, URDF, scene, nanomedicine
     parts/                   # parametric generators: gear, nanotube, lattice, respirocyte
     params/                  # parameter store, provenance, verification
@@ -38,7 +38,8 @@ nano-cad/
     nanocad/                 # the Python package and the L0/L3/L4 adapters
     tests/
   mcp/                       # stdio JSON-RPC MCP server wrapping the API
-  scripts/                   # reproducible shell entry points (bench, ...)
+  scripts/                   # reproducible shell entry points (bench, video, viewer, docs)
+  site/                      # static viewer and the generated documentation site
   tests/
     golden/                  # regression inputs and outputs
   benchmarks/
@@ -67,10 +68,13 @@ arrays. Pair lists are flat 32-bit index arrays.
 - Force terms: bond stretch, angle bend, torsion, out-of-plane, van der Waals
   (Buckingham or MM4), electrostatic with a cutoff.
 - Integrators: velocity Verlet. Thermostats: Langevin and Berendsen.
-- Minimizer: conjugate gradient, then L-BFGS near the minimum.
-- Parallel: multi-threaded force accumulation with per-thread buffers and a
-  reduction. Provide a deterministic reduction mode for reproducible runs.
-- SIMD: start scalar. Add portable SIMD after correctness.
+- Minimizer: `MinimizeMethod` chooses conjugate gradient, L-BFGS, or the
+  hybrid default `ConjugateGradientThenLbfgs` (ADR-0029).
+- Parallel: multi-threaded force accumulation over a canonical pair-block
+  partition. The reduction is deterministic and bit-identical to serial
+  (ADR-0030).
+- SIMD: scalar fallback plus a four-lane unrolled nonbonded kernel. Portable
+  `std::simd` stays deferred until it reaches stable (ADR-0031).
 
 ## L2 device layer
 
@@ -89,6 +93,7 @@ arrays. Pair lists are flat 32-bit index arrays.
 | QM and file interop | ASE | LGPL-2.1+ | one interface to many codes |
 | Quantum | PySCF or xTB | BSD / LGPL-3.0 | L0 work |
 | Chemistry and formats | RDKit | BSD | molecules and file formats |
+| L3 numerics | numpy, scipy | BSD-3-Clause | finite elements, flow, test extras |
 | Linear algebra | nalgebra / faer | Apache-2.0 / MIT | dense and sparse |
 | Task runner | just | MIT | simple commands |
 | Python lint | ruff, black | MIT | fast, standard |
@@ -126,17 +131,22 @@ The agent calls these tools. It never edits raw coordinates.
 - `NCZ`: native, versioned. A zip of JSON metadata and binary arrays. Little
   endian. A header carries the schema version.
 - `MMP`: import and export for NanoEngineer interop.
-- `XYZ`, `PDB`: through ASE.
+- `PDB`: `crates/format/src/pdb.rs`, native import and export (ADR-0032).
+- `XYZ`: through ASE and through the native reader.
 - `URDF`: export for the device level.
-- `CellML`, `SBML`: later, for L4.
+- `SBML`, `CellML`: L4 export subsets in `python/nanocad/lumped_adapter.py`
+  (ADR-0034).
+- `SDF`, `SMILES`: through the optional RDKit adapter (ADR-0033).
 
 ## Compute and performance strategy
 
 - Correct scalar code first, with a benchmark and reference outputs.
 - Then flat arrays and structure-of-arrays.
-- Then multi-thread the force loop.
-- Then add SIMD.
-- Then consider the GPU through OpenMM for standard systems.
+- Then multi-thread the force loop, deterministically (ADR-0030).
+- Then add hand-written multi-lane SIMD, with the scalar path as the reference
+  (ADR-0031).
+- Then consider the GPU through OpenMM for standard systems. OpenMM and
+  GROMACS stay cross-checks, never engine backends (ADR-0036).
 - Numerical type: `f64` for accumulation and correctness. `f32` only behind a
   measured flag.
 
@@ -152,7 +162,11 @@ The agent calls these tools. It never edits raw coordinates.
 
 - Finite-difference gradient test per force term, in `cargo test`.
 - Energy-conservation test for each integrator, NVE drift within a set bound.
-- Reference benchmarks against OpenMM and GROMACS CPU.
+- Reference benchmarks against OpenMM and GROMACS CPU. GROMACS cannot test
+  Buckingham with the Verlet cutoff scheme, so that check records SKIP
+  (ADR-0036). The OpenMM PME check agrees at 2.42e-4 relative at 10 nm.
 - Golden regression files with hashes for import and export.
+- An atom-geometry gate for the video atom layer:
+  `scripts/check_atom_geometry.py` (ADR-0038).
 - Sanitizers for any C or FFI boundary.
 - A public benchmark page with timing and hardware.

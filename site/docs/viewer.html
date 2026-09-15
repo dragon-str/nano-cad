@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Three-scale viewer - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Three-scale viewer</h1>
+<p>This document tells you how to generate the scene file and how to open the viewer. The viewer is a static page. It has no network access and no external library. The view is a schematic projection, not a physical render.</p>
+<h2>What the viewer shows</h2>
+<p>The viewer draws the three layers of a <code>nanocad.scene</code> document.</p>
+<ul><li><strong>Atomistic (L1).</strong> One dot for each atom, in colour by element.</li><li><strong>Device (L2).</strong> One marker for each rigid body, and a line for each joint. A fixed body shows a small white centre dot.</li><li><strong>Coarse (handoff).</strong> A dashed gear pitch circle for each gear and a bounding cylinder for each body.</li></ul>
+<p>The scale slider blends between the layers. The three checkboxes hide or show one layer. Drag to rotate, use the wheel to zoom, and double-click to reset.</p>
+<p>The scene is the default planetary design: 7 bodies, 6 joints, 3 planets, and an analytic sun-to-carrier gear ratio of 3.5.</p>
+<h2>Generate the scene file</h2>
+<p>Run the example from the repository root. The first argument is the output path. The default path is <code>site/scene.json</code>.</p>
+<pre><code class="language-sh">cargo run -p nanocad-jigs --example scene_json -- site/scene.json</code></pre>
+<p>The command prints a one-line summary. The default output has 2202 atoms. The file is about 600 KB. The example creates the parent directory.</p>
+<p>The example also writes a companion file next to the scene, for example <code>site/scene.data.js</code>. The companion assigns the same scene to <code>window.NANOCAD_SCENE</code>. The viewer uses the companion to load the scene from <code>file://</code>, because a browser blocks <code>fetch</code> of a local file.</p>
+<h2>Open the viewer</h2>
+<p>Open <code>site/index.html</code> in a web browser by double-clicking it, or with:</p>
+<pre><code class="language-sh">open site/index.html</code></pre>
+<p>The viewer loads the scene automatically. It tries the companion <code>site/scene.data.js</code> first. That works from <code>file://</code>. If the companion is absent, the viewer tries <code>fetch(&quot;scene.json&quot;)</code>. A browser can block that request from a <code>file://</code> page. When both paths fail, the panel shows a file picker. Pick <code>site/scene.json</code> in the picker. You can also drop the file onto the page.</p>
+<p>To serve the folder with a local web server instead:</p>
+<pre><code class="language-sh">python3 -m http.server 8000 --directory site</code></pre>
+<p>Then open <code>http://localhost:8000/</code>. The server is local. It needs no network.</p>
+<h2>Generate the documentation site</h2>
+<p>The docs generator reads every top-level markdown file and every <code>docs/*.md</code> file. It writes one HTML page for each file under <code>site/docs/</code>, plus an index. It uses the Python standard library only.</p>
+<pre><code class="language-sh">python3 scripts/build_docs_site.py</code></pre>
+<p>Open <code>site/docs/index.html</code> to read the result. The generator fails with a non-zero status when a required input file is missing.</p>
+<h2>Check the result</h2>
+<p>The check script verifies the scene counts, the viewer files, and the docs outputs.</p>
+<pre><code class="language-sh">python3 site/check.py</code></pre>
+<p>Expected output:</p>
+<pre><code>scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=2202
+viewer ok: index.html, viewer.js, style.css present
+docs ok: 17 markdown inputs have HTML pages
+check: all checks passed</code></pre>
+<h2>Honesty caveats</h2>
+<ul><li>The label <strong>simulated / schematic</strong> is always visible in the viewer.</li><li>The scene is a snapshot of a simulated design. It is not a built device.</li><li>The atomistic layer is the zero configuration. The viewer does not animate the device transform. At the zero configuration the two agree.</li><li>The projection is a flat schematic. It is not a physical or space-filling render. Atom sizes are not to scale.</li><li>The viewer draws no bonds, no atom types, and no forces.</li><li>The gear pitch circles are design values. They are not measured.</li><li><code>site/scene.json</code>, <code>site/docs/</code>, and the viewer are generated or static. They are not part of <code>just verify</code>.</li><li>No medical claim is made. The output is a design hypothesis.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/viewer.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

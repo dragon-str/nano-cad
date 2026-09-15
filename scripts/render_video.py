@@ -22,6 +22,7 @@ Usage (normally through scripts/make_video.sh):
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import os
 import shutil
@@ -47,6 +48,12 @@ AMBER = (255, 191, 82)
 RED = (255, 116, 116)
 CYAN = (120, 226, 232)
 VIOLET = (178, 152, 255)
+CARBON = (206, 220, 238)
+BOND = (116, 150, 196)
+
+# The diamond carbon-carbon bond length, in metres. Source: the diamond cubic
+# lattice constant a = 3.567e-10 m and the first-shell distance a*sqrt(3)/4.
+C_C_BOND_M = 1.544e-10
 
 # ---------------------------------------------------------------- shots
 # Start and end times follow docs/video-script.md exactly. Narration for shots
@@ -261,6 +268,127 @@ def arrow(d, x, y, dx, dy, fill, width=3, head=12):
         d.line([ex, ey, hx, hy], fill=fill, width=width)
 
 
+# ---------------------------------------------------------------- atom lattice
+class AtomLattice:
+    """The atomistic layer: real diamondoid carbon atoms and bonds.
+
+    The atoms and bonds come from `site/scene.bonds.json`, which the Rust
+    example `scene_json` writes from the `nanocad-parts` diamond generator.
+    The positions are metres. The draw method rotates the block about z and
+    tilts it about x, then projects orthographically.
+    """
+
+    def __init__(self, path):
+        with open(path, encoding="utf-8") as handle:
+            document = json.load(handle)
+        diamond = document["diamond"]
+        positions = [atom["position_m"] for atom in diamond["atoms"]]
+        self.bonds = [(int(u), int(v)) for u, v in diamond["bonds"]]
+        count = len(positions)
+        center = [sum(p[axis] for p in positions) / count for axis in range(3)]
+        self.atoms = [
+            [p[axis] - center[axis] for axis in range(3)] for p in positions
+        ]
+        self.span_m = max(
+            max(p[axis] for p in self.atoms) - min(p[axis] for p in self.atoms)
+            for axis in range(3)
+        )
+        self.bond_length_m = float(diamond.get("bond_length_m", C_C_BOND_M))
+
+    @staticmethod
+    def _rotate(x, y, z, spin, tilt):
+        c, s = math.cos(spin), math.sin(spin)
+        x1, y1, z1 = c * x - s * y, s * x + c * y, z
+        c, s = math.cos(tilt), math.sin(tilt)
+        return x1, c * y1 - s * z1, s * y1 + c * z1
+
+    def draw(self, d, cx, cy, target_px, spin, tilt, alpha=1.0):
+        if alpha <= 0.02:
+            return
+        scale = target_px / self.span_m
+        projected = []
+        for x, y, z in self.atoms:
+            rx, ry, rz = self._rotate(x, y, z, spin, tilt)
+            projected.append((cx + scale * rx, cy - scale * ry, rz))
+        depths = [p[2] for p in projected]
+        dmin, dmax = min(depths), max(depths)
+        span = (dmax - dmin) or 1.0
+
+        def shade(depth):
+            return _blend(BOND, alpha * (0.45 + 0.55 * (depth - dmin) / span))
+
+        bond_width = max(2, int(target_px * 0.012))
+        order = sorted(range(len(self.bonds)),
+                       key=lambda i: projected[self.bonds[i][0]][2]
+                       + projected[self.bonds[i][1]][2])
+        for i in order:
+            u, v = self.bonds[i]
+            xu, yu, _ = projected[u]
+            xv, yv, _ = projected[v]
+            depth = 0.5 * (projected[u][2] + projected[v][2])
+            d.line([xu, yu, xv, yv], fill=shade(depth), width=bond_width)
+
+        radius = max(3, int(target_px * 0.022))
+        for x, y, depth in sorted(projected, key=lambda p: p[2]):
+            colour = _blend(CARBON, alpha * (0.55 + 0.45 * (depth - dmin) / span))
+            d.ellipse([x - radius, y - radius, x + radius, y + radius],
+                      fill=colour)
+
+
+def _blend(colour, alpha):
+    alpha = max(0.0, min(1.0, alpha))
+    return tuple(int(BG[i] + (colour[i] - BG[i]) * alpha) for i in range(3))
+
+
+def draw_atom_legend(d, x0, y0, alpha=1.0):
+    x1, y1 = x0 + 360, y0 + 108
+    d.rounded_rectangle([x0, y0, x1, y1], radius=14,
+                        fill=_blend(PANEL, alpha), outline=_blend(LINE, alpha),
+                        width=2)
+    txt(d, x0 + 20, y0 + 18, "atomistic layer", fonts()["small_b"],
+        _blend(CYAN, alpha))
+    d.ellipse([x0 + 26, y0 + 52, x0 + 42, y0 + 68],
+              fill=_blend(CARBON, alpha))
+    txt(d, x0 + 58, y0 + 60, "carbon", fonts()["small"],
+        _blend(FG, alpha), "lm")
+    d.line([x0 + 26, y0 + 88, x0 + 42, y0 + 88], fill=_blend(BOND, alpha), width=4)
+    txt(d, x0 + 58, y0 + 88, "C-C 1.544e-10 m", fonts()["small"],
+        _blend(FG, alpha), "lm")
+
+
+# ---------------------------------------------------------------- planetary kinematics
+SUN_TEETH = 24
+PLANET_TEETH = 18
+RING_TEETH = 60
+PLANETS = 3
+
+
+def planetary_angles(t):
+    """Return (theta_sun, [(phi_k, theta_planet_k), ...]) for time t.
+
+    The ring is fixed. With sun rate w_s, the carrier rate is
+    w_c = w_s * N_s / (N_s + N_r), and the planet absolute spin is
+    w_p = w_c - (N_s / N_p) * (w_s - w_c). Set w_s = -1.0 so the sun turns
+    clockwise on screen and the planets turn counter-clockwise. The planet
+    tooth phase keeps the sun-planet mesh invariant.
+    """
+    a = t * 0.34
+    w_s = -1.0
+    w_c = w_s * SUN_TEETH / (SUN_TEETH + RING_TEETH)
+    w_p = w_c - (SUN_TEETH / PLANET_TEETH) * (w_s - w_c)
+    delta = math.pi / PLANET_TEETH
+    theta_sun = w_s * a
+    planets = []
+    for k in range(PLANETS):
+        phi = w_c * a + 2.0 * math.pi * k / PLANETS
+        theta_p = (w_p * a
+                   + (1.0 + SUN_TEETH / PLANET_TEETH)
+                   * (2.0 * math.pi * k / PLANETS)
+                   + delta)
+        planets.append((phi, theta_p))
+    return theta_sun, planets
+
+
 # ---------------------------------------------------------------- scene 1
 def scene_gears(r, t, shot):
     d = r["d"]
@@ -268,18 +396,17 @@ def scene_gears(r, t, shot):
     cx, cy = W * 0.5, H * 0.5 - 10
     scale = 300.0 / 1.5e-8
     r_sun, r_pl, r_ring, r_car = 6e-9 * scale, 4.5e-9 * scale, 1.5e-8 * scale, 1.05e-8 * scale
-    a = t * 0.34
+    theta_sun, planets = planetary_angles(t)
 
     d.ellipse([cx - r_car - 12, cy - r_car - 12, cx + r_car + 12, cy + r_car + 12],
               outline=DIM, width=2)
     txt(d, (cx, cy + r_car + 26), "carrier", fonts()["small"], DIM, "ma")
 
-    for k in range(3):
-        ang = a + 2 * math.pi * k / 3
-        px, py = cx + r_car * math.cos(ang), cy + r_car * math.sin(ang)
-        draw_gear(d, px, py, r_pl, r_pl * 0.80, 18, -ang * 3.5 + a,
+    for phi, theta_p in planets:
+        px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
+        draw_gear(d, px, py, r_pl, r_pl * 0.80, PLANET_TEETH, theta_p,
                   (44, 70, 104), CYAN, bore=r_pl * 0.22, hub=r_pl * 0.30)
-    draw_gear(d, cx, cy, r_sun, r_sun * 0.80, 24, -a * 3.5, (58, 84, 122),
+    draw_gear(d, cx, cy, r_sun, r_sun * 0.80, SUN_TEETH, theta_sun, (58, 84, 122),
               ACCENT, bore=r_sun * 0.22, hub=r_sun * 0.32)
 
     d.ellipse([cx - r_ring, cy - r_ring, cx + r_ring, cy + r_ring],
@@ -294,16 +421,16 @@ def scene_gears(r, t, shot):
         y1 = cy + (r_ring - 24) * math.sin(ang)
         d.line([x0, y0, x1, y1], fill=AMBER, width=3)
 
-    fade = max(0.0, 1.0 - t / 3.0)
-    if fade > 0.02:
-        for k in range(60):
-            ang = k * 2.399963
-            rad = r_sun * math.sqrt((k + 0.5) / 60)
-            col = tuple(int(BG[i] + (CYAN[i] - BG[i]) * fade) for i in range(3))
-            x, y = cx + rad * math.cos(ang), cy + rad * math.sin(ang)
-            d.ellipse([x - 4, y - 4, x + 4, y + 4], fill=col)
-        txt(d, (cx, cy - r_ring - 46), "atomistic layer", fonts()["small"],
-            tuple(int(BG[i] + (CYAN[i] - BG[i]) * fade) for i in range(3)), "ma")
+    lattice = r.get("lattice")
+    if lattice is not None:
+        peak = 0.85
+        if t < 2.5:
+            alpha = peak * min(1.0, t / 0.4)
+        else:
+            alpha = peak * max(0.0, (4.0 - t) / 1.5)
+        if alpha > 0.02:
+            lattice.draw(d, cx, cy, 300, t * 0.7, 0.5, alpha)
+            draw_atom_legend(d, 120, 165, alpha)
 
     panel(d, 120, H - 210, 660, H - 120, PANEL, LINE)
     txt(d, 150, H - 196, "sun ratio", fonts()["small"], DIM)
@@ -454,17 +581,16 @@ def scene_tests(r, t, shot):
 def planetary_art(r, cx, cy, scale, t, show_joints=False, show_ratio=None):
     d = r["d"]
     r_sun, r_pl, r_ring, r_car = 6e-9 * scale, 4.5e-9 * scale, 1.5e-8 * scale, 1.05e-8 * scale
-    a = t * 0.34
+    theta_sun, planets = planetary_angles(t)
     d.ellipse([cx - r_car - 10, cy - r_car - 10, cx + r_car + 10, cy + r_car + 10],
               outline=DIM, width=2)
-    for k in range(3):
-        ang = a + 2 * math.pi * k / 3
-        px, py = cx + r_car * math.cos(ang), cy + r_car * math.sin(ang)
-        draw_gear(d, px, py, r_pl, r_pl * 0.8, 18, -ang * 3.5, (44, 70, 104),
+    for k, (phi, theta_p) in enumerate(planets):
+        px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
+        draw_gear(d, px, py, r_pl, r_pl * 0.8, PLANET_TEETH, theta_p, (44, 70, 104),
                   CYAN, bore=r_pl * 0.22, hub=r_pl * 0.30)
         if r_pl > 40:
             txt(d, (px, py + r_pl * 0.55), f"planet {k+1}", fonts()["small"], DIM, "ma")
-    draw_gear(d, cx, cy, r_sun, r_sun * 0.8, 24, -a * 3.5, (58, 84, 122),
+    draw_gear(d, cx, cy, r_sun, r_sun * 0.8, SUN_TEETH, theta_sun, (58, 84, 122),
               ACCENT, bore=r_sun * 0.22, hub=r_sun * 0.32)
     if r_sun > 40:
         txt(d, (cx, cy + r_sun * 0.58), "sun 24", fonts()["small"], DIM, "ma")
@@ -476,9 +602,8 @@ def planetary_art(r, cx, cy, scale, t, show_joints=False, show_ratio=None):
                 cx + (r_ring - 18) * math.cos(ang), cy + (r_ring - 18) * math.sin(ang)],
                fill=AMBER, width=3)
     if show_joints:
-        for k in range(3):
-            ang = a + 2 * math.pi * k / 3
-            px, py = cx + r_car * math.cos(ang), cy + r_car * math.sin(ang)
+        for phi, _theta_p in planets:
+            px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
             d.ellipse([px - 9, py - 9, px + 9, py + 9], outline=VIOLET, width=3)
         d.ellipse([cx - 9, cy - 9, cx + 9, cy + 9], outline=VIOLET, width=3)
         arrow(d, cx + r_ring + 20, cy, 70, 0, RED)
@@ -643,12 +768,11 @@ def scene_urdf(r, t, shot):
         txt(d, lx + i * 150, 860, lbl, fonts()["small_b"], c if on else DIM)
     cx, cy, scale = 1580, 560, 90.0 / 1.5e-8
     if idx == 0:
-        for k in range(90):
-            a = k * 2.399963
-            rad = 190 * math.sqrt((k + 0.5) / 90)
-            x, y = cx + rad * math.cos(a), cy + rad * math.sin(a)
-            d.ellipse([x - 5, y - 5, x + 5, y + 5], fill=CYAN)
-        txt(d, cx, cy + 230, "static atom snapshot", fonts()["small"], DIM, "ma")
+        lattice = r.get("lattice")
+        if lattice is not None:
+            lattice.draw(d, cx, cy, 320, t * 0.7, 0.5, 1.0)
+            draw_atom_legend(d, 120, 165, 1.0)
+        txt(d, cx, cy + 230, "diamond lattice snapshot", fonts()["small"], DIM, "ma")
     elif idx == 1:
         planetary_art(r, cx, cy, scale, t)
     else:
@@ -871,6 +995,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--srt", required=True)
     ap.add_argument("--build", required=True)
+    ap.add_argument("--bonds", default="site/scene.bonds.json")
     ap.add_argument("--ffmpeg", default="/opt/homebrew/bin/ffmpeg")
     ap.add_argument("--ffprobe", default="/opt/homebrew/bin/ffprobe")
     ap.add_argument("--say", default="/usr/bin/say")
@@ -901,8 +1026,21 @@ def main():
     print("writing srt...", file=sys.stderr)
     write_srt(args.srt)
 
+    lattice = None
+    if os.path.exists(args.bonds):
+        lattice = AtomLattice(args.bonds)
+        print(
+            "loaded the atomistic layer: "
+            f"{len(lattice.atoms)} carbon atoms, {len(lattice.bonds)} bonds "
+            f"({args.bonds})",
+            file=sys.stderr,
+        )
+    else:
+        print(f"WARNING: {args.bonds} not found; drawing no atom layer.",
+              file=sys.stderr)
+
     img = Image.new("RGB", (W, H), BG)
-    r = {"img": img, "d": ImageDraw.Draw(img)}
+    r = {"img": img, "d": ImageDraw.Draw(img), "lattice": lattice}
     fonts()
 
     nframes = int(round(TOTAL * FPS))

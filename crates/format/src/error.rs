@@ -41,6 +41,8 @@ pub enum FormatError {
     XyzParse { line: usize, message: String },
     #[error("an xyz count line does not match the number of atom lines")]
     XyzCountMismatch,
+    #[error("a pdb line is malformed at line {line}: {message}")]
+    PdbParse { line: usize, message: String },
     #[error("a count or length does not fit the encoded width")]
     IntegerOverflow,
 }

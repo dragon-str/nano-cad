@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Three-scale scene export - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Three-scale scene export</h1>
+<p>This document describes the M8-01 scene export. A visualization tool reads one JSON file and animates the planetary gearbox across three scales.</p>
+<h2>Where the code lives</h2>
+<p>The export is in <code>crates/jigs/src/scene.rs</code>. It belongs to <code>nanocad-jigs</code> because that crate owns <code>PlanetaryAssembly</code>, the rigid-body device, and the URDF export.</p>
+<h2>The three layers</h2>
+<p>The scene has three layers. A viewer shows one layer and cross-fades to the next.</p>
+<ul><li><code>atomistic</code> is the L1 view. It holds every atom with its element and its position.</li><li><code>device</code> is the L2 view. It holds every rigid body with its pose and its velocities. It also holds the joints, the gear couplings, and the gear constraints.</li><li><code>coarse</code> is the handoff view. It holds a gear pitch circle for each gear and a bounding cylinder for each body.</li></ul>
+<h2>Coordinate system and units</h2>
+<ul><li>The frame is right-handed and Cartesian.</li><li>The z axis is the gear axis. The gears lie in the x-y plane.</li><li>Length is SI metres. Angle is SI radians.</li><li>An orientation is a unit quaternion <code>[w, x, y, z]</code>. It maps a body-frame vector to the world frame.</li><li>The atomistic positions are the world-frame positions at the zero configuration. The device poses are the current poses of the rigid-body system. The two agree at the zero configuration.</li></ul>
+<p>A viewer animates an atomistic body with the device transform of the body named by <code>atomistic.atoms[].body</code>. That index points into <code>device.bodies</code>.</p>
+<h2>Determinism</h2>
+<p>The export is deterministic. The body order, the joint order, and the atom order are the construction order. The code does not iterate a map.</p>
+<h2>Public API</h2>
+<pre><code>pub fn build_scene(
+    assembly: &amp;PlanetaryAssembly,
+    set: &amp;PlanetarySet,
+) -&gt; Result&lt;Scene, SceneError&gt;
+
+pub fn scene_to_json(scene: &amp;Scene) -&gt; Result&lt;String, SceneError&gt;
+pub fn scene_to_json_pretty(scene: &amp;Scene) -&gt; Result&lt;String, SceneError&gt;
+pub fn scene_from_json(json: &amp;str) -&gt; Result&lt;Scene, SceneError&gt;
+pub fn write_scene_json(
+    scene: &amp;Scene,
+    path: impl AsRef&lt;Path&gt;,
+    pretty: bool,
+) -&gt; Result&lt;(), SceneError&gt;</code></pre>
+<p><code>build_scene</code> requires the <code>PlanetarySet</code> that produced the assembly records. It compares the embedded design and returns <code>SceneError::DesignMismatch</code> when the two differ.</p>
+<h2>Schema</h2>
+<p>The top level holds the schema name, the version, the units, the frame note, the derived design, and the three layers.</p>
+<pre><code class="language-json">{
+  &quot;schema&quot;: &quot;nanocad.scene&quot;,
+  &quot;version&quot;: 1,
+  &quot;length_unit&quot;: &quot;m&quot;,
+  &quot;angle_unit&quot;: &quot;rad&quot;,
+  &quot;frame&quot;: &quot;right-handed, z is the gear axis, x-y is the gear plane, metres and radians, quaternion [w, x, y, z]&quot;,
+  &quot;design&quot;: {
+    &quot;module_m&quot;: 5e-10,
+    &quot;sun_teeth&quot;: 24,
+    &quot;planet_teeth&quot;: 18,
+    &quot;ring_teeth&quot;: 60,
+    &quot;planet_count&quot;: 3,
+    &quot;gear_ratio&quot;: 3.5,
+    &quot;sun_pitch_radius_m&quot;: 6e-9,
+    &quot;planet_pitch_radius_m&quot;: 4.5e-9,
+    &quot;ring_pitch_radius_m&quot;: 1.5e-8,
+    &quot;carrier_radius_m&quot;: 1.05e-8
+  },
+  &quot;atomistic&quot;: {
+    &quot;atom_count&quot;: 1,
+    &quot;atoms&quot;: [
+      {
+        &quot;element&quot;: &quot;C&quot;,
+        &quot;atomic_number&quot;: 6,
+        &quot;position_m&quot;: [0.0, 0.0, 0.0],
+        &quot;body&quot;: 1,
+        &quot;name&quot;: &quot;sun&quot;,
+        &quot;part_id&quot;: &quot;planetary.sun&quot;
+      }
+    ]
+  },
+  &quot;device&quot;: {
+    &quot;body_count&quot;: 7,
+    &quot;bodies&quot;: [
+      {
+        &quot;index&quot;: 0,
+        &quot;name&quot;: &quot;ground&quot;,
+        &quot;role&quot;: &quot;ground&quot;,
+        &quot;part_id&quot;: null,
+        &quot;position_m&quot;: [0.0, 0.0, 0.0],
+        &quot;orientation_wxyz&quot;: [1.0, 0.0, 0.0, 0.0],
+        &quot;mass_kg&quot;: 1.0,
+        &quot;inertia_diagonal_kg_m2&quot;: [1.0, 1.0, 1.0],
+        &quot;fixed&quot;: true,
+        &quot;linear_velocity_m_per_s&quot;: [0.0, 0.0, 0.0],
+        &quot;angular_velocity_rad_per_s&quot;: [0.0, 0.0, 0.0]
+      }
+    ],
+    &quot;joints&quot;: [
+      {
+        &quot;name&quot;: &quot;sun_joint&quot;,
+        &quot;kind&quot;: &quot;revolute&quot;,
+        &quot;body_a&quot;: 0,
+        &quot;body_b&quot;: 1,
+        &quot;anchor_world_m&quot;: [0.0, 0.0, 0.0],
+        &quot;axis_world&quot;: [0.0, 0.0, 1.0],
+        &quot;axis_a_body&quot;: [0.0, 0.0, 1.0],
+        &quot;axis_b_body&quot;: [0.0, 0.0, 1.0]
+      }
+    ],
+    &quot;gear_couplings&quot;: [],
+    &quot;gear_constraints&quot;: [
+      {
+        &quot;terms&quot;: [
+          { &quot;joint&quot;: 0, &quot;coefficient_m&quot;: 6e-9 },
+          { &quot;joint&quot;: 1, &quot;coefficient_m&quot;: -6e-9 },
+          { &quot;joint&quot;: 3, &quot;coefficient_m&quot;: 4.5e-9 }
+        ]
+      }
+    ]
+  },
+  &quot;coarse&quot;: {
+    &quot;body_count&quot;: 7,
+    &quot;bodies&quot;: [
+      {
+        &quot;index&quot;: 1,
+        &quot;name&quot;: &quot;sun&quot;,
+        &quot;role&quot;: &quot;sun&quot;,
+        &quot;pitch_circle&quot;: {
+          &quot;center_m&quot;: [0.0, 0.0, 0.0],
+          &quot;axis&quot;: [0.0, 0.0, 1.0],
+          &quot;radius_m&quot;: 6e-9
+        },
+        &quot;bounding_cylinder&quot;: {
+          &quot;center_m&quot;: [0.0, 0.0, 0.0],
+          &quot;axis&quot;: [0.0, 0.0, 1.0],
+          &quot;radius_m&quot;: 7e-9,
+          &quot;half_length_m&quot;: 0.0
+        }
+      }
+    ]
+  }
+}</code></pre>
+<p>The example is shortened. A real file holds every atom, every body, and every joint.</p>
+<p>Notes on the schema:</p>
+<ul><li><code>element</code> is the chemical symbol. An unsupported element becomes <code>Z&amp;lt;n&amp;gt;</code>, where <code>&amp;lt;n&amp;gt;</code> is the atomic number.</li><li><code>part_id</code> is <code>null</code> for the ground. The other bodies use the part ids <code>planetary.sun</code>, <code>planetary.planet.&amp;lt;i&amp;gt;</code>, <code>planetary.ring</code>, and <code>planetary.carrier</code>.</li><li><code>anchor_world_m</code> is <code>null</code> for a prismatic joint. A prismatic joint does not expose its anchor.</li><li><code>axis_b_body</code> is <code>null</code> for a prismatic joint. It does not expose the value.</li><li><code>pitch_circle</code> is <code>null</code> for the ground and for the carrier. The carrier is a plate, not a gear.</li><li><code>bounding_cylinder</code> is <code>null</code> for the ground. The ground has no atoms.</li></ul>
+<h2>Tests</h2>
+<p><code>crates/jigs/src/scene.rs</code> holds eight tests. They check the layer counts for the default design, finite positions, the atom count against the generated parts, the atom positions against the topology, the JSON round trip, the determinism, the pitch circles, and the file write.</p>
+<h2>Limitations</h2>
+<ul><li>The atomistic layer is a static snapshot. It has no bonds and no atom type.</li><li>The device layer has no joint limits and no joint names for a joint that the assembly does not name. Such a joint falls back to <code>revolute_&amp;lt;i&amp;gt;</code>.</li><li>The coarse layer uses the device axis only. A tilted body does not tilt its bounding cylinder.</li><li>The export does not read the parameter library. It reads geometry from the generated parts and the design.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/three-scale.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

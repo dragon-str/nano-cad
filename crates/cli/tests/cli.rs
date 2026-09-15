@@ -24,6 +24,18 @@ egroup (Synthetic)
 end molecular machine part Synthetic
 ";
 
+const SAMPLE_PDB: &str = "\
+TITLE     WATER LIKE
+CRYST1   20.000   20.000   20.000  90.00  90.00  90.00 P 1
+ATOM      1  O   MOL A   1       0.000   0.000   0.000  1.00  0.00           O
+ATOM      2  H   MOL A   1       1.000   0.000   0.000  1.00  0.00           H
+ATOM      3  H   MOL A   1      -0.500   1.000   0.000  1.00  0.00           H
+CONECT    1    2    2    3
+CONECT    2    1
+CONECT    3    1
+END
+";
+
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
 struct TempDir {
@@ -127,11 +139,48 @@ fn convert_an_mmp_to_xyz_directly() {
 }
 
 #[test]
+fn convert_a_pdb_to_ncz_and_back() {
+    let dir = TempDir::new();
+    let pdb = dir.join("part.pdb");
+    let ncz = dir.join("part.ncz");
+    let again = dir.join("again.pdb");
+    fs::write(&pdb, SAMPLE_PDB).expect("write pdb");
+
+    let (code, _, err) = run(&[
+        "convert",
+        pdb.to_str().expect("path"),
+        ncz.to_str().expect("path"),
+    ]);
+    assert_eq!(code, 0, "pdb to ncz failed: {err}");
+
+    let (code, info, err) = run(&["info", ncz.to_str().expect("path")]);
+    assert_eq!(code, 0, "info failed: {err}");
+    assert!(info.contains("format: ncz"), "info was {info:?}");
+    assert!(info.contains("atoms: 3"), "info was {info:?}");
+    assert!(info.contains("bonds: 2"), "info was {info:?}");
+
+    let (code, _, err) = run(&[
+        "convert",
+        ncz.to_str().expect("path"),
+        again.to_str().expect("path"),
+    ]);
+    assert_eq!(code, 0, "ncz to pdb failed: {err}");
+    let text = fs::read_to_string(&again).expect("read pdb");
+    assert!(text.contains("ATOM  "), "pdb was {text:?}");
+    assert!(text.contains("CRYST1"), "pdb was {text:?}");
+
+    let (code, info, _) = run(&["info", again.to_str().expect("path")]);
+    assert_eq!(code, 0, "info failed");
+    assert!(info.contains("format: pdb"), "info was {info:?}");
+    assert!(info.contains("atoms: 3"), "info was {info:?}");
+}
+
+#[test]
 fn a_bad_input_extension_is_a_clear_error() {
     let dir = TempDir::new();
-    let input = dir.join("part.pdb");
+    let input = dir.join("part.unknown");
     let output = dir.join("part.ncz");
-    fs::write(&input, "not a real pdb").expect("write input");
+    fs::write(&input, "not a real document").expect("write input");
 
     let (code, _, err) = run(&[
         "convert",

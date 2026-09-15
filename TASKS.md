@@ -298,6 +298,10 @@ Start here on a clean session. `M0-01` is the first task.
     `scripts/render_video.py` draws every frame. The narration is synthetic
     text-to-speech (macOS voice Samantha), and the visuals are schematic and
     labelled simulated. Every on-screen number cites its source file.
+  - Fix: the gear scenes now use the fixed-ring kinematics. The carrier rate is
+    `w_c = w_s * 2/7` and the planet absolute spin is `w_p = -(2/3) * w_s`, so
+    the sun and the planets turn in opposite directions. The planet tooth
+    phase keeps the sun, planet, and ring teeth meshed. See `docs/video.md`.
     `docs/video-script.md` holds the storyboard and the real repository URL.
     See `docs/video.md`. The video is not part of `just verify`.
 - [x] **M8-03** Written report with the measured numbers and the caveats.
@@ -345,3 +349,95 @@ Start here on a clean session. `M0-01` is the first task.
     optional flow, tether, drive) and `NanoMachine`. Terminal velocity matches
     the analytic value to 2.0e-9 relative; the energy balance closes to 3.4e-7.
     All geometry is a skeletal lattice model, not a validated device.
+
+## Phase 7 — Depth, interop, device and media
+
+The depth pass after M8. Each task below deepens a layer that was a stub in
+Phase 6. All result notes cite the test that measures the number.
+
+- [x] **ENG-01** Add an L-BFGS minimizer stage next to the conjugate gradient.
+  - Result: `crates/engine/src/minimize.rs` adds `MinimizeMethod`
+    (`ConjugateGradient`, `Lbfgs`, `ConjugateGradientThenLbfgs`) and
+    `minimize_with`. `minimize` stays conjugate-gradient only. On a stiff chain
+    of 40 iterations, the gradient reaches 2.5945e-7 N with CG and 1.00997e-7 N
+    with L-BFGS. The hybrid method converges in 53 iterations to 5.9049e-15 N.
+- [x] **ENG-02** Make the parallel force reduction deterministic and faster.
+  - Result: `crates/engine/src/system.rs` partitions the pair list into
+    canonical blocks and sums the same per-block partials in serial and in
+    parallel. `forces_n_parallel` is bit-identical to `forces_n` for one, two,
+    four and eight workers (400 atoms, 12414 pairs, 7 blocks). Serial path
+    changed to sum the same partials. Serial 423.00 us, 8 workers 214.18 us.
+- [x] **ENG-03** Add a portable nonbonded kernel with a scalar fallback.
+  - Result: `crates/engine/src/pair_kernel.rs` holds a four-lane unrolled
+    Buckingham plus electrostatic kernel and a scalar fallback. Both paths are
+    bit-identical (maximum error 0.0). `std::simd` is deferred because it needs
+    nightly; the MSRV stays 1.85 and the rustc is 1.98.1.
+- [x] **IO-01** Import and export PDB.
+  - Result: `crates/format/src/pdb.rs` adds `import_pdb` and `export_pdb`.
+    ATOM, HETATM, element, CONECT bonds, CRYST1 box. The boundary is Angstrom;
+    PDB carries no charge field, so charge is lost. Multi-part documents do not
+    round-trip. New `FormatError::PdbParse`; the CLI accepts `FileFormat::Pdb`.
+    8 tests in the module.
+- [x] **IO-02** Add an optional RDKit molecule adapter.
+  - Result: `python/nanocad/rdkit_adapter.py` converts to and from an RDKit
+    molecule and reads and writes SMILES and SDF. RDKit 2026.03.6 runs from
+    `/tmp/nc-qm-venv`. 10 tests; they skip when RDKit is absent.
+- [x] **IO-03** Export the lumped model as CellML.
+  - Result: `python/nanocad/lumped_adapter.py` adds `to_cellml` and
+    `from_cellml`. The subset is honest and stated. It has no reaction element.
+    The units attribute is dimensionless and a `nanocad:unit` attribute carries
+    the true unit. 19 tests in `python/tests/test_lumped.py`.
+- [x] **DEV-01** Add a fixed joint and a velocity-level constraint pass.
+  - Result: `crates/jigs/src/device.rs` adds `FixedJoint` and
+    `ConstraintOptions { velocity_pass }` (on by default). The velocity pass
+    projects the constraint velocity to zero for revolute, prismatic, gear and
+    fixed joints. Measured revolute maximum constraint velocity 1.118 to 0;
+    gear 0.1 to 2.78e-17; weld anchor 0 m and orientation 2.23e-14 rad. The
+    Python binding exposes the new methods.
+- [x] **L3-02** Solve two L3 problems with an external library.
+  - Result: `python/nanocad/continuum_adapter.py` adds
+    `solve_plane_stress_cantilever` (Q4 finite elements through scipy) and
+    `solve_poiseuille_2d` (finite differences). The cantilever tip is
+    1.5893e-5 m against a refined 1.5986e-5 m, relative 5.78e-3. The flow
+    maximum velocity matches the analytic value to 2.44e-4 relative.
+- [x] **ENG-04** Compute the electrostatic energy with a particle-mesh method.
+  - Result: `python/nanocad/pme_adapter.py` adds `electrostatic_energy_pme`
+    through the OpenMM PME reference. A Na-Cl box of 3 nm gives -3.3587e-19 J
+    against a cut-off -3.2627e-19 J, relative -2.94%. At 10 nm the relative
+    difference is 2.42e-4. OpenMM is a cross-check, not a second engine.
+- [x] **FL-03** Add the respirocyte seal clearance and leakage model.
+  - Result: `crates/parts/src/respirocyte.rs` adds `AnnularGapFlow`. The
+    pressure-driven flow is `Q_p = pi R h^3 / (6 mu) * dp/L`; the Couette flow
+    is `Q_c = pi R h U` (Bird, Stewart and Lightfoot). The bearing leakage is
+    9.114807e-20 m^3/s and matches the hand value. The seal leakage is
+    1.675516e-21 m^3/s. New parameters `seal_clearance_m` and `seal_land_m`.
+- [x] **NM-02** Add Brownian motion to the host environment.
+  - Result: `crates/jigs/src/nanomedicine.rs` adds
+    `HostEnvironment::with_temperature_kbt_j`, `temperature_k`,
+    `NanoMachine::with_seed`, and a Brownian force. The velocity variance is
+    3.9988e-3 against the kBT/m value 4.1419e-3, relative 3.46e-2. The zero
+    temperature terminal velocity matches to 2.04e-9 relative.
+- [x] **VAL-01** Cross-check the engine against GROMACS.
+  - Result: `benchmarks/gromacs/` holds `compare_water_box.py`,
+    `selftest_switch.py`, `README.md` and `results/`. GROMACS 2026.3 does not
+    use the Buckingham potential with the Verlet cutoff scheme. The driver
+    records SKIP, writes no number, and exits 0. `docs/validation.md` states
+    this limitation. The Coulomb constant check matches to 6.75e-15 relative.
+- [x] **M9-01** Build a static viewer and a documentation site.
+  - Result: `crates/jigs/examples/scene_json.rs` writes `site/scene.json` and
+    `site/scene.data.js`: 7 bodies, 6 joints, 3 planets, ratio 3.5, 2202 atoms.
+    `site/index.html`, `site/viewer.js` and `site/style.css` draw three layers
+    on a canvas and work from `file://`. `scripts/build_docs_site.py` writes 17
+    pages to `site/docs`. `site/check.py` checks the site. See `docs/viewer.md`.
+- [x] **M9-02** Make the atom layer of the video a real bonded lattice.
+  - Result: `scene_json.rs` also writes `site/scene.bonds.json`.
+    `scripts/check_atom_geometry.py` is the gate. `scripts/render_video.py`
+    draws atoms and bonds in shots 1 and 8. `scripts/make_video.sh` runs the
+    gate. Measured 216 atoms and 333 bonds: mean C-C distance 1.544556e-10 m
+    against 1.544e-10 m (relative 3.603e-4) and mean bond angle 109.471221
+    degrees against 109.4712 degrees (error 2.06e-5 degrees). 64 interior
+    carbons all have 4 bonds.
+  - Limitation: `PlanetaryGenerator` returns a skeletal gear outline, not a
+    diamondoid solid. The atom layer uses `DiamondGenerator` from
+    `crates/parts/src/lattice.rs`. The gear shape is therefore not yet
+    chemically accurate. See ADR-0038.

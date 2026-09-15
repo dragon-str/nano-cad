@@ -332,6 +332,21 @@ impl RigidBodySystem {
     }
 
     #[getter]
+    fn fixed_joint_count(&self) -> usize {
+        self.inner.fixed_joints().len()
+    }
+
+    #[getter]
+    fn velocity_pass(&self) -> bool {
+        self.inner.constraint_options().velocity_pass
+    }
+
+    #[setter]
+    fn set_velocity_pass(&mut self, velocity_pass: bool) {
+        self.inner.set_velocity_pass(velocity_pass);
+    }
+
+    #[getter]
     fn gear_coupling_count(&self) -> usize {
         self.inner.gear_couplings().len()
     }
@@ -396,6 +411,23 @@ impl RigidBodySystem {
         Ok(self.inner.add_prismatic_joint(joint))
     }
 
+    /// Adds a fixed joint (weld) that starts satisfied.
+    fn add_fixed_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchor_m: Vec<f64>,
+    ) -> PyResult<usize> {
+        let joint = jigs::FixedJoint::from_world(
+            self.inner.bodies(),
+            body_a,
+            body_b,
+            util::vec3(anchor_m)?,
+        )
+        .map_err(util::err)?;
+        Ok(self.inner.add_fixed_joint(joint))
+    }
+
     /// Adds a gear coupling between two revolute joints.
     fn add_gear_coupling(
         &mut self,
@@ -458,6 +490,30 @@ impl RigidBodySystem {
             .map_err(util::err)
     }
 
+    /// Returns the largest fixed anchor error in metres.
+    fn max_fixed_anchor_error_m(&self) -> PyResult<f64> {
+        self.inner.max_fixed_anchor_error_m().map_err(util::err)
+    }
+
+    /// Returns the largest fixed orientation error in radians.
+    fn max_fixed_orientation_error_rad(&self) -> PyResult<f64> {
+        self.inner
+            .max_fixed_orientation_error_rad()
+            .map_err(util::err)
+    }
+
+    /// Returns the largest revolute anchor velocity error in metres per second.
+    fn max_revolute_anchor_velocity_m_per_s(&self) -> PyResult<f64> {
+        self.inner
+            .max_revolute_anchor_velocity_m_per_s()
+            .map_err(util::err)
+    }
+
+    /// Returns the largest gear velocity error in metres per second.
+    fn max_gear_velocity_m_per_s(&self) -> PyResult<f64> {
+        self.inner.max_gear_velocity_m_per_s().map_err(util::err)
+    }
+
     /// Returns the largest gear constraint error in metres.
     fn max_gear_error_m(&self) -> PyResult<f64> {
         self.inner.max_gear_error_m().map_err(util::err)
@@ -473,7 +529,8 @@ impl RigidBodySystem {
     }
 }
 
-/// Adds a device constraint by kind: `"revolute"` or `"prismatic"`.
+/// Adds a device constraint by kind: `"revolute"`, `"prismatic"`, or
+/// `"fixed"`.
 #[pyfunction]
 #[pyo3(signature = (device, kind, body_a, body_b, anchor_m, axis))]
 pub fn add_constraint(
@@ -509,8 +566,14 @@ pub fn add_constraint(
             .map_err(util::err)?;
             Ok(device.inner.add_prismatic_joint(joint))
         }
+        "fixed" => {
+            let joint =
+                jigs::FixedJoint::from_world(device.inner.bodies(), body_a, body_b, anchor_m)
+                    .map_err(util::err)?;
+            Ok(device.inner.add_fixed_joint(joint))
+        }
         other => Err(pyo3::exceptions::PyValueError::new_err(format!(
-            "unknown constraint kind {other:?}; expected revolute or prismatic"
+            "unknown constraint kind {other:?}; expected revolute, prismatic, or fixed"
         ))),
     }
 }

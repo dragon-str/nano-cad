@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PLAN.md — Program Plan - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>PLAN.md — Program Plan</h1>
+<h2>Vision</h2>
+<p>Give anyone the power to design atomically precise machines and to carry those designs across scales, from a single bond up to a working device and its environment.</p>
+<h2>Mission</h2>
+<p>Build an open, multiscale CAD and simulation platform for molecular nanotechnology and nanomedicine. Make it trustworthy, scriptable, and agent driven. Keep the designs and the formats open.</p>
+<h2>Users</h2>
+<ul><li>Nanotechnology researchers who design molecular machines.</li><li>Computational chemists who need a design front end.</li><li>Biomedical researchers who study nanomedicine.</li><li>Educators who teach molecular design.</li><li>Coding agents that design and check parts through an API.</li></ul>
+<h2>Principles</h2>
+<ol><li>One headless core serves the GUI, the CLI, and the agent.</li><li>The multiscale parameter schema is the central contract.</li><li>Vertical slices before breadth.</li><li>Verification is a merge gate.</li><li>SI units with explicit types.</li><li>Reuse OpenMM and ASE. Do not rebuild solved software.</li><li>Open formats and open designs.</li><li>No medical claims.</li></ol>
+<h2>Scope</h2>
+<p>In scope for the first release:</p>
+<ul><li>Atomistic engine: bonds, angles, torsions, van der Waals, electrostatics.</li><li>Minimization and molecular dynamics with thermostats.</li><li>Jigs: anchors, motors, springs, thermostats, applied forces.</li><li>Rigid bodies and joints at the device level.</li><li>A parametric part library, starting with a gear generator.</li><li>Parameter extraction from atomistic parts to the device level.</li><li>A versioned open document format and MMP interop.</li><li>A Python API, a CLI, and an MCP server for agents.</li><li>One demo: an atomically precise planetary gearbox.</li></ul>
+<h2>Non-goals for the first release</h2>
+<ul><li>A whole-body human twin.</li><li>Many force fields and many QM codes at once.</li><li>Long-range electrostatics beyond a cutoff (add PME later through OpenMM).</li><li>Production-scale MD of millions of atoms.</li><li>Closed formats or exclusive designs.</li><li>Any claim of a built or medically validated device.</li></ul>
+<h2>Phases and milestones</h2>
+<p>Each milestone has an exit criterion. A milestone is done only when the criterion holds and its tasks in <code>TASKS.md</code> are checked.</p>
+<h3>Phase 0 — Foundation (M0, M1)</h3>
+<ul><li><strong>M0 Skeleton.</strong> Workspace, CI, docs, units module, license headers, benchmark harness stub.</li><li>Exit: <code>just verify</code> runs green on an empty workspace.</li><li><strong>M1 Document model and formats.</strong> Atoms, bonds, topology, a versioned NCZ format, XYZ and MMP import and export, round-trip tests.</li><li>Exit: A real MMP file imports, saves to NCZ, reloads, and reproduces the original coordinates bit for bit.</li></ul>
+<h3>Phase 1 — Atomistic core (M2, M3)</h3>
+<ul><li><strong>M2 Forces and minimization.</strong> Cell list, flat pair list, bond, angle, torsion, van der Waals, and electrostatic terms. A minimizer. A finite-difference gradient test for every term. An energy-conservation run.</li><li>Exit: Gradients match finite differences to tolerance. NVE energy drifts below the set bound. A water-box benchmark runs and is compared to OpenMM.</li><li><strong>M3 Dynamics and jigs.</strong> Velocity Verlet, Langevin or Berendsen thermostat, anchors, motors, springs.</li><li>Exit: A test machine runs stable dynamics at 300 K. A motor drives a rotor.</li></ul>
+<h3>Phase 2 — Part generation (M4)</h3>
+<ul><li><strong>M4 Gear generator and part library.</strong> A parametric gear generator, a nanotube builder, a lattice builder, and a part schema.</li><li>Exit: The agent builds a specified gear by name and specs. The part passes a strain and valence check.</li></ul>
+<h3>Phase 3 — Multiscale bridge (M5, M6)</h3>
+<ul><li><strong>M5 Parameter extraction.</strong> Relax a part, measure stiffness, friction, failure stress, and thermal properties. Write a parameter record with provenance and uncertainty. See <code>PARAMETERS.md</code>.</li><li>Exit: A gear yields a parameter record that passes a consistency check.</li><li><strong>M6 Device level.</strong> Rigid-body dynamics with joints. A gearbox assembled from atomistic parts. Handoff from L1 parameters to L2 bodies.</li><li>Exit: The gearbox reproduces its designed gear ratio within tolerance.</li></ul>
+<h3>Phase 4 — Agent interface (M7)</h3>
+<ul><li><strong>M7 Headless API and MCP server.</strong> Typed tools: create part, generate gear, relax, run MD, add jig, measure, convert units, save, load, list.</li><li>Exit: An agent completes the gearbox demo through tools alone.</li></ul>
+<h3>Phase 5 — Demo and release (M8)</h3>
+<ul><li><strong>M8 Demo.</strong> The 90-second gearbox video and a written report. The three-scale handoff animation. A public benchmark.</li><li>Exit: A stranger reproduces the demo from the repository.</li></ul>
+<h3>Phase 6 — Flagship and upper levels (later)</h3>
+<ul><li>Respirocyte subsystems: rotor, bearing, pump, gas tank.</li><li>L3 continuum adapters and L4 lumped system models.</li><li>One nanomedicine slice: a machine coupled to a coarse host model.</li></ul>
+<h2>The vertical slice</h2>
+<p>The first end-to-end path is the planetary gearbox. It touches M1, M2, M3, M4, M5, and M6 thinly. Build the slice first. Deepen each level after the slice runs. This prevents the breadth failure of the original project.</p>
+<h2>Success metrics</h2>
+<ul><li>The gearbox demo runs end to end from a clean clone.</li><li>Every force term has a passing finite-difference test.</li><li>The engine matches OpenMM on a reference water box within tolerance.</li><li>An agent builds a specified part through tools alone.</li><li>A parameter record carries full provenance and uncertainty.</li></ul>
+<h2>Risks</h2>
+<table><thead><tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr></thead><tbody><tr><td>Scope creep</td><td>project death</td><td>vertical slice, hard non-goals</td></tr><tr><td>GPL contamination</td><td>legal exposure</td><td>clean room, no copying, license checks</td></tr><tr><td>Wrong physics</td><td>lost trust</td><td>finite-difference gates, reference benchmarks</td></tr><tr><td>Overclaiming</td><td>reputation damage</td><td>label all output as simulated</td></tr><tr><td>Tiny market</td><td>no revenue</td><td>serve adjacent fields, seek grants</td></tr><tr><td>Long timeline</td><td>burnout</td><td>phase exits, visible demos</td></tr><tr><td>Agent errors</td><td>bad designs</td><td>typed tools, validation, human review</td></tr></tbody></table>
+<h2>Funding path</h2>
+<ul><li>Near term: grants, consulting, and sponsored development. See the earlier analysis. National science agencies, private foundations, and long-termist philanthropies are the likely sources.</li><li>Mid term: support, training, certification, and hosted runs.</li><li>Long term: a verified parameter library and a certified platform.</li></ul>
+<h2>Honest note</h2>
+<p>This is a multi-year program. The first usable tool is 1 to 3 years out. The respirocyte study is a research artifact, not a product. Plan for steady support and visible milestones.</p>
+    </main>
+    <footer>
+      Generated from <code>PLAN.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

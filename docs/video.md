@@ -12,6 +12,8 @@ it and what it is honest about.
 | `docs/media/nano-cad-gearbox.srt` | Sidecar captions. They match the narration and the shot timings. |
 | `scripts/make_video.sh` | The POSIX `sh` entry point. It regenerates both files from scratch. |
 | `scripts/render_video.py` | The frame renderer. It draws with Pillow and calls ffmpeg. |
+| `scripts/check_atom_geometry.py` | The atom-geometry accuracy gate. It fails the build when the atom layer is not diamondoid carbon. |
+| `site/scene.bonds.json` | The real bond topology for the atomistic layer. The Rust example `scene_json` writes it. |
 | `docs/video-script.md` | The storyboard and the narration. |
 
 ## Regenerate
@@ -22,6 +24,17 @@ sh scripts/make_video.sh
 
 The script is idempotent. It removes the old outputs first. It renders every
 frame again and writes both files.
+
+Before the render, the script regenerates the scene and the bond topology. It
+runs the Rust example `crates/jigs/examples/scene_json.rs`:
+
+```sh
+cargo run -p nanocad-jigs --example scene_json -- site/scene.json
+```
+
+The example writes `site/scene.json`, `site/scene.data.js`, and
+`site/scene.bonds.json`. It then runs `scripts/check_atom_geometry.py`. When
+the check fails, the script exits nonzero and writes no video.
 
 It needs these tools:
 
@@ -52,8 +65,27 @@ schematic 2D drawings:
   `docs/three-scale.md`: 24 sun teeth, 18 planet teeth, 60 ring teeth, module
   `5e-10 m`, sun pitch radius `6e-9 m`, planet `4.5e-9 m`, ring `1.5e-8 m`,
   carrier `1.05e-8 m`.
-- Atoms are dots. The three-scale cross-fade is a drawing, not a render of
-  computed positions.
+- The gear scenes use the kinematics of a fixed ring. With sun rate `w_s`, the
+  carrier rate is `w_c = w_s * 2/7`, and the planet absolute spin is
+  `w_p = -(2/3) * w_s`. The sun and the planets therefore turn in opposite
+  directions. The planet centers orbit the carrier at `w_c`, and each drawn
+  planet tooth phase keeps the sun, planet, and ring teeth meshed. The ring is
+  drawn static.
+- **The atomistic layer uses real generator coordinates.** The layer is a
+  diamond cubic lattice from the `nanocad-parts` `DiamondGenerator`, not
+  scattered dots. The atoms and the bonds come from `site/scene.bonds.json`.
+  The generator places carbon atoms on the diamond cubic lattice, with lattice
+  constant `a = 3.567e-10 m`. The first-shell carbon-carbon bond length is
+  `a sqrt(3) / 4 = 1.544e-10 m`. Every bond angle at a tetrahedral carbon is
+  `109.4712` degrees. The renderer projects the three-dimensional positions to
+  two dimensions and rotates the block with the shot. It draws the layer only
+  in shot 1 and shot 8, so the render stays fast.
+- **The atom layer passes an accuracy gate.** `scripts/check_atom_geometry.py`
+  computes the nearest-neighbour C-C distance distribution, the bond degree of
+  every interior carbon, and the bond-angle distribution. It asserts that the
+  mean distance is `1.544e-10 m` within one percent, that every interior carbon
+  has four bonds, and that the mean angle is `109.4712` degrees within one
+  degree. `scripts/make_video.sh` runs the check and fails when it fails.
 - The device bodies and joints are marked with circles and arrows.
 
 **The narration is synthetic.** It is machine text-to-speech, not a human
@@ -65,7 +97,8 @@ about being a machine reading, not an actor.
 **No number is invented.** Every figure on screen comes from the files that
 `docs/video-script.md` names in its source column: `TASKS.md`, `docs/report.md`,
 `docs/benchmarks.md`, `benchmarks/results/openmm-water-crosscheck.txt`, and
-`benchmarks/results/2026-09-14-engine-timings.txt`.
+`benchmarks/results/2026-09-14-engine-timings.txt`. The atomistic geometry comes
+from `site/scene.bonds.json`, which the Rust example generates.
 
 ## Honesty caveats
 
@@ -73,8 +106,17 @@ about being a machine reading, not an actor.
   times. No physical device exists.
 - **No medical claim is made.** The video calls the gearbox a design
   hypothesis. It does not imply a validated device.
-- **The visuals are schematic.** They help a viewer see the structure. They are
-  not photorealism and they are not computed atom positions.
+- **The gear outlines are schematic.** The gears are drawn as circles with
+  teeth. The tooth counts and the pitch radii follow `docs/three-scale.md`.
+  They are not a photorealistic render. They are also not the atom positions of
+  the gear: the `PlanetaryGenerator` emits a skeletal gear outline, not a
+  diamond network. The atomistic layer is a separate real diamond lattice from
+  the `DiamondGenerator`. It represents diamondoid carbon, not the gear body.
+- **The atom layer is a lattice block.** The layer shows a `3x3x3` diamond
+  cubic block, not the gear shape. It reads as diamondoid carbon. It is not
+  the atomistic realization of the gear.
+- **The three-scale cross-fade is a schematic illustration.** It is not a
+  viewer reading a real `nanocad.scene` JSON file.
 - **The benchmark is from one host.** The timings are from a single Apple M4
   with 10 cores and cargo 1.98.1. The video shows the caveat "one host; your
   numbers will differ". `docs/benchmarks.md` says the same.
@@ -104,5 +146,5 @@ about being a machine reading, not an actor.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The three-scale cross-fade is a schematic illustration, not a viewer reading
-  a real `nanocad.scene` JSON file.
+- The atom layer is a `3x3x3` diamond block. It is a real lattice, but it is
+  small. It has 216 atoms and 333 bonds. It is not the gear body.

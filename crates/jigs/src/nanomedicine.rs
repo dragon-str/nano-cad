@@ -20,6 +20,17 @@
 //! The total host force is the sum. The force acts through the center of mass,
 //! so the host supplies no torque.
 //!
+//! # Thermal noise
+//!
+//! [`HostEnvironment::with_temperature_kbt_j`] sets the thermal energy
+//! `k_B * T`. The step then adds a Brownian force. For the discrete velocity
+//! update `v' = (1 - b dt / m) v + xi`, the fluctuation-dissipation relation
+//! fixes the per-axis noise variance
+//! `Var(xi) = (k_B T / m) (1 - (1 - b dt / m)^2)`. The stationary velocity
+//! variance is then `k_B T / m`, the equipartition value. The noise needs a
+//! positive drag coefficient. A [`NanoMachine`] carries a seeded random source,
+//! so a thermal run is reproducible. A zero-temperature run is deterministic.
+//!
 //! # Analytic check
 //!
 //! With no tether and a constant drive `F_d`, the body relaxes to the terminal
@@ -36,6 +47,7 @@
 use thiserror::Error;
 
 use crate::device::{DeviceError, Quat, RigidBody, RigidBodySystem};
+use crate::rotor::BOLTZMANN_J_PER_K;
 
 /// Errors from nanomedicine host setup and from a slice run.
 #[derive(Debug, Error, PartialEq)]
@@ -62,6 +74,8 @@ pub enum NanoMedicineError {
     InvalidTetherStiffness { stiffness_n_per_m: f64 },
     #[error("time step {dt_s} s must be finite and positive")]
     InvalidTimeStep { dt_s: f64 },
+    #[error("thermal energy k_B*T {kbt_j} J must be finite and non-negative")]
+    InvalidTemperature { kbt_j: f64 },
     #[error("body index {body} is outside the body count {body_count}")]
     BodyIndexOutOfBounds { body: usize, body_count: usize },
     #[error("the host has no drag, so a terminal velocity does not exist")]
@@ -84,6 +98,7 @@ pub struct HostEnvironment {
     drive_force_n: [f64; 3],
     tether_anchor_m: Option<[f64; 3]>,
     tether_stiffness_n_per_m: f64,
+    kbt_j: f64,
 }
 
 impl HostEnvironment {
@@ -105,7 +120,34 @@ impl HostEnvironment {
             drive_force_n: [0.0; 3],
             tether_anchor_m: None,
             tether_stiffness_n_per_m: 0.0,
+            kbt_j: 0.0,
         })
+    }
+
+    /// Sets the thermal energy `k_B * T` of the medium, in joules.
+    ///
+    /// The value must be finite and non-negative. A value of zero, the default,
+    /// makes the host deterministic. A positive value turns on the Brownian
+    /// force. The force amplitude obeys the fluctuation-dissipation relation
+    /// for the Stokes drag, so the equilibrium velocity variance is `k_B T / m`
+    /// on each axis. Thermal noise needs a positive drag coefficient: without
+    /// drag the medium cannot exchange energy with the body.
+    pub fn with_temperature_kbt_j(mut self, kbt_j: f64) -> Result<Self, NanoMedicineError> {
+        if !kbt_j.is_finite() || kbt_j < 0.0 {
+            return Err(NanoMedicineError::InvalidTemperature { kbt_j });
+        }
+        self.kbt_j = kbt_j;
+        Ok(self)
+    }
+
+    /// Returns the thermal energy `k_B * T` in joules.
+    pub fn kbt_j(&self) -> f64 {
+        self.kbt_j
+    }
+
+    /// Returns the medium temperature in kelvin, `k_B T / k_B`.
+    pub fn temperature_k(&self) -> f64 {
+        self.kbt_j / BOLTZMANN_J_PER_K
     }
 
     /// Sets the uniform flow velocity of the medium in metres per second.
@@ -279,7 +321,11 @@ pub struct NanoMachine {
     system: RigidBodySystem,
     body: usize,
     environment: HostEnvironment,
+    rng: Xorshift,
 }
+
+/// The fixed seed of a machine that a caller does not seed explicitly.
+const DEFAULT_RANDOM_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 
 impl NanoMachine {
     /// Builds a machine from a host, a mass, a diagonal inertia, and a pose.
@@ -320,7 +366,17 @@ impl NanoMachine {
             system,
             body,
             environment,
+            rng: Xorshift::new(DEFAULT_RANDOM_SEED),
         })
+    }
+
+    /// Returns a copy of the machine with a new Brownian random seed.
+    ///
+    /// Two machines with the same seed and the same host produce the same
+    /// thermal trajectory. A run with zero temperature does not read the seed.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.rng = Xorshift::new(seed);
+        self
     }
 
     /// Returns the device system that holds the body.
@@ -385,8 +441,20 @@ impl NanoMachine {
     }
 
     /// Runs the coupled slice for `steps` steps of `dt_s` and returns the result.
+    ///
+    /// When the host has a positive `k_B T`, the step adds a Brownian force.
+    /// The force uses the machine random source, so two machines with the same
+    /// seed produce the same trajectory. A zero-temperature run is
+    /// deterministic and ignores the seed.
     pub fn run(&mut self, dt_s: f64, steps: u64) -> Result<SliceResult, NanoMedicineError> {
-        run_slice(&mut self.system, self.body, &self.environment, dt_s, steps)
+        run_slice_with_rng(
+            &mut self.system,
+            self.body,
+            &self.environment,
+            dt_s,
+            steps,
+            &mut self.rng,
+        )
     }
 }
 
@@ -402,6 +470,22 @@ pub fn run_slice(
     dt_s: f64,
     steps: u64,
 ) -> Result<SliceResult, NanoMedicineError> {
+    let mut rng = Xorshift::new(DEFAULT_RANDOM_SEED);
+    run_slice_with_rng(system, body, environment, dt_s, steps, &mut rng)
+}
+
+/// Steps a coupled body and host with an explicit Brownian random source.
+///
+/// The deterministic [`run_slice`] uses a fixed seed. This function lets a
+/// [`NanoMachine`] carry the seed across calls.
+fn run_slice_with_rng(
+    system: &mut RigidBodySystem,
+    body: usize,
+    environment: &HostEnvironment,
+    dt_s: f64,
+    steps: u64,
+    rng: &mut Xorshift,
+) -> Result<SliceResult, NanoMedicineError> {
     if !dt_s.is_finite() || dt_s <= 0.0 {
         return Err(NanoMedicineError::InvalidTimeStep { dt_s });
     }
@@ -409,22 +493,37 @@ pub fn run_slice(
     let mut position_m = initial.position_m;
     let mut velocity_m_per_s = initial.velocity_m_per_s;
     let mut work_j = 0.0;
+    let mass_kg = system
+        .body(body)
+        .ok_or(NanoMedicineError::BodyIndexOutOfBounds {
+            body,
+            body_count: system.body_count(),
+        })?
+        .mass_kg();
+    let thermal = environment.kbt_j() > 0.0 && environment.drag_coefficient_n_s_per_m() > 0.0;
 
     for _ in 0..steps {
-        let force_before_n = environment.force_on(velocity_m_per_s, position_m);
+        let host_force_n = environment.force_on(velocity_m_per_s, position_m);
+        let mut applied_force_n = host_force_n;
+        if thermal {
+            applied_force_n = add3(
+                applied_force_n,
+                thermal_force_n(environment, mass_kg, dt_s, rng),
+            );
+        }
         {
             let body_count = system.body_count();
             let rigid_body = system
                 .body_mut(body)
                 .ok_or(NanoMedicineError::BodyIndexOutOfBounds { body, body_count })?;
             rigid_body.clear_forces();
-            rigid_body.add_force_n(force_before_n);
+            rigid_body.add_force_n(applied_force_n);
         }
         system.step(dt_s, 0)?;
         let after = read_state(system, body)?;
         let force_after_n = environment.force_on(after.velocity_m_per_s, after.position_m);
         let displacement_m = sub3(after.position_m, position_m);
-        work_j += 0.5 * dot(add3(force_before_n, force_after_n), displacement_m);
+        work_j += 0.5 * dot(add3(host_force_n, force_after_n), displacement_m);
         position_m = after.position_m;
         velocity_m_per_s = after.velocity_m_per_s;
     }
@@ -490,6 +589,72 @@ fn scale3(a: [f64; 3], factor: f64) -> [f64; 3] {
 
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// Returns the Brownian force for one step, in newtons.
+///
+/// For zero flow and zero applied force the discrete velocity update is
+/// `v' = (1 - b dt / m) v + xi`, where `b` is the Stokes drag coefficient. The
+/// fluctuation-dissipation relation fixes the per-axis noise variance
+/// `Var(xi) = (k_B T / m) (1 - (1 - b dt / m)^2)`, so the stationary variance
+/// is `k_B T / m`. The force that gives `xi` over `dt_s` is
+/// `m * sqrt(Var(xi)) / dt_s` times a standard normal vector.
+fn thermal_force_n(
+    environment: &HostEnvironment,
+    mass_kg: f64,
+    dt_s: f64,
+    rng: &mut Xorshift,
+) -> [f64; 3] {
+    let coefficient = environment.drag_coefficient_n_s_per_m();
+    let decay = 1.0 - coefficient * dt_s / mass_kg;
+    let variance_m2_per_s2 = (environment.kbt_j() / mass_kg) * (1.0 - decay * decay).max(0.0);
+    let scale_n = mass_kg * variance_m2_per_s2.sqrt() / dt_s;
+    [
+        rng.normal() * scale_n,
+        rng.normal() * scale_n,
+        rng.normal() * scale_n,
+    ]
+}
+
+/// A small deterministic xorshift random source with a normal sampler.
+#[derive(Clone, Debug)]
+struct Xorshift {
+    state: u64,
+    spare: Option<f64>,
+}
+
+impl Xorshift {
+    fn new(seed: u64) -> Self {
+        Self {
+            state: seed.max(1),
+            spare: None,
+        }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.state = x;
+        x
+    }
+
+    fn next_unit(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64
+    }
+
+    fn normal(&mut self) -> f64 {
+        if let Some(spare) = self.spare.take() {
+            return spare;
+        }
+        let u1 = self.next_unit().max(f64::MIN_POSITIVE);
+        let u2 = self.next_unit();
+        let radius = (-2.0 * u1.ln()).sqrt();
+        let angle = 2.0 * std::f64::consts::PI * u2;
+        self.spare = Some(radius * angle.sin());
+        radius * angle.cos()
+    }
 }
 
 #[cfg(test)]
@@ -678,6 +843,108 @@ mod tests {
     }
 
     #[test]
+    fn thermal_equilibrium_velocity_variance_matches_equipartition() {
+        let temperature_k = 300.0;
+        let kbt_j = BOLTZMANN_J_PER_K * temperature_k;
+        let environment = HostEnvironment::stokes(WATER_VISCOSITY_PA_S, PROBE_RADIUS_M)
+            .expect("valid host")
+            .with_temperature_kbt_j(kbt_j)
+            .expect("valid temperature");
+        let coefficient = environment.drag_coefficient_n_s_per_m();
+        let tau_s = PROBE_MASS_KG / coefficient;
+        let dt_s = tau_s / 100.0;
+        let mut machine = NanoMachine::new(
+            environment,
+            PROBE_MASS_KG,
+            [1.0e-36; 3],
+            [0.0; 3],
+            Quat::IDENTITY,
+        )
+        .expect("valid machine")
+        .with_seed(0x5EED_5EED);
+
+        machine.run(dt_s, 2_000).expect("warmup");
+        let samples = 200_000u64;
+        let mut sum = 0.0;
+        let mut sum_sq = 0.0;
+        for _ in 0..samples {
+            machine.run(dt_s, 1).expect("step");
+            let velocity_x_m_per_s = machine.body().linear_velocity_m_per_s()[0];
+            sum += velocity_x_m_per_s;
+            sum_sq += velocity_x_m_per_s * velocity_x_m_per_s;
+        }
+        let count = samples as f64;
+        let mean_m_per_s = sum / count;
+        let variance_m2_per_s2 = sum_sq / count - mean_m_per_s * mean_m_per_s;
+        let expected_m2_per_s2 = kbt_j / PROBE_MASS_KG;
+        let relative = (variance_m2_per_s2 - expected_m2_per_s2).abs() / expected_m2_per_s2;
+        assert!(
+            relative < 0.12,
+            "velocity variance {variance_m2_per_s2:e} m^2/s^2 differs from k_B T / m \
+             {expected_m2_per_s2:e} m^2/s^2 by relative {relative}"
+        );
+        assert!(
+            (machine.environment().temperature_k() - temperature_k).abs() / temperature_k < 1.0e-12
+        );
+        println!(
+            "brownian: variance {variance_m2_per_s2:.6e} m^2/s^2 k_B T / m {expected_m2_per_s2:.6e} \
+             relative_error {relative:.3e}"
+        );
+    }
+
+    #[test]
+    fn zero_temperature_is_deterministic_and_matches_terminal_velocity() {
+        let run_once = || {
+            let mut machine = probe_machine().with_seed(7);
+            let tau_s = machine
+                .environment()
+                .relaxation_time_s(PROBE_MASS_KG)
+                .expect("drag is present");
+            machine.run(tau_s / 1000.0, 20_000).expect("valid run")
+        };
+        let first = run_once();
+        let second = run_once();
+        assert_eq!(first.final_velocity_m_per_s, second.final_velocity_m_per_s);
+        assert_eq!(first.final_position_m, second.final_position_m);
+
+        let expected_m_per_s = DRIVE_FORCE_N / probe_environment().drag_coefficient_n_s_per_m();
+        let relative =
+            (first.final_velocity_m_per_s[0] - expected_m_per_s).abs() / expected_m_per_s;
+        assert!(
+            relative < 1.0e-6,
+            "terminal velocity relative error {relative}, simulated {} m/s analytic \
+             {expected_m_per_s} m/s",
+            first.final_velocity_m_per_s[0]
+        );
+    }
+
+    #[test]
+    fn a_seeded_thermal_run_is_reproducible() {
+        let kbt_j = BOLTZMANN_J_PER_K * 300.0;
+        let build = |seed: u64| {
+            let environment = HostEnvironment::stokes(WATER_VISCOSITY_PA_S, PROBE_RADIUS_M)
+                .expect("valid host")
+                .with_temperature_kbt_j(kbt_j)
+                .expect("valid temperature");
+            let mut machine = NanoMachine::new(
+                environment,
+                PROBE_MASS_KG,
+                [1.0e-36; 3],
+                [0.0; 3],
+                Quat::IDENTITY,
+            )
+            .expect("valid machine")
+            .with_seed(seed);
+            machine.run(1.0e-13, 100).expect("valid run")
+        };
+        let first = build(11);
+        let second = build(11);
+        let third = build(12);
+        assert_eq!(first.final_velocity_m_per_s, second.final_velocity_m_per_s);
+        assert_ne!(first.final_velocity_m_per_s, third.final_velocity_m_per_s);
+    }
+
+    #[test]
     fn invalid_inputs_return_a_typed_error() {
         assert!(matches!(
             HostEnvironment::stokes(-1.0e-3, PROBE_RADIUS_M),
@@ -702,6 +969,14 @@ mod tests {
         assert!(matches!(
             probe_environment().with_tether([0.0; 3], -1.0),
             Err(NanoMedicineError::InvalidTetherStiffness { .. })
+        ));
+        assert!(matches!(
+            probe_environment().with_temperature_kbt_j(-1.0e-21),
+            Err(NanoMedicineError::InvalidTemperature { .. })
+        ));
+        assert!(matches!(
+            probe_environment().with_temperature_kbt_j(f64::NAN),
+            Err(NanoMedicineError::InvalidTemperature { .. })
         ));
         assert!(matches!(
             NanoMachine::new(

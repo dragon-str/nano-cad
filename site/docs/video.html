@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The 90-second gearbox video - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>The 90-second gearbox video</h1>
+<p><code>docs/media/nano-cad-gearbox.mp4</code> is the M8-02 artifact. It is a 90-second video about the nano-cad planetary gearbox. This page tells you how to rebuild it and what it is honest about.</p>
+<h2>Files</h2>
+<table><thead><tr><th>File</th><th>What it is</th></tr></thead><tbody><tr><td><code>docs/media/nano-cad-gearbox.mp4</code></td><td>H.264, 1920x1080, 30 fps, ~90 s, with an AAC audio stream and burned-in captions.</td></tr><tr><td><code>docs/media/nano-cad-gearbox.srt</code></td><td>Sidecar captions. They match the narration and the shot timings.</td></tr><tr><td><code>scripts/make_video.sh</code></td><td>The POSIX <code>sh</code> entry point. It regenerates both files from scratch.</td></tr><tr><td><code>scripts/render_video.py</code></td><td>The frame renderer. It draws with Pillow and calls ffmpeg.</td></tr><tr><td><code>docs/video-script.md</code></td><td>The storyboard and the narration.</td></tr></tbody></table>
+<h2>Regenerate</h2>
+<pre><code class="language-sh">sh scripts/make_video.sh</code></pre>
+<p>The script is idempotent. It removes the old outputs first. It renders every frame again and writes both files.</p>
+<p>It needs these tools:</p>
+<table><thead><tr><th>Tool</th><th>Default</th><th>Purpose</th></tr></thead><tbody><tr><td>Python 3</td><td><code>/opt/homebrew/bin/python3</code></td><td>Frame rendering. Needs Pillow and numpy.</td></tr><tr><td>ffmpeg</td><td><code>/opt/homebrew/bin/ffmpeg</code></td><td>H.264 and AAC encode.</td></tr><tr><td>ffprobe</td><td><code>/opt/homebrew/bin/ffprobe</code></td><td>Duration check after the encode.</td></tr><tr><td>say</td><td><code>/usr/bin/say</code></td><td>Text-to-speech narration.</td></tr></tbody></table>
+<p>Set <code>PYTHON</code>, <code>FFMPEG</code>, <code>FFPROBE</code>, <code>SAY</code>, or <code>NCAD_VIDEO_BUILD</code> in the environment to override a path. The script exits nonzero and prints a clear error when a required tool is missing.</p>
+<p>The render takes several minutes. It is not a merge gate, because it is slow and it needs ffmpeg. It is not part of <code>just verify</code>.</p>
+<p>A silent variant is possible. <code>sh scripts/make_video.sh</code> with <code>SAY</code> missing writes a silent video and still writes the <code>.srt</code>.</p>
+<h2>What is generated and what is captured</h2>
+<p><strong>Every frame is generated.</strong> No camera and no screen recording exist in the pipeline. The terminal shots are drawn, not filmed. The gear scenes are schematic 2D drawings:</p>
+<ul><li>Gears are circles with teeth. The teeth counts and the pitch radii follow <code>docs/three-scale.md</code>: 24 sun teeth, 18 planet teeth, 60 ring teeth, module <code>5e-10 m</code>, sun pitch radius <code>6e-9 m</code>, planet <code>4.5e-9 m</code>, ring <code>1.5e-8 m</code>, carrier <code>1.05e-8 m</code>.</li><li>The gear scenes use the kinematics of a fixed ring. With sun rate <code>w_s</code>, the carrier rate is <code>w_c = w_s * 2/7</code>, and the planet absolute spin is <code>w_p = -(2/3) * w_s</code>. The sun and the planets therefore turn in opposite directions. The planet centers orbit the carrier at <code>w_c</code>, and each drawn planet tooth phase keeps the sun, planet, and ring teeth meshed. The ring is drawn static.</li><li>Atoms are dots. The three-scale cross-fade is a drawing, not a render of computed positions.</li><li>The device bodies and joints are marked with circles and arrows.</li></ul>
+<p><strong>The narration is synthetic.</strong> It is machine text-to-speech, not a human voice. The voice is the macOS voice <code>Samantha</code> (<code>en_US</code>) through <code>/usr/bin/say</code> at 180 words per minute. A shot is time-stretched with <code>ffmpeg atempo</code> when its voice line is longer than the shot window. The narration is therefore honest about being a machine reading, not an actor.</p>
+<p><strong>No number is invented.</strong> Every figure on screen comes from the files that <code>docs/video-script.md</code> names in its source column: <code>TASKS.md</code>, <code>docs/report.md</code>, <code>docs/benchmarks.md</code>, <code>benchmarks/results/openmm-water-crosscheck.txt</code>, and <code>benchmarks/results/2026-09-14-engine-timings.txt</code>.</p>
+<h2>Honesty caveats</h2>
+<ul><li><strong>All results are simulated.</strong> The word <code>SIMULATED</code> is on screen at all times. No physical device exists.</li><li><strong>No medical claim is made.</strong> The video calls the gearbox a design hypothesis. It does not imply a validated device.</li><li><strong>The visuals are schematic.</strong> They help a viewer see the structure. They are not photorealism and they are not computed atom positions.</li><li><strong>The benchmark is from one host.</strong> The timings are from a single Apple M4 with 10 cores and cargo 1.98.1. The video shows the caveat "one host; your numbers will differ". <code>docs/benchmarks.md</code> says the same.</li><li><strong>The OpenMM cross-check is a coding check.</strong> The video calls it that. It is not a physics validation. One fixed configuration is checked.</li></ul>
+<h2>Shot timing</h2>
+<table><thead><tr><th>Shot</th><th>Start (s)</th><th>End (s)</th><th>Length (s)</th></tr></thead><tbody><tr><td>1. Cold open: the simulated gearbox</td><td>0</td><td>8</td><td>8</td></tr><tr><td>2. What this is: the five model levels</td><td>8</td><td>19</td><td>11</td></tr><tr><td>3. Clean checkout and one command</td><td>19</td><td>29</td><td>10</td></tr><tr><td>4. The Rust gates pass</td><td>29</td><td>40</td><td>11</td></tr><tr><td>5. The agent generates the gear set</td><td>40</td><td>52</td><td>12</td></tr><tr><td>6. The agent assembles the L2 device</td><td>52</td><td>62</td><td>10</td></tr><tr><td>7. The agent measures the gear ratio</td><td>62</td><td>72</td><td>10</td></tr><tr><td>8. URDF and the three-scale scene</td><td>72</td><td>82</td><td>10</td></tr><tr><td>9. Benchmark timings</td><td>82</td><td>88</td><td>6</td></tr><tr><td>10. Caveats and closing card</td><td>88</td><td>90</td><td>2</td></tr><tr><td><strong>Total</strong></td><td></td><td></td><td><strong>90</strong></td></tr></tbody></table>
+<h2>Limitations</h2>
+<ul><li>The narration for shots 9 and 10 is shorter than the storyboard text, because the storyboard gives those shots 6 s and 2 s. The video keeps the storyboard wording for the other shots.</li><li>The video has no background music. The storyboard lists it as an asset. The generated artifact uses narration only.</li><li>The three-scale cross-fade is a schematic illustration, not a viewer reading a real <code>nanocad.scene</code> JSON file.</li></ul>
+    </main>
+    <footer>
+      Generated from <code>docs/video.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

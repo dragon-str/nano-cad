@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>License Header Policy - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>License Header Policy</h1>
+<p>All source files are Apache-2.0. See <code>LICENSE</code> and <code>NOTICE</code>.</p>
+<h2>Rules</h2>
+<ol><li>Do not copy code from NanoEngineer or any other GPL-licensed project. Read the old C engine for algorithms only, then reimplement in clean code.</li><li>Every new Rust crate carries <code>license.workspace = true</code>, which resolves to <code>Apache-2.0</code>.</li><li>Do not add a dependency without checking its license. Record the choice in <code>ARCHITECTURE.md</code>.</li><li>Keep LGPL dependencies (ASE, xTB) dynamic-link only.</li><li>Vendored third-party code is not allowed. Depend on a crate instead.</li></ol>
+<p>Every crate in this workspace uses <code>#![forbid(unsafe_code)]</code> except one audited FFI crate, if one is ever needed. That exception needs an ADR.</p>
+    </main>
+    <footer>
+      Generated from <code>docs/license-header.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>

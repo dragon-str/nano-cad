@@ -8,15 +8,18 @@ use crate::geometry::validate_positions;
 use crate::neighbor::VerletList;
 use crate::nonbonded::PeriodicBox;
 use crate::out_of_plane::OutOfPlaneTerm;
+use crate::pair_kernel::{KernelElectrostatic, KernelVanDerWaals, NonbondedKernel};
 use crate::torsion::TorsionTerm;
 use crate::van_der_waals::VanDerWaalsTerm;
 
 const DEFAULT_SKIN_M: f64 = 2.0e-10;
 
-/// The pair count in one parallel reduction block.
+/// The pair count in one reduction block.
 ///
 /// The block partition is fixed by the pair count, not by the thread count, so
-/// the reduction order stays bit-identical for any number of threads.
+/// the reduction order stays bit-identical for any number of threads. The
+/// serial path uses the same blocks, so the parallel result is also
+/// bit-identical to the serial result.
 const PARALLEL_BLOCK_PAIRS: usize = 2048;
 
 /// The Boltzmann constant in joules per kelvin.
@@ -319,26 +322,60 @@ impl System {
         let mut gradient = vec![0.0; 3 * self.atom_count];
 
         self.accumulate_bonded(positions_m, &mut energy_j, &mut gradient)?;
-
-        if let Some(term) = &self.van_der_waals {
-            let span = term.atom_count();
-            if span > 0 {
-                let pairs = pairs_for(&self.nonbonded_pairs, span);
-                let (e, g) = term
-                    .energy_and_gradient_from_pairs_j(&positions_m[..3 * span], pairs.as_ref())?;
-                accumulate(&mut energy_j, &mut gradient, e, &g);
-            }
-        }
-        if let Some(term) = &self.electrostatic {
-            let span = term.atom_count();
-            if span > 0 {
-                let pairs = pairs_for(&self.nonbonded_pairs, span);
-                let (e, g) = term
-                    .energy_and_gradient_from_pairs_j(&positions_m[..3 * span], pairs.as_ref())?;
-                accumulate(&mut energy_j, &mut gradient, e, &g);
-            }
-        }
+        self.accumulate_nonbonded_blocked(positions_m, &mut energy_j, &mut gradient)?;
         Ok((energy_j, gradient))
+    }
+
+    /// Builds the four-lane non-bonded kernel over the active terms.
+    fn nonbonded_kernel<'a>(&'a self, positions_m: &'a [f64]) -> NonbondedKernel<'a> {
+        NonbondedKernel {
+            positions_m,
+            periodic_box: self.periodic_box,
+            van_der_waals: self.van_der_waals.as_ref().map(|term| KernelVanDerWaals {
+                a_j: term.a_j(),
+                b_per_m: term.b_per_m(),
+                c_j_m6: term.c_j_m6(),
+                cutoff: *term.cutoff(),
+            }),
+            electrostatic: self.electrostatic.as_ref().map(|term| KernelElectrostatic {
+                charges_c: term.charges_c(),
+                cutoff: *term.cutoff(),
+            }),
+        }
+    }
+
+    /// Accumulates the non-bonded terms over the canonical pair blocks.
+    ///
+    /// The canonical block partition depends only on the pair count. The
+    /// per-block partial gradients are summed in block order. The parallel
+    /// path uses the same partition and the same order, so the two paths agree
+    /// bit for bit.
+    fn accumulate_nonbonded_blocked(
+        &self,
+        positions_m: &[f64],
+        energy_j: &mut f64,
+        gradient: &mut [f64],
+    ) -> Result<(), EngineError> {
+        let pair_count = self.nonbonded_pairs.len() / 2;
+        if pair_count == 0 || (self.van_der_waals.is_none() && self.electrostatic.is_none()) {
+            return Ok(());
+        }
+        let kernel = self.nonbonded_kernel(positions_m);
+        let block_count = pair_count.div_ceil(PARALLEL_BLOCK_PAIRS);
+        let mut block_gradient = vec![0.0; gradient.len()];
+        for block in 0..block_count {
+            let start = block * PARALLEL_BLOCK_PAIRS;
+            let end = ((block + 1) * PARALLEL_BLOCK_PAIRS).min(pair_count);
+            let pairs = &self.nonbonded_pairs[2 * start..2 * end];
+            block_gradient.fill(0.0);
+            let mut block_energy_j = 0.0;
+            kernel.accumulate_lanes4(pairs, &mut block_energy_j, &mut block_gradient)?;
+            *energy_j += block_energy_j;
+            for (slot, value) in gradient.iter_mut().zip(block_gradient.iter()) {
+                *slot += *value;
+            }
+        }
+        Ok(())
     }
 
     fn accumulate_bonded(
@@ -425,74 +462,55 @@ impl System {
 
         let block_count = pair_count.div_ceil(PARALLEL_BLOCK_PAIRS);
         let worker_count = thread_count.min(block_count);
-        let pairs = &self.nonbonded_pairs;
-        let van_der_waals = self.van_der_waals.as_ref();
-        let electrostatic = self.electrostatic.as_ref();
-        let vdw_span = van_der_waals.map_or(0, VanDerWaalsTerm::atom_count);
-        let elec_span = electrostatic.map_or(0, ElectrostaticTerm::atom_count);
         let block_len = 3 * atom_count;
-        let mut partials = vec![0.0; block_count * block_len];
+        let kernel = self.nonbonded_kernel(positions_m);
+        let kernel = &kernel;
+        let pairs: &[u32] = &self.nonbonded_pairs;
 
-        std::thread::scope(|scope| -> Result<(), EngineError> {
+        std::thread::scope(|scope| -> Result<Vec<Vec<f64>>, EngineError> {
             let mut handles = Vec::with_capacity(worker_count);
             for worker in 0..worker_count {
-                handles.push(scope.spawn(
-                    move || -> Result<Vec<(usize, Vec<f64>)>, EngineError> {
-                        let mut local = Vec::new();
-                        let mut block = worker;
-                        while block < block_count {
-                            let start = block * PARALLEL_BLOCK_PAIRS;
-                            let end = ((block + 1) * PARALLEL_BLOCK_PAIRS).min(pair_count);
-                            let mut block_gradient = vec![0.0; block_len];
-                            for pair in start..end {
-                                let i = pairs[2 * pair];
-                                let j = pairs[2 * pair + 1];
-                                if let Some(term) = van_der_waals {
-                                    if (i as usize) < vdw_span && (j as usize) < vdw_span {
-                                        if let Some((_, g)) =
-                                            term.pair_energy_and_gradient_j(positions_m, i, j)?
-                                        {
-                                            add_pair_gradient(&mut block_gradient, i, j, &g);
-                                        }
-                                    }
-                                }
-                                if let Some(term) = electrostatic {
-                                    if (i as usize) < elec_span && (j as usize) < elec_span {
-                                        if let Some((_, g)) =
-                                            term.pair_energy_and_gradient_j(positions_m, i, j)?
-                                        {
-                                            add_pair_gradient(&mut block_gradient, i, j, &g);
-                                        }
-                                    }
-                                }
-                            }
-                            local.push((block, block_gradient));
-                            block += worker_count;
-                        }
-                        Ok(local)
-                    },
-                ));
+                let start_block = worker * block_count / worker_count;
+                let end_block = (worker + 1) * block_count / worker_count;
+                handles.push(scope.spawn(move || -> Result<Vec<f64>, EngineError> {
+                    let mut local = vec![0.0; (end_block - start_block) * block_len];
+                    for block in start_block..end_block {
+                        let start = block * PARALLEL_BLOCK_PAIRS;
+                        let end = ((block + 1) * PARALLEL_BLOCK_PAIRS).min(pair_count);
+                        let offset = (block - start_block) * block_len;
+                        let block_gradient = &mut local[offset..offset + block_len];
+                        let mut block_energy_j = 0.0;
+                        kernel.accumulate_lanes4(
+                            &pairs[2 * start..2 * end],
+                            &mut block_energy_j,
+                            block_gradient,
+                        )?;
+                    }
+                    Ok(local)
+                }));
             }
+            let mut partials = Vec::with_capacity(worker_count);
             for handle in handles {
-                let joined = handle.join().map_err(|_| EngineError::WorkerPanicked)?;
-                for (block, block_gradient) in joined? {
-                    let offset = block * block_len;
-                    partials[offset..offset + block_len].copy_from_slice(&block_gradient);
+                let local = handle.join().map_err(|_| EngineError::WorkerPanicked)?;
+                partials.push(local?);
+            }
+            Ok(partials)
+        })
+        .map(|partials| {
+            for (worker, local) in partials.into_iter().enumerate() {
+                let start_block = worker * block_count / worker_count;
+                for block in start_block..(start_block + local.len() / block_len) {
+                    let offset = (block - start_block) * block_len;
+                    for (slot, value) in gradient
+                        .iter_mut()
+                        .zip(local[offset..offset + block_len].iter())
+                    {
+                        *slot += *value;
+                    }
                 }
             }
-            Ok(())
-        })?;
-
-        for block in 0..block_count {
-            let offset = block * block_len;
-            for (slot, value) in gradient
-                .iter_mut()
-                .zip(partials[offset..offset + block_len].iter())
-            {
-                *slot += value;
-            }
-        }
-        Ok(gradient)
+            gradient
+        })
     }
 
     /// Returns the kinetic energy in joules for a velocity buffer.
@@ -620,15 +638,6 @@ fn accumulate(energy_j: &mut f64, gradient: &mut [f64], term_energy_j: f64, term
     }
 }
 
-fn add_pair_gradient(gradient: &mut [f64], i: u32, j: u32, pair_gradient: &[f64; 6]) {
-    let base_i = i as usize * 3;
-    let base_j = j as usize * 3;
-    for axis in 0..3 {
-        gradient[base_i + axis] += pair_gradient[axis];
-        gradient[base_j + axis] += pair_gradient[3 + axis];
-    }
-}
-
 fn exclusion_key(i: u32, j: u32) -> u64 {
     let low = i.min(j) as u64;
     let high = i.max(j) as u64;
@@ -640,26 +649,6 @@ fn max_option(current: Option<f64>, value: f64) -> f64 {
         Some(existing) => existing.max(value),
         None => value,
     }
-}
-
-fn pairs_for(pairs: &[u32], atom_count: usize) -> std::borrow::Cow<'_, [u32]> {
-    if pair_indices_below(pairs, atom_count) {
-        return std::borrow::Cow::Borrowed(pairs);
-    }
-    let mut kept = Vec::with_capacity(pairs.len());
-    let mut entry = 0;
-    while entry + 1 < pairs.len() {
-        if pairs[entry] < atom_count as u32 && pairs[entry + 1] < atom_count as u32 {
-            kept.push(pairs[entry]);
-            kept.push(pairs[entry + 1]);
-        }
-        entry += 2;
-    }
-    std::borrow::Cow::Owned(kept)
-}
-
-fn pair_indices_below(pairs: &[u32], atom_count: usize) -> bool {
-    pairs.iter().all(|index| (*index as usize) < atom_count)
 }
 
 #[cfg(test)]
@@ -944,6 +933,76 @@ mod tests {
             system.forces_n_parallel(&positions_m, 0),
             Err(EngineError::InvalidThreadCount { .. })
         ));
+    }
+
+    #[test]
+    fn parallel_forces_are_bit_identical_to_serial_for_one_two_four_and_eight_workers() {
+        // A dense periodic system gives many canonical blocks, so the worker
+        // chunks are real. A sparse system would fit in one block and would
+        // not exercise the partition.
+        let atom_count = 400;
+        let box_m = 3.0e-9;
+        let mut rng = Rng::new(0x5EED);
+        let mut positions_m = Vec::with_capacity(3 * atom_count);
+        for _ in 0..atom_count {
+            positions_m.push(rng.next_f64() * box_m);
+            positions_m.push(rng.next_f64() * box_m);
+            positions_m.push(rng.next_f64() * box_m);
+        }
+        let periodic_box = PeriodicBox::new([box_m, box_m, box_m]).expect("valid box");
+        let cutoff = Cutoff::new(1.0e-9, 0.8e-9).expect("valid cutoff");
+        let params: Vec<VdwParams> = (0..atom_count)
+            .map(|atom| VdwParams::new(2.2e-19 + 1.0e-21 * atom as f64, 4.2e10, 8.0e-79))
+            .collect();
+        let charges_c: Vec<f64> = (0..atom_count)
+            .map(|atom| {
+                let magnitude = 0.5e-19 + 0.1e-19 * atom as f64;
+                if atom % 2 == 0 {
+                    magnitude
+                } else {
+                    -magnitude
+                }
+            })
+            .collect();
+        let mut system =
+            System::with_masses_kg(atom_count, &carbon_masses(atom_count)).expect("valid masses");
+        system.set_periodic_box(periodic_box).expect("valid box");
+        system
+            .set_van_der_waals(
+                VanDerWaalsTerm::from_params(&params, cutoff, periodic_box).expect("valid term"),
+            )
+            .expect("fits");
+        system
+            .set_electrostatic(
+                ElectrostaticTerm::from_charges(&charges_c, cutoff, periodic_box)
+                    .expect("valid term"),
+            )
+            .expect("fits");
+
+        let serial = system.forces_n(&positions_m).expect("valid");
+        let block_count = system.neighbor_pair_count().div_ceil(PARALLEL_BLOCK_PAIRS);
+        assert!(
+            block_count > 1,
+            "expected more than one block, got {block_count}"
+        );
+        println!(
+            "parallel bit-identity: {} atoms, {} pairs, {} canonical blocks",
+            atom_count,
+            system.neighbor_pair_count(),
+            block_count
+        );
+        for thread_count in [1_usize, 2, 4, 8] {
+            let parallel = system
+                .forces_n_parallel(&positions_m, thread_count)
+                .expect("valid");
+            for index in 0..serial.len() {
+                assert_eq!(
+                    serial[index].to_bits(),
+                    parallel[index].to_bits(),
+                    "thread count {thread_count}, coordinate {index}"
+                );
+            }
+        }
     }
 
     #[test]

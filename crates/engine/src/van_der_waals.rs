@@ -112,6 +112,21 @@ impl VanDerWaalsTerm {
         &self.periodic_box
     }
 
+    /// Returns the per-atom repulsive prefactors, in joules.
+    pub(crate) fn a_j(&self) -> &[f64] {
+        &self.a_j
+    }
+
+    /// Returns the per-atom repulsive decay constants, in reciprocal metres.
+    pub(crate) fn b_per_m(&self) -> &[f64] {
+        &self.b_per_m
+    }
+
+    /// Returns the per-atom dispersion coefficients.
+    pub(crate) fn c_j_m6(&self) -> &[f64] {
+        &self.c_j_m6
+    }
+
     /// Replaces the periodic box. The cutoff must not exceed half of any
     /// periodic length.
     pub fn set_periodic_box(&mut self, periodic_box: PeriodicBox) -> Result<(), EngineError> {

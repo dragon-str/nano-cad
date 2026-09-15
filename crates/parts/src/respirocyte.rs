@@ -145,6 +145,24 @@ static PUMP_PARAMETERS: &[ParameterSpec] = &[
         false,
         "piston stroke length in metres",
     ),
+    ParameterSpec::new(
+        "seal_clearance_m",
+        Some(Unit::Metre),
+        0.2e-9,
+        0.16e-9,
+        1.0e-9,
+        false,
+        "radial running clearance between the piston seal ring and the bore in metres",
+    ),
+    ParameterSpec::new(
+        "seal_land_m",
+        Some(Unit::Metre),
+        0.6e-9,
+        0.2e-9,
+        5.0e-9,
+        false,
+        "axial length of the piston seal ring land in metres",
+    ),
 ];
 
 static TANK_PARAMETERS: &[ParameterSpec] = &[
@@ -167,6 +185,113 @@ static TANK_PARAMETERS: &[ParameterSpec] = &[
         "tank shell wall thickness in metres",
     ),
 ];
+
+/// An estimate of flow through a thin annular clearance gap.
+///
+/// The annulus is unrolled to a plane channel of width `2 * pi * R`. For a
+/// Newtonian fluid of dynamic viscosity `mu`, the volumetric flow is the sum
+/// of a pressure-driven Poiseuille term and a shear-driven Couette term:
+///
+/// ```text
+/// Q_p = pi * R * h^3 / (6 * mu) * (dp / L)      (Poiseuille)
+/// Q_c = pi * R * h * U                          (Couette)
+/// ```
+///
+/// The pressure conductance is `dQ_p / d(dp) = pi * R * h^3 / (6 * mu * L)`.
+/// Source: R. B. Bird, W. E. Stewart, E. N. Lightfoot, "Transport Phenomena",
+/// 2nd ed. (2002), sections 2.3 and 2.4. This is a thin-gap estimate. It
+/// ignores end effects, eccentricity, and surface slip. A positive pressure
+/// difference drives flow from the high-pressure end to the low-pressure end.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnnularGapFlow {
+    /// The radial clearance between the two surfaces, in metres.
+    pub gap_m: f64,
+    /// The mean radius of the annular clearance, in metres.
+    pub mean_radius_m: f64,
+    /// The axial length of the leak path, in metres.
+    pub length_m: f64,
+    /// The dynamic viscosity of the fluid, in pascal seconds.
+    pub viscosity_pa_s: f64,
+    /// The pressure conductance `pi * R * h^3 / (6 * mu * L)`, in
+    /// cubic metres per pascal second.
+    pub pressure_conductance_m3_per_pa_s: f64,
+}
+
+impl AnnularGapFlow {
+    /// Builds a thin-gap flow estimate. Every input must be finite and positive.
+    pub fn new(
+        gap_m: f64,
+        mean_radius_m: f64,
+        length_m: f64,
+        viscosity_pa_s: f64,
+    ) -> Result<Self, PartError> {
+        for (label, value) in [
+            ("gap", gap_m),
+            ("mean radius", mean_radius_m),
+            ("length", length_m),
+            ("viscosity", viscosity_pa_s),
+        ] {
+            if !value.is_finite() || value <= 0.0 {
+                return Err(PartError::InvalidGeometry(format!(
+                    "annular gap {label} {value} must be finite and positive"
+                )));
+            }
+        }
+        let conductance = std::f64::consts::PI * mean_radius_m * gap_m * gap_m * gap_m
+            / (6.0 * viscosity_pa_s * length_m);
+        Ok(Self {
+            gap_m,
+            mean_radius_m,
+            length_m,
+            viscosity_pa_s,
+            pressure_conductance_m3_per_pa_s: conductance,
+        })
+    }
+
+    /// Returns the pressure conductance in cubic metres per pascal second.
+    pub fn pressure_conductance_m3_per_pa_s(&self) -> f64 {
+        self.pressure_conductance_m3_per_pa_s
+    }
+
+    /// Returns the Poiseuille flow for a pressure difference in pascals.
+    ///
+    /// The pressure difference must be finite. A negative difference reverses
+    /// the flow direction.
+    pub fn pressure_driven_flow_m3_per_s(
+        &self,
+        pressure_difference_pa: f64,
+    ) -> Result<f64, PartError> {
+        if !pressure_difference_pa.is_finite() {
+            return Err(PartError::InvalidGeometry(format!(
+                "pressure difference {pressure_difference_pa} Pa must be finite"
+            )));
+        }
+        Ok(self.pressure_conductance_m3_per_pa_s * pressure_difference_pa)
+    }
+
+    /// Returns the Couette flow for a sliding speed in metres per second.
+    ///
+    /// The sliding speed must be finite. It is the relative axial speed of the
+    /// two surfaces.
+    pub fn couette_flow_m3_per_s(&self, sliding_speed_m_per_s: f64) -> Result<f64, PartError> {
+        if !sliding_speed_m_per_s.is_finite() {
+            return Err(PartError::InvalidGeometry(format!(
+                "sliding speed {sliding_speed_m_per_s} m/s must be finite"
+            )));
+        }
+        Ok(std::f64::consts::PI * self.mean_radius_m * self.gap_m * sliding_speed_m_per_s)
+    }
+
+    /// Returns the total flow, the Poiseuille term plus the Couette term.
+    pub fn total_flow_m3_per_s(
+        &self,
+        pressure_difference_pa: f64,
+        sliding_speed_m_per_s: f64,
+    ) -> Result<f64, PartError> {
+        Ok(self.pressure_driven_flow_m3_per_s(pressure_difference_pa)?
+            + self.couette_flow_m3_per_s(sliding_speed_m_per_s)?)
+    }
+}
 
 /// The rotor, bearing, and their design clearances.
 ///
@@ -318,6 +443,19 @@ impl PartGenerator for RespirocyteRotorGenerator {
     }
 }
 
+impl RespirocyteRotor {
+    /// Estimates the annular leak through the design bearing gap.
+    ///
+    /// The leak path is the design radial gap `gap_m` along the rotor height
+    /// `height_m` at the mean radius. Pass the fluid dynamic viscosity in pascal
+    /// seconds. The returned [`AnnularGapFlow`] gives the Poiseuille flow for a
+    /// pressure difference and the Couette flow for a sliding speed.
+    pub fn bearing_leakage_model(&self, viscosity_pa_s: f64) -> Result<AnnularGapFlow, PartError> {
+        let mean_radius_m = self.outer_radius_m + 0.5 * self.gap_m;
+        AnnularGapFlow::new(self.gap_m, mean_radius_m, self.height_m, viscosity_pa_s)
+    }
+}
+
 /// The pump cylinder, piston, and the stroke.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RespirocytePump {
@@ -325,6 +463,8 @@ pub struct RespirocytePump {
     pub cylinder: Part,
     /// The solid piston, parked at the bottom of its stroke.
     pub piston: Part,
+    /// The seal ring land carried on the piston top.
+    pub seal: Part,
     /// The cylinder bore (inner) radius, in metres.
     pub bore_radius_m: f64,
     /// The cylinder outer radius, in metres.
@@ -339,6 +479,15 @@ pub struct RespirocytePump {
     pub piston_length_m: f64,
     /// The piston stroke length, in metres.
     pub stroke_m: f64,
+    /// The seal ring inner radius, in metres. It equals the piston radius.
+    pub seal_inner_radius_m: f64,
+    /// The seal ring outer radius, in metres.
+    pub seal_outer_radius_m: f64,
+    /// The radial running clearance between the seal ring and the bore, in
+    /// metres.
+    pub seal_clearance_m: f64,
+    /// The axial length of the seal ring land, in metres.
+    pub seal_land_m: f64,
 }
 
 /// Builds a respirocyte cylinder and piston pump.
@@ -355,6 +504,8 @@ impl RespirocytePumpGenerator {
         let piston_clearance_m = resolved.require("piston_clearance_m")?;
         let piston_length_m = resolved.require("piston_length_m")?;
         let stroke_m = resolved.require("stroke_m")?;
+        let seal_clearance_m = resolved.require("seal_clearance_m")?;
+        let seal_land_m = resolved.require("seal_land_m")?;
 
         if wall_m < DIAMONDOID_BOND_M {
             return Err(PartError::InvalidGeometry(format!(
@@ -376,6 +527,23 @@ impl RespirocytePumpGenerator {
             return Err(PartError::InvalidGeometry(format!(
                 "piston length {piston_length_m} m plus stroke {stroke_m} m exceeds the \
                  cylinder length {cylinder_length_m} m"
+            )));
+        }
+        if seal_clearance_m <= DIAMONDOID_BOND_M {
+            return Err(PartError::InvalidGeometry(format!(
+                "seal clearance {seal_clearance_m} m is not above one bond length, so the \
+                 ring and the bore would bond across the running gap"
+            )));
+        }
+        if seal_clearance_m >= piston_clearance_m {
+            return Err(PartError::InvalidGeometry(format!(
+                "seal clearance {seal_clearance_m} m is not smaller than the piston \
+                 clearance {piston_clearance_m} m, so the seal does not tighten the gap"
+            )));
+        }
+        if seal_land_m > piston_length_m {
+            return Err(PartError::InvalidGeometry(format!(
+                "seal land {seal_land_m} m is longer than the piston {piston_length_m} m"
             )));
         }
 
@@ -412,6 +580,25 @@ impl RespirocytePumpGenerator {
             ));
         }
 
+        let seal_inner_radius_m = piston_radius_m;
+        let seal_outer_radius_m = bore_radius_m - seal_clearance_m;
+        let seal_z_max_m = piston_z_max_m;
+        let seal_z_min_m = seal_z_max_m - seal_land_m;
+        let mut seal_topology = Topology::new();
+        add_lattice_atoms(&mut seal_topology, seal_outer_radius_m, |position_m| {
+            let radial_m = radial_xy_m(position_m);
+            radial_m >= seal_inner_radius_m
+                && radial_m <= seal_outer_radius_m
+                && position_m[2] >= seal_z_min_m
+                && position_m[2] <= seal_z_max_m
+        });
+        add_first_shell_bonds(&mut seal_topology, DIAMONDOID_BOND_M)?;
+        if seal_topology.atom_count() < MIN_BODY_ATOMS {
+            return Err(PartError::InvalidGeometry(
+                "seal ring region cut no atoms from the diamond lattice".to_owned(),
+            ));
+        }
+
         let mut cylinder =
             Part::new("respirocyte-pump-cylinder", cylinder_topology).with_material("diamondoid");
         cylinder
@@ -427,9 +614,19 @@ impl RespirocytePumpGenerator {
             .metadata
             .insert("generator".to_owned(), self.id().to_owned());
 
+        let mut seal =
+            Part::new("respirocyte-pump-seal", seal_topology).with_material("diamondoid");
+        seal.metadata
+            .insert("generator".to_owned(), self.id().to_owned());
+        seal.metadata.insert(
+            "seal_clearance_m".to_owned(),
+            format!("{seal_clearance_m:e}"),
+        );
+
         Ok(RespirocytePump {
             cylinder,
             piston,
+            seal,
             bore_radius_m,
             outer_radius_m,
             wall_m,
@@ -437,6 +634,10 @@ impl RespirocytePumpGenerator {
             cylinder_length_m,
             piston_length_m,
             stroke_m,
+            seal_inner_radius_m,
+            seal_outer_radius_m,
+            seal_clearance_m,
+            seal_land_m,
         })
     }
 }
@@ -456,6 +657,23 @@ impl PartGenerator for RespirocytePumpGenerator {
 
     fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
         Ok(self.build(parameters)?.cylinder)
+    }
+}
+
+impl RespirocytePump {
+    /// Estimates the annular leak past the piston seal ring.
+    ///
+    /// The leak path is the seal running clearance `seal_clearance_m` along the
+    /// land `seal_land_m` at the seal mean radius. Pass the fluid dynamic
+    /// viscosity in pascal seconds.
+    pub fn seal_leakage_model(&self, viscosity_pa_s: f64) -> Result<AnnularGapFlow, PartError> {
+        let mean_radius_m = self.seal_outer_radius_m + 0.5 * self.seal_clearance_m;
+        AnnularGapFlow::new(
+            self.seal_clearance_m,
+            mean_radius_m,
+            self.seal_land_m,
+            viscosity_pa_s,
+        )
     }
 }
 
@@ -662,6 +880,21 @@ fn minimum_atom_gap_m(rotor: &Topology, bearing: &Topology) -> f64 {
     min_bearing_radius_m - max_rotor_radius_m
 }
 
+/// Returns the smallest atom-to-atom distance between two atom sets, in metres.
+///
+/// The two sets are separate bodies, so a distance inside the bonding band
+/// means a bond would form if the sets shared a topology.
+#[cfg(test)]
+fn minimum_pair_distance_m(a: &Topology, b: &Topology) -> f64 {
+    let mut minimum_m = f64::INFINITY;
+    for atom_a in a.atoms() {
+        for atom_b in b.atoms() {
+            minimum_m = minimum_m.min(distance_m(atom_a.position_m, atom_b.position_m));
+        }
+    }
+    minimum_m
+}
+
 fn radial_xy_m(position_m: [f64; 3]) -> f64 {
     (position_m[0] * position_m[0] + position_m[1] * position_m[1]).sqrt()
 }
@@ -784,6 +1017,158 @@ mod tests {
         }
     }
 
+    /// Hand calculation of the thin-gap annular Poiseuille flow.
+    fn annulus_poiseuille_flow_m3_per_s(
+        gap_m: f64,
+        mean_radius_m: f64,
+        length_m: f64,
+        viscosity_pa_s: f64,
+        pressure_difference_pa: f64,
+    ) -> f64 {
+        std::f64::consts::PI * mean_radius_m * gap_m.powi(3) * pressure_difference_pa
+            / (6.0 * viscosity_pa_s * length_m)
+    }
+
+    #[test]
+    fn the_pump_seal_tightens_the_running_gap() {
+        let build = RespirocytePumpGenerator
+            .build(&ParameterSet::new())
+            .expect("pump");
+        assert!(build.seal.atom_count() >= MIN_BODY_ATOMS);
+        assert!(build.seal_clearance_m > 0.0);
+        assert!(build.seal_clearance_m < build.bore_radius_m - build.piston_radius_m);
+        assert!((build.seal_inner_radius_m - build.piston_radius_m).abs() <= f64::EPSILON);
+        let expected_outer_m = build.bore_radius_m - build.seal_clearance_m;
+        assert!((build.seal_outer_radius_m - expected_outer_m).abs() <= f64::EPSILON);
+        assert!(build.seal_inner_radius_m < build.seal_outer_radius_m);
+        assert_eq!(build.seal.name, "respirocyte-pump-seal");
+        assert_bonds_match_the_diamond_bond(&build.seal);
+    }
+
+    #[test]
+    fn no_bond_crosses_the_seal_running_gap() {
+        let build = RespirocytePumpGenerator
+            .build(&ParameterSet::new())
+            .expect("pump");
+        let bond_upper_m = DIAMONDOID_BOND_M * (1.0 + BOND_TOLERANCE_RELATIVE);
+        let seal_to_bore_m =
+            minimum_pair_distance_m(&build.seal.topology, &build.cylinder.topology);
+        assert!(
+            seal_to_bore_m > bond_upper_m,
+            "seal-to-bore minimum distance {seal_to_bore_m:e} m is inside the bonding band"
+        );
+        assert!(
+            build.seal_clearance_m <= seal_to_bore_m + f64::EPSILON,
+            "measured gap {seal_to_bore_m:e} m is tighter than the design clearance {:e} m",
+            build.seal_clearance_m
+        );
+        let seal_to_piston_m =
+            minimum_pair_distance_m(&build.seal.topology, &build.piston.topology);
+        assert!(
+            seal_to_piston_m > 0.0,
+            "the seal overlaps the piston by {seal_to_piston_m:e} m"
+        );
+    }
+
+    #[test]
+    fn the_rotor_bearing_leakage_matches_the_hand_calculation() {
+        let build = RespirocyteRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("rotor");
+        let viscosity_pa_s = 1.0e-3;
+        let pressure_difference_pa = 1.0e5;
+        let model = build
+            .bearing_leakage_model(viscosity_pa_s)
+            .expect("valid model");
+        let mean_radius_m = build.outer_radius_m + 0.5 * build.gap_m;
+        let expected_m3_per_s = annulus_poiseuille_flow_m3_per_s(
+            build.gap_m,
+            mean_radius_m,
+            build.height_m,
+            viscosity_pa_s,
+            pressure_difference_pa,
+        );
+        let actual_m3_per_s = model
+            .pressure_driven_flow_m3_per_s(pressure_difference_pa)
+            .expect("finite pressure");
+        let relative = (actual_m3_per_s - expected_m3_per_s).abs() / expected_m3_per_s;
+        assert!(relative < 1.0e-12, "leakage relative error {relative}");
+        let rounded_m3_per_s = 9.1148e-20;
+        assert!(
+            (actual_m3_per_s - rounded_m3_per_s).abs() / rounded_m3_per_s < 1.0e-3,
+            "leakage {actual_m3_per_s:e} m^3/s differs from the hand value {rounded_m3_per_s:e}"
+        );
+        assert_close_rel(
+            model.pressure_conductance_m3_per_pa_s(),
+            expected_m3_per_s / pressure_difference_pa,
+            1.0e-12,
+            "conductance",
+        );
+        println!(
+            "bearing leakage: {actual_m3_per_s:.6e} m^3/s at {pressure_difference_pa:.1e} Pa \
+             (hand {expected_m3_per_s:.6e}) conductance {:.6e} m^3/(Pa*s)",
+            model.pressure_conductance_m3_per_pa_s()
+        );
+    }
+
+    #[test]
+    fn the_seal_leakage_matches_the_hand_calculation() {
+        let build = RespirocytePumpGenerator
+            .build(&ParameterSet::new())
+            .expect("pump");
+        let viscosity_pa_s = 1.0e-3;
+        let pressure_difference_pa = 1.0e5;
+        let model = build
+            .seal_leakage_model(viscosity_pa_s)
+            .expect("valid model");
+        let mean_radius_m = build.seal_outer_radius_m + 0.5 * build.seal_clearance_m;
+        let expected_m3_per_s = annulus_poiseuille_flow_m3_per_s(
+            build.seal_clearance_m,
+            mean_radius_m,
+            build.seal_land_m,
+            viscosity_pa_s,
+            pressure_difference_pa,
+        );
+        let actual_m3_per_s = model
+            .pressure_driven_flow_m3_per_s(pressure_difference_pa)
+            .expect("finite pressure");
+        let relative = (actual_m3_per_s - expected_m3_per_s).abs() / expected_m3_per_s;
+        assert!(relative < 1.0e-12, "leakage relative error {relative}");
+        println!(
+            "seal leakage: {actual_m3_per_s:.6e} m^3/s at {pressure_difference_pa:.1e} Pa \
+             (hand {expected_m3_per_s:.6e})"
+        );
+    }
+
+    #[test]
+    fn the_couette_term_matches_the_plane_channel_estimate() {
+        let model = AnnularGapFlow::new(0.5e-9, 2.0e-9, 1.0e-9, 1.0e-3).expect("valid model");
+        let speed_m_per_s = 1.0e-3;
+        let expected_m3_per_s =
+            std::f64::consts::PI * model.mean_radius_m * model.gap_m * speed_m_per_s;
+        let actual_m3_per_s = model
+            .couette_flow_m3_per_s(speed_m_per_s)
+            .expect("finite speed");
+        assert!((actual_m3_per_s - expected_m3_per_s).abs() <= 1.0e-30);
+        let total_m3_per_s = model
+            .total_flow_m3_per_s(1.0e5, speed_m_per_s)
+            .expect("finite inputs");
+        let pressure_only_m3_per_s = model
+            .pressure_driven_flow_m3_per_s(1.0e5)
+            .expect("finite pressure");
+        assert!((total_m3_per_s - pressure_only_m3_per_s - actual_m3_per_s).abs() <= 1.0e-30);
+        assert!(AnnularGapFlow::new(0.0, 2.0e-9, 1.0e-9, 1.0e-3).is_err());
+        assert!(AnnularGapFlow::new(0.5e-9, 2.0e-9, 1.0e-9, -1.0).is_err());
+    }
+
+    fn assert_close_rel(actual: f64, expected: f64, tolerance: f64, label: &str) {
+        let relative = (actual - expected).abs() / expected.abs();
+        assert!(
+            relative <= tolerance,
+            "{label}: actual {actual} expected {expected} relative {relative}"
+        );
+    }
+
     #[test]
     fn parameters_out_of_range_are_errors_not_panics() {
         assert!(RespirocyteRotorGenerator
@@ -800,6 +1185,9 @@ mod tests {
             .is_err());
         assert!(RespirocytePumpGenerator
             .build(&ParameterSet::new().with("piston_clearance_m", 4.0e-9))
+            .is_err());
+        assert!(RespirocytePumpGenerator
+            .build(&ParameterSet::new().with("seal_clearance_m", 1.0e-9))
             .is_err());
         assert!(RespirocyteTankGenerator
             .build(&ParameterSet::new().with("tank_wall_m", 0.0))
@@ -828,7 +1216,7 @@ mod tests {
         );
         assert_eq!(RespirocyteRotorGenerator.parameters().len(), 4);
         assert_eq!(RespirocytePumpGenerator.id(), "respirocyte_pump");
-        assert_eq!(RespirocytePumpGenerator.parameters().len(), 6);
+        assert_eq!(RespirocytePumpGenerator.parameters().len(), 8);
         assert_eq!(RespirocyteTankGenerator.id(), "respirocyte_tank");
         assert_eq!(RespirocyteTankGenerator.parameters().len(), 2);
     }
