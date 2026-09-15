@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/units",
+    "crates/model",
+    "crates/format",
+    "crates/engine",
+    "crates/jigs",
+    "crates/parts",
+    "crates/params",
+    "crates/python",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+authors = ["Daniel Reda and contributors"]
+repository = "https://github.com/nanocad/nano-cad"
+
+[workspace.dependencies]
+nanocad-units = { path = "crates/units" }
+nanocad-model = { path = "crates/model" }
+nanocad-format = { path = "crates/format" }
+nanocad-engine = { path = "crates/engine" }
+nanocad-jigs = { path = "crates/jigs" }
+nanocad-parts = { path = "crates/parts" }
+nanocad-params = { path = "crates/params" }
+thiserror = "2"
+criterion = "0.5"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

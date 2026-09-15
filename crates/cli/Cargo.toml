@@ -1,0 +1,15 @@
+[package]
+name = "nanocad-cli"
+description = "The nanocad command line"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nanocad"
+path = "src/main.rs"
+
+[dependencies]
+nanocad-model.workspace = true
+nanocad-format.workspace = true
+thiserror.workspace = true

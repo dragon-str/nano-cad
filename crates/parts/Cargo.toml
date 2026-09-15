@@ -1,0 +1,11 @@
+[package]
+name = "nanocad-parts"
+description = "Parametric part generators: gear, nanotube, lattice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nanocad-units.workspace = true
+nanocad-model.workspace = true
+thiserror.workspace = true

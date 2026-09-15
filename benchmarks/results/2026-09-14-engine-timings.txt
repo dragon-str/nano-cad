@@ -1,0 +1,32 @@
+# M2-12 engine timing record
+
+Date (UTC): 2026-09-15T00:40:09Z
+Host: Apple M4, 10 logical cores
+OS: macOS 26.6.2 (build 25G83)
+Profile: `bench` (release, LTO thin, codegen-units 1)
+Command:
+`cargo bench -p nanocad-engine --bench engine_bench -- --warm-up-time 0.5 --measurement-time 1.0 --sample-size 20`
+Bench crate: `crates/engine/benches/engine_bench.rs`
+Bench tag: `nanocad-engine v0.1.0`
+
+## Reference case
+
+Periodic SPC-like water box, 200 molecules (600 atoms), box side 1.884e-9 m,
+300 K. `spc_water_box` with seed `0xB3C0`. The neighbor pair list holds 30827
+pairs.
+
+## Results
+
+| Benchmark | Mean | Lower bound | Upper bound |
+|---|---|---|---|
+| `water_200_energy_and_gradient` | 680.97 us | 677.92 us | 685.88 us |
+| `water_200_forces_serial` | 679.83 us | 678.45 us | 681.14 us |
+| `water_200_forces_parallel_4` | 370.97 us | 369.07 us | 373.05 us |
+
+Notes:
+
+- The 4-worker deterministic reduction is about 1.83x faster than the serial
+  path on this host. The parallel path is opt-in.
+- `cargo bench` is timing only. It is not a merge gate.
+- Criterion writes its raw data to `target/criterion/`. This file records the
+  summary numbers only.

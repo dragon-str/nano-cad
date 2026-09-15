@@ -1,0 +1,15 @@
+[package]
+name = "nanocad-jigs"
+description = "Jigs: anchors, motors, springs, thermostats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nanocad-model.workspace = true
+nanocad-params.workspace = true
+nanocad-parts.workspace = true
+nanocad-units.workspace = true
+thiserror.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

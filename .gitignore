@@ -1,0 +1,16 @@
+__pycache__/
+!benchmarks/results/.gitkeep
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+*.py[cod]
+*.so
+**/*.rs.bk
+/target
+benchmarks/results/*.json
+build/
+dist/
+venv/
+.DS_Store
+**/.DS_Store

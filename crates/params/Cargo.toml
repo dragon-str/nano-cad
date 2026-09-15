@@ -1,0 +1,13 @@
+[package]
+name = "nanocad-params"
+description = "Multiscale parameter store, provenance, verification"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nanocad-units.workspace = true
+nanocad-engine.workspace = true
+thiserror.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

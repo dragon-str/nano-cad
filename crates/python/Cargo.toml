@@ -1,0 +1,40 @@
+[package]
+name = "nanocad-python"
+description = "PyO3 bindings to the nanocad Python package"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The cdylib is the Python extension that maturin packages as `nanocad._core`.
+# The rlib keeps `cargo test` working with no Python interpreter, per ADR-0012.
+name = "nanocad_python"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Every core dependency is optional and gated behind the `python` feature, so
+# the default build stays a plain library with no PyO3 (ADR-0012).
+nanocad-units = { workspace = true, optional = true }
+nanocad-model = { workspace = true, optional = true }
+nanocad-format = { workspace = true, optional = true }
+nanocad-engine = { workspace = true, optional = true }
+nanocad-jigs = { workspace = true, optional = true }
+nanocad-parts = { workspace = true, optional = true }
+nanocad-params = { workspace = true, optional = true }
+pyo3 = { version = "0.29", optional = true, features = [
+    "extension-module",
+    "abi3-py310",
+] }
+
+[features]
+default = []
+python = [
+    "dep:nanocad-units",
+    "dep:nanocad-model",
+    "dep:nanocad-format",
+    "dep:nanocad-engine",
+    "dep:nanocad-jigs",
+    "dep:nanocad-parts",
+    "dep:nanocad-params",
+    "dep:pyo3",
+]

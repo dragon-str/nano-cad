@@ -1,0 +1,22 @@
+# Engine timing record (reproduced)
+
+Date (UTC): 2026-09-15T01:00:05Z
+Host name: Daniels-Mac-mini.local
+Host: Apple M4, 10 logical cores
+OS: Darwin
+Architecture: arm64
+Toolchain: cargo 1.98.1 (797e8a9bc 2026-08-05); rustc 1.98.1 (48a229cea 2026-09-01)
+Profile: `bench` (release, LTO thin, codegen-units 1)
+Command:
+`cargo bench -p nanocad-engine --bench engine_bench -- --warm-up-time 0.5 --measurement-time 1.0 --sample-size 20`
+Bench crate: `crates/engine/benches/engine_bench.rs`
+
+## Results
+
+| Benchmark | Criterion time |
+|---|---|
+| `water_200_energy_and_gradient` | [648.79 µs 653.02 µs 659.23 µs] |
+| `water_200_forces_serial` | [656.13 µs 660.21 µs 665.04 µs] |
+| `water_200_forces_parallel_4` | [284.23 µs 303.08 µs 317.76 µs] |
+
+Criterion writes its raw report to `target/criterion/`.

@@ -1,0 +1,15 @@
+mmpformat 050920 required; 051103 preferred
+kelvin 300
+group (Synthetic)
+info opengroup open = True
+mol (SyntheticChain) def
+atom 1 (6) (0, 0, 0) def
+atom 2 (8) (1200, 0, 0) def
+info atom atomtype = sp2
+bond2 1
+atom 3 (6) (2400, 1000, 0) def
+bond1 2
+atom 4 (1) (3600, -500, 750) def
+bond1 3
+egroup (Synthetic)
+end molecular machine part SyntheticChain

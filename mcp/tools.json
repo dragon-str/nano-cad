@@ -1,0 +1,482 @@
+{
+  "schema": "nanocad.mcp.tools",
+  "version": 1,
+  "tools": [
+    {
+      "name": "create_part",
+      "description": "Create a part from a registered generator id and a parameter map.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Generator id, for example 'spur_gear' or 'nanotube'."
+          },
+          "specs": {
+            "type": "object",
+            "description": "Generator parameters. Missing values use defaults."
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Optional handle to reuse for this part."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "generate_gear",
+      "description": "Generate a gear from the gear registry: spur_gear, gear_profile, or planetary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Gear generator id.",
+            "enum": [
+              "spur_gear",
+              "gear_profile",
+              "planetary"
+            ]
+          },
+          "specs": {
+            "type": "object",
+            "description": "Generator parameters. Missing values use defaults."
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Optional handle to reuse for this part."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "generate_nanotube",
+      "description": "Generate a nanotube from the default parameters, or from a parameter map.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "specs": {
+            "type": "object",
+            "description": "Nanotube parameters, for example chiral indices."
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Optional handle to reuse for this part."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "generate_lattice",
+      "description": "Generate a diamond or graphite lattice part.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Lattice kind.",
+            "enum": [
+              "diamond",
+              "graphite"
+            ]
+          },
+          "specs": {
+            "type": "object",
+            "description": "Lattice parameters. Missing values use defaults."
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Optional handle to reuse for this part."
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_generators",
+      "description": "List every registered generator with its parameter schema.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "relax",
+      "description": "Minimize a part's energy with harmonic bond-stretch terms at current lengths.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Handle of the part to relax."
+          },
+          "stiffness_n_per_m": {
+            "type": "number",
+            "description": "Bond-stretch stiffness in newtons per metre.",
+            "default": 300.0
+          },
+          "max_iterations": {
+            "type": "integer",
+            "description": "Maximum minimizer iterations.",
+            "default": 200
+          },
+          "gradient_tolerance_n": {
+            "type": "number",
+            "description": "Convergence threshold on the gradient norm, in newtons.",
+            "default": 1e-14
+          }
+        },
+        "required": [
+          "part_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_md",
+      "description": "Run Velocity Verlet molecular dynamics on a part and update its positions.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Handle of the part to integrate."
+          },
+          "dt_s": {
+            "type": "number",
+            "description": "Time step in seconds.",
+            "default": 1e-15
+          },
+          "steps": {
+            "type": "integer",
+            "description": "Number of steps.",
+            "default": 100
+          },
+          "stiffness_n_per_m": {
+            "type": "number",
+            "description": "Bond-stretch stiffness in newtons per metre.",
+            "default": 300.0
+          }
+        },
+        "required": [
+          "part_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_jig",
+      "description": "Add an anchor or spring jig to a part. The jig is stored under ``jig_id``.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Jig kind.",
+            "enum": [
+              "anchor",
+              "spring"
+            ]
+          },
+          "part_id": {
+            "type": "string",
+            "description": "Handle of the part the jig acts on."
+          },
+          "k_n_per_m": {
+            "type": "number",
+            "description": "Spring constant in newtons per metre, for an anchor jig.",
+            "default": 1000.0
+          },
+          "atoms": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Atom indices to hold, for an anchor jig."
+          },
+          "springs": {
+            "type": "array",
+            "description": "Spring definitions, for a spring jig.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "i": {
+                  "type": "integer"
+                },
+                "j": {
+                  "type": "integer"
+                },
+                "k_n_per_m": {
+                  "type": "number"
+                },
+                "rest_length_m": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "i",
+                "j",
+                "k_n_per_m",
+                "rest_length_m"
+              ]
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "part_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "measure",
+      "description": "Measure a part: atom and bond counts, bounding box, centroid, and charge.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Handle of the part."
+          }
+        },
+        "required": [
+          "part_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "validate_part",
+      "description": "Check a part for over-coordination, bond strain, and unknown valence.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "part_id": {
+            "type": "string",
+            "description": "Handle of the part."
+          },
+          "reference_m": {
+            "type": "number",
+            "description": "Reference bond length in metres. Defaults to the diamond C-C bond."
+          },
+          "strain_tolerance_relative": {
+            "type": "number",
+            "description": "Relative strain tolerance.",
+            "default": 0.35
+          }
+        },
+        "required": [
+          "part_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "convert_units",
+      "description": "Convert a value between two units of the same dimension.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "The value to convert."
+          },
+          "from_unit": {
+            "type": "string",
+            "description": "Source unit symbol, for example 'nm'."
+          },
+          "to_unit": {
+            "type": "string",
+            "description": "Target unit symbol, for example 'm'."
+          }
+        },
+        "required": [
+          "value",
+          "from_unit",
+          "to_unit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "save",
+      "description": "Save a document. The format follows the path extension: ncz, xyz, or mmp.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Output file path."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Handle of the document to save."
+          }
+        },
+        "required": [
+          "path",
+          "document_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "load",
+      "description": "Load a document from a file. The format follows the path extension.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Input file path."
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list",
+      "description": "List the part handles in a document, or every part handle in the session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Optional document handle. Omit to list the session."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "assemble",
+      "description": "Assemble parts into a document and store it under a document handle.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "part_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Part handles to assemble, in order."
+          },
+          "name": {
+            "type": "string",
+            "description": "Document name."
+          }
+        },
+        "required": [
+          "part_ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "assemble_planetary",
+      "description": "Assemble a planetary gearbox at the L2 device level from a parameter map.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "specs": {
+            "type": "object",
+            "description": "Planetary parameters, for example {'planet_count': 3}."
+          },
+          "assembly_id": {
+            "type": "string",
+            "description": "Optional handle to reuse for this assembly."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "measure_gear_ratio",
+      "description": "Drive the sun and measure the sun-to-carrier gear ratio of an assembled gearbox.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "assembly_id": {
+            "type": "string",
+            "description": "Handle of an assembled planetary gearbox."
+          },
+          "sun_angular_velocity_rad_per_s": {
+            "type": "number",
+            "description": "Sun angular velocity in radians per second.",
+            "default": 0.5
+          },
+          "dt_s": {
+            "type": "number",
+            "description": "Device time step in seconds.",
+            "default": 0.001
+          },
+          "steps": {
+            "type": "integer",
+            "description": "Number of device steps.",
+            "default": 2000
+          },
+          "iterations": {
+            "type": "integer",
+            "description": "Constraint iterations per step.",
+            "default": 64
+          },
+          "tolerance": {
+            "type": "number",
+            "description": "Relative tolerance for the ratio check.",
+            "default": 0.001
+          }
+        },
+        "required": [
+          "assembly_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "export_urdf",
+      "description": "Export an assembled gearbox to URDF text, and optionally write it to a file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "assembly_id": {
+            "type": "string",
+            "description": "Handle of an assembled planetary gearbox."
+          },
+          "name": {
+            "type": "string",
+            "description": "Robot name in the URDF."
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional output file path."
+          }
+        },
+        "required": [
+          "assembly_id"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
