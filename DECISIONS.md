@@ -431,7 +431,7 @@ Template:
   within 3.46e-2 of kBT/m at the test temperature.
 
 ## ADR-0038: The video atom layer uses DiamondGenerator; the gear stays skeletal
-- Status: accepted
+- Status: superseded by ADR-0039
 - Date: 2026-09-14
 - Context: M9-02 needs a physically accurate atom layer. `PlanetaryGenerator`
   returns a skeletal gear outline with nearest-neighbour distances from
@@ -443,3 +443,26 @@ Template:
   distance 1.544556e-10 m and mean bond angle 109.471221 degrees. The gear shape
   is still not chemically accurate. A diamondoid gear generator with surface
   passivation is a separate research task.
+
+## ADR-0039: The schematic draws the exact involute profile and the gears are atoms
+- Status: accepted
+- Date: 2026-09-14
+- Context: The video's schematic gears and the underlying atomic layer did not
+  agree. The drawing used a crude four-point trapezoid tooth with the tip at the
+  pitch radius and the root too deep, and it drew the ring as an external gear
+  with outward teeth. The atomic layer was a separate diamond block, not the
+  gears. M9-02 and the user asked that the gears be made of atoms and that the
+  schematic match the dimensions.
+- Decision: Add `scripts/gear_profile.py`, a port of
+  `crates/parts/src/gear_profile.rs`. The renderer and the checker import it, so
+  one formula drives both. Draw the ring as an internal gear with the reflection
+  `2 p - r`. Render the gears as their real `PlanetaryGenerator` atoms and bonds
+  from `site/scene.json` and `site/scene.bonds.json`, animated with the same
+  fixed-ring rates as the schematic.
+- Consequences: The schematic tip and root radii now equal the atomic layer
+  exactly: sun `5.375e-9` to `6.500e-9 m`, planet `3.875e-9` to `5.000e-9 m`,
+  ring internal `1.450e-8` to `1.5625e-8 m`. `scripts/check_atom_geometry.py`
+  asserts this and `scripts/make_video.sh` fails when it fails. The
+  `PlanetaryGenerator` stays skeletal, so its bond lengths and angles are not
+  diamond values. The `DiamondGenerator` block is kept as the verified material
+  basis. Supersedes ADR-0038.

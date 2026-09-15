@@ -438,6 +438,23 @@ Phase 6. All result notes cite the test that measures the number.
     degrees against 109.4712 degrees (error 2.06e-5 degrees). 64 interior
     carbons all have 4 bonds.
   - Limitation: `PlanetaryGenerator` returns a skeletal gear outline, not a
-    diamondoid solid. The atom layer uses `DiamondGenerator` from
-    `crates/parts/src/lattice.rs`. The gear shape is therefore not yet
-    chemically accurate. See ADR-0038.
+    diamondoid solid. The gear shape is therefore not yet chemically dense. The
+    `DiamondGenerator` block in `crates/parts/src/lattice.rs` is the verified
+    material basis. See ADR-0038. The visuals were corrected in M9-03.
+- [x] **M9-03** Make the schematic match the atomic layer and draw the gears as
+  atoms.
+  - Result: `scripts/gear_profile.py` is a port of
+    `crates/parts/src/gear_profile.rs`. The renderer and the checker import it,
+    so one formula drives both. The schematic now uses the exact full-depth
+    involute profile with addendum `1.0 m` and dedendum `1.25 m`, and the ring
+    is drawn as an internal gear with inward teeth. `scripts/render_video.py`
+    adds a `GearLattice` class that draws the real `PlanetaryGenerator` atoms
+    and bonds from `site/scene.json` and `site/scene.bonds.json`, animated with
+    the fixed-ring rates.
+  - Verification: `scripts/check_atom_geometry.py` now checks the gear layer.
+    Measured tip and root radii equal the involute profile exactly: sun
+    5.375e-9 to 6.500e-9 m, planet 3.875e-9 to 5.000e-9 m about its center,
+    ring internal 1.450e-8 to 1.5625e-8 m. It also checks that the shared
+    schematic formula gives the same extremes. The diamond-block checks stay.
+    The video is regenerated: 1920x1080, 30 fps, 90.000 s, 2202 atoms and 2205
+    planetary bonds. See ADR-0039.

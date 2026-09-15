@@ -12,7 +12,8 @@ it and what it is honest about.
 | `docs/media/nano-cad-gearbox.srt` | Sidecar captions. They match the narration and the shot timings. |
 | `scripts/make_video.sh` | The POSIX `sh` entry point. It regenerates both files from scratch. |
 | `scripts/render_video.py` | The frame renderer. It draws with Pillow and calls ffmpeg. |
-| `scripts/check_atom_geometry.py` | The atom-geometry accuracy gate. It fails the build when the atom layer is not diamondoid carbon. |
+| `scripts/check_atom_geometry.py` | The atom-geometry accuracy gate. It checks the gear atoms against the involute profile and the diamond block against the lattice. |
+| `scripts/gear_profile.py` | The exact involute gear profile. The renderer and the checker share it, and it matches `crates/parts/src/gear_profile.rs`. |
 | `site/scene.bonds.json` | The real bond topology for the atomistic layer. The Rust example `scene_json` writes it. |
 | `docs/video-script.md` | The storyboard and the narration. |
 
@@ -61,31 +62,38 @@ writes a silent video and still writes the `.srt`.
 pipeline. The terminal shots are drawn, not filmed. The gear scenes are
 schematic 2D drawings:
 
-- Gears are circles with teeth. The teeth counts and the pitch radii follow
-  `docs/three-scale.md`: 24 sun teeth, 18 planet teeth, 60 ring teeth, module
-  `5e-10 m`, sun pitch radius `6e-9 m`, planet `4.5e-9 m`, ring `1.5e-8 m`,
-  carrier `1.05e-8 m`.
+- Gears are drawn with the exact full-depth involute profile. The tooth counts,
+  the module, and the pitch radii follow `docs/three-scale.md`: 24 sun teeth,
+  18 planet teeth, 60 ring teeth, module `5e-10 m`, sun pitch radius `6e-9 m`,
+  planet `4.5e-9 m`, ring `1.5e-8 m`, carrier `1.05e-8 m`. The profile comes
+  from `scripts/gear_profile.py`, which is a port of
+  `crates/parts/src/gear_profile.rs`. The drawing and the Rust generator use one
+  formula. The addendum is `1.0 m` and the dedendum is `1.25 m`. The ring is an
+  internal gear: its teeth point inward, and the planet tips reach into the ring
+  tooth spaces.
 - The gear scenes use the kinematics of a fixed ring. With sun rate `w_s`, the
   carrier rate is `w_c = w_s * 2/7`, and the planet absolute spin is
   `w_p = -(2/3) * w_s`. The sun and the planets therefore turn in opposite
   directions. The planet centers orbit the carrier at `w_c`, and each drawn
   planet tooth phase keeps the sun, planet, and ring teeth meshed. The ring is
   drawn static.
-- **The atomistic layer uses real generator coordinates.** The layer is a
-  diamond cubic lattice from the `nanocad-parts` `DiamondGenerator`, not
-  scattered dots. The atoms and the bonds come from `site/scene.bonds.json`.
-  The generator places carbon atoms on the diamond cubic lattice, with lattice
-  constant `a = 3.567e-10 m`. The first-shell carbon-carbon bond length is
-  `a sqrt(3) / 4 = 1.544e-10 m`. Every bond angle at a tetrahedral carbon is
-  `109.4712` degrees. The renderer projects the three-dimensional positions to
-  two dimensions and rotates the block with the shot. It draws the layer only
-  in shot 1 and shot 8, so the render stays fast.
+- **The atomistic layer is the gears themselves as atoms.** The layer draws the
+  `PlanetaryGenerator` output: 2202 carbon atoms and 2205 bonds from
+  `site/scene.json` and `site/scene.bonds.json`. The renderer maps the scene
+  metres to pixels, so an atom sits on the same involute profile that the
+  schematic draws. It animates the sun, the carrier, and the planets with the
+  fixed-ring rates above. It draws the layer only in shot 1 and shot 8, so the
+  render stays fast.
 - **The atom layer passes an accuracy gate.** `scripts/check_atom_geometry.py`
-  computes the nearest-neighbour C-C distance distribution, the bond degree of
-  every interior carbon, and the bond-angle distribution. It asserts that the
-  mean distance is `1.544e-10 m` within one percent, that every interior carbon
-  has four bonds, and that the mean angle is `109.4712` degrees within one
-  degree. `scripts/make_video.sh` runs the check and fails when it fails.
+  checks two layers. For the gear layer it asserts that each part's tip and root
+  radii equal the exact involute profile: sun `5.375e-9` to `6.500e-9 m`,
+  planet `3.875e-9` to `5.000e-9 m` about its center, ring `1.450e-8` to
+  `1.5625e-8 m` internal. It also checks that the shared schematic formula
+  yields the same extremes. For the diamond layer (the material basis) it
+  asserts that the mean nearest-neighbour C-C distance is `1.544e-10 m` within
+  one percent, that every interior carbon has four bonds, and that the mean bond
+  angle is `109.4712` degrees within one degree. `scripts/make_video.sh` runs
+  the check and fails when it fails.
 - The device bodies and joints are marked with circles and arrows.
 
 **The narration is synthetic.** It is machine text-to-speech, not a human
@@ -98,7 +106,8 @@ about being a machine reading, not an actor.
 `docs/video-script.md` names in its source column: `TASKS.md`, `docs/report.md`,
 `docs/benchmarks.md`, `benchmarks/results/openmm-water-crosscheck.txt`, and
 `benchmarks/results/2026-09-14-engine-timings.txt`. The atomistic geometry comes
-from `site/scene.bonds.json`, which the Rust example generates.
+from `site/scene.json` and `site/scene.bonds.json`, which the Rust example
+generates.
 
 ## Honesty caveats
 
@@ -106,17 +115,16 @@ from `site/scene.bonds.json`, which the Rust example generates.
   times. No physical device exists.
 - **No medical claim is made.** The video calls the gearbox a design
   hypothesis. It does not imply a validated device.
-- **The gear outlines are schematic.** The gears are drawn as circles with
-  teeth. The tooth counts and the pitch radii follow `docs/three-scale.md`.
-  They are not a photorealistic render. They are also not the atom positions of
-  the gear: the `PlanetaryGenerator` emits a skeletal gear outline, not a
-  diamond network. The atomistic layer is a separate real diamond lattice from
-  the `DiamondGenerator`. It represents diamondoid carbon, not the gear body.
-- **The atom layer is a lattice block.** The layer shows a `3x3x3` diamond
-  cubic block, not the gear shape. It reads as diamondoid carbon. It is not
-  the atomistic realization of the gear.
-- **The three-scale cross-fade is a schematic illustration.** It is not a
-  viewer reading a real `nanocad.scene` JSON file.
+- **The gear outline is an exact involute profile, not a photorealistic
+  render.** It is now the atom positions of the gear: the visible atoms sit on
+  the drawn profile. The `PlanetaryGenerator` is skeletal, so it places carbon
+  on the gear profile at run length, not a full diamond network. Its bond
+  lengths and angles therefore do not equal the diamond values. The
+  `DiamondGenerator` block is the material basis, and its geometry is verified
+  separately.
+- **The three-scale cross-fade is a schematic illustration.** The atomistic
+  panel draws the real gear atoms. The "viewer" itself is drawn; it is not a
+  reader of a real `nanocad.scene` JSON file.
 - **The benchmark is from one host.** The timings are from a single Apple M4
   with 10 cores and cargo 1.98.1. The video shows the caveat "one host; your
   numbers will differ". `docs/benchmarks.md` says the same.
@@ -146,5 +154,5 @@ from `site/scene.bonds.json`, which the Rust example generates.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The atom layer is a `3x3x3` diamond block. It is a real lattice, but it is
-  small. It has 216 atoms and 333 bonds. It is not the gear body.
+- The atom layer is the gear generator output. It has 2202 atoms and 2205
+  bonds, so it is a skeletal profile, not a dense diamond solid.

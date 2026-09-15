@@ -32,6 +32,9 @@ import textwrap
 
 from PIL import Image, ImageDraw, ImageFont
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gear_profile as gp  # noqa: E402
+
 W, H, FPS = 1920, 1080, 30
 REPO_URL = "https://github.com/dragon-str/nano-cad"
 
@@ -235,21 +238,41 @@ def panel(d, x0, y0, x1, y1, fill=PANEL, outline=LINE, r=16, width=2):
                         width=width)
 
 
-def gear_points(cx, cy, r_tip, r_root, teeth, angle):
-    pts = []
-    step = 2.0 * math.pi / teeth
-    for k in range(teeth):
-        c = angle + k * step
-        for frac, rad in ((0.06, r_root), (0.24, r_tip),
-                          (0.76, r_tip), (0.94, r_root)):
-            a = c + step * frac
-            pts.append((cx + rad * math.cos(a), cy + rad * math.sin(a)))
-    return pts
+def gear_polygon(cx, cy, scale, module_m, teeth, angle, internal=False):
+    """The exact involute outline in screen pixels.
+
+    The profile comes from `gear_profile.py`, which is the same formula as
+    `crates/parts/src/gear_profile.rs`. A gear at the origin of the atomic
+    scene maps to (cx, cy) at `scale` pixels per metre. The screen y axis
+    points down, so the y term is negated.
+    """
+    points_m = gp.outline_points(module_m, teeth)
+    if internal:
+        points_m = gp.reflect_to_internal(points_m,
+                                          gp.pitch_radius_m(module_m, teeth))
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    polygon = []
+    for x, y in points_m:
+        rx = cos_a * x - sin_a * y
+        ry = sin_a * x + cos_a * y
+        polygon.append((cx + scale * rx, cy - scale * ry))
+    return polygon
 
 
-def draw_gear(d, cx, cy, r_tip, r_root, teeth, angle, fill, outline,
-              bore=0.0, hub=0.0):
-    d.polygon(gear_points(cx, cy, r_tip, r_root, teeth, angle),
+def draw_gear(d, cx, cy, scale, module_m, teeth, angle, fill, outline,
+              bore=0.0, hub=0.0, internal=False, width=2):
+    """Draw one external or internal gear with the exact involute profile."""
+    if internal:
+        pitch_m = gp.pitch_radius_m(module_m, teeth)
+        rim_m = pitch_m + gp.dedendum_m(module_m) + 0.8 * gp.addendum_m(module_m)
+        d.ellipse([cx - scale * rim_m, cy - scale * rim_m,
+                   cx + scale * rim_m, cy + scale * rim_m], fill=fill)
+        polygon = gear_polygon(cx, cy, scale, module_m, teeth, angle, True)
+        d.polygon(polygon, fill=BG)
+        d.line(polygon + [polygon[0]], fill=outline, width=width,
+               joint="curve")
+        return
+    d.polygon(gear_polygon(cx, cy, scale, module_m, teeth, angle),
               fill=fill, outline=outline)
     if bore > 0:
         d.ellipse([cx - bore, cy - bore, cx + bore, cy + bore], fill=BG)
@@ -268,71 +291,82 @@ def arrow(d, x, y, dx, dy, fill, width=3, head=12):
         d.line([ex, ey, hx, hy], fill=fill, width=width)
 
 
-# ---------------------------------------------------------------- atom lattice
-class AtomLattice:
-    """The atomistic layer: real diamondoid carbon atoms and bonds.
+# ---------------------------------------------------------------- gear atoms
 
-    The atoms and bonds come from `site/scene.bonds.json`, which the Rust
-    example `scene_json` writes from the `nanocad-parts` diamond generator.
-    The positions are metres. The draw method rotates the block about z and
-    tilts it about x, then projects orthographically.
+def _rot2(x, y, angle):
+    c, s = math.cos(angle), math.sin(angle)
+    return c * x - s * y, s * x + c * y
+
+
+class GearLattice:
+    """The gears as their real atoms.
+
+    Loads `site/scene.json` (the atom positions) and the `planetary` block of
+    `site/scene.bonds.json` (the bonds). The atoms are the output of the
+    `nanocad-parts` `PlanetaryGenerator`. The scene atom order equals the
+    planetary topology order, so the bond indices match the atom list. The
+    animation uses the same rates as `planetary_angles`.
     """
 
-    def __init__(self, path):
-        with open(path, encoding="utf-8") as handle:
-            document = json.load(handle)
-        diamond = document["diamond"]
-        positions = [atom["position_m"] for atom in diamond["atoms"]]
-        self.bonds = [(int(u), int(v)) for u, v in diamond["bonds"]]
-        count = len(positions)
-        center = [sum(p[axis] for p in positions) / count for axis in range(3)]
-        self.atoms = [
-            [p[axis] - center[axis] for axis in range(3)] for p in positions
-        ]
-        self.span_m = max(
-            max(p[axis] for p in self.atoms) - min(p[axis] for p in self.atoms)
-            for axis in range(3)
-        )
-        self.bond_length_m = float(diamond.get("bond_length_m", C_C_BOND_M))
+    def __init__(self, scene_path, bonds_path):
+        with open(scene_path, encoding="utf-8") as handle:
+            scene = json.load(handle)
+        with open(bonds_path, encoding="utf-8") as handle:
+            bonds = json.load(handle)
+        self.design = scene["design"]
+        self.atoms = scene["atomistic"]["atoms"]
+        self.bonds = [(int(u), int(v))
+                      for u, v in bonds["planetary"]["bonds"]]
+        self.centers = {}
+        for body in scene["device"]["bodies"]:
+            self.centers[body["name"]] = (float(body["position_m"][0]),
+                                          float(body["position_m"][1]))
+        xs = [a["position_m"][0] for a in self.atoms]
+        ys = [a["position_m"][1] for a in self.atoms]
+        self.span_m = max(max(xs) - min(xs), max(ys) - min(ys))
 
-    @staticmethod
-    def _rotate(x, y, z, spin, tilt):
-        c, s = math.cos(spin), math.sin(spin)
-        x1, y1, z1 = c * x - s * y, s * x + c * y, z
-        c, s = math.cos(tilt), math.sin(tilt)
-        return x1, c * y1 - s * z1, s * y1 + c * z1
+    def animated_xy(self, t):
+        design = self.design
+        ns = int(design["sun_teeth"])
+        npz = int(design["planet_teeth"])
+        nr = int(design["ring_teeth"])
+        a = t * 0.34
+        w_s = -1.0
+        w_c = w_s * ns / (ns + nr)
+        w_p = w_c - (ns / npz) * (w_s - w_c)
+        out = []
+        for atom in self.atoms:
+            x, y, _ = atom["position_m"]
+            name = atom["name"]
+            if name == "sun":
+                x, y = _rot2(x, y, w_s * a)
+            elif name == "carrier":
+                x, y = _rot2(x, y, w_c * a)
+            elif name.startswith("planet_"):
+                cx0, cy0 = self.centers[name]
+                dx, dy = _rot2(x - cx0, y - cy0, w_p * a)
+                x, y = _rot2(cx0 + dx, cy0 + dy, w_c * a)
+            out.append((x, y))
+        return out
 
-    def draw(self, d, cx, cy, target_px, spin, tilt, alpha=1.0):
+    def draw(self, d, cx, cy, scale, t, alpha=1.0, atom_px=None, bond_px=None):
         if alpha <= 0.02:
             return
-        scale = target_px / self.span_m
-        projected = []
-        for x, y, z in self.atoms:
-            rx, ry, rz = self._rotate(x, y, z, spin, tilt)
-            projected.append((cx + scale * rx, cy - scale * ry, rz))
-        depths = [p[2] for p in projected]
-        dmin, dmax = min(depths), max(depths)
-        span = (dmax - dmin) or 1.0
-
-        def shade(depth):
-            return _blend(BOND, alpha * (0.45 + 0.55 * (depth - dmin) / span))
-
-        bond_width = max(2, int(target_px * 0.012))
-        order = sorted(range(len(self.bonds)),
-                       key=lambda i: projected[self.bonds[i][0]][2]
-                       + projected[self.bonds[i][1]][2])
-        for i in order:
-            u, v = self.bonds[i]
-            xu, yu, _ = projected[u]
-            xv, yv, _ = projected[v]
-            depth = 0.5 * (projected[u][2] + projected[v][2])
-            d.line([xu, yu, xv, yv], fill=shade(depth), width=bond_width)
-
-        radius = max(3, int(target_px * 0.022))
-        for x, y, depth in sorted(projected, key=lambda p: p[2]):
-            colour = _blend(CARBON, alpha * (0.55 + 0.45 * (depth - dmin) / span))
-            d.ellipse([x - radius, y - radius, x + radius, y + radius],
-                      fill=colour)
+        projected = [(cx + scale * x, cy - scale * y)
+                     for x, y in self.animated_xy(t)]
+        if bond_px is None:
+            bond_px = max(1, int(scale * self.span_m * 0.004))
+        if atom_px is None:
+            atom_px = max(2, int(scale * self.span_m * 0.008))
+        bond_colour = _blend(BOND, alpha * 0.9)
+        for u, v in self.bonds:
+            d.line([projected[u][0], projected[u][1],
+                    projected[v][0], projected[v][1]],
+                   fill=bond_colour, width=bond_px)
+        atom_colour = _blend(CARBON, alpha)
+        for x, y in projected:
+            d.ellipse([x - atom_px, y - atom_px, x + atom_px, y + atom_px],
+                      fill=atom_colour)
 
 
 def _blend(colour, alpha):
@@ -340,8 +374,9 @@ def _blend(colour, alpha):
     return tuple(int(BG[i] + (colour[i] - BG[i]) * alpha) for i in range(3))
 
 
-def draw_atom_legend(d, x0, y0, alpha=1.0):
-    x1, y1 = x0 + 360, y0 + 108
+def draw_atom_legend(d, x0, y0, alpha=1.0, n_atoms=None, n_bonds=None,
+                     note="skeletal carbon generator output"):
+    x1, y1 = x0 + 420, y0 + 108
     d.rounded_rectangle([x0, y0, x1, y1], radius=14,
                         fill=_blend(PANEL, alpha), outline=_blend(LINE, alpha),
                         width=2)
@@ -351,8 +386,13 @@ def draw_atom_legend(d, x0, y0, alpha=1.0):
               fill=_blend(CARBON, alpha))
     txt(d, x0 + 58, y0 + 60, "carbon", fonts()["small"],
         _blend(FG, alpha), "lm")
-    d.line([x0 + 26, y0 + 88, x0 + 42, y0 + 88], fill=_blend(BOND, alpha), width=4)
-    txt(d, x0 + 58, y0 + 88, "C-C 1.544e-10 m", fonts()["small"],
+    d.line([x0 + 26, y0 + 88, x0 + 42, y0 + 88], fill=_blend(BOND, alpha),
+           width=4)
+    if n_atoms and n_bonds:
+        line = f"{n_atoms} atoms, {n_bonds} bonds"
+    else:
+        line = note
+    txt(d, x0 + 58, y0 + 88, line, fonts()["small"],
         _blend(FG, alpha), "lm")
 
 
@@ -389,48 +429,59 @@ def planetary_angles(t):
     return theta_sun, planets
 
 
+DEFAULT_DESIGN = {
+    "module_m": 5e-10,
+    "sun_teeth": 24, "planet_teeth": 18, "ring_teeth": 60, "planet_count": 3,
+    "gear_ratio": 3.5,
+    "sun_pitch_radius_m": 6e-9, "planet_pitch_radius_m": 4.5e-9,
+    "ring_pitch_radius_m": 1.5e-8, "carrier_radius_m": 1.05e-8,
+}
+
+
+def design_of(r):
+    design = r.get("design")
+    return design if design else DEFAULT_DESIGN
+
+
 # ---------------------------------------------------------------- scene 1
 def scene_gears(r, t, shot):
     d = r["d"]
-    dur = shot["end"] - shot["start"]
+    design = design_of(r)
+    module_m = design["module_m"]
+    ns = int(design["sun_teeth"])
+    npz = int(design["planet_teeth"])
+    nr = int(design["ring_teeth"])
     cx, cy = W * 0.5, H * 0.5 - 10
-    scale = 300.0 / 1.5e-8
-    r_sun, r_pl, r_ring, r_car = 6e-9 * scale, 4.5e-9 * scale, 1.5e-8 * scale, 1.05e-8 * scale
+    scale = 300.0 / design["ring_pitch_radius_m"]
+    r_car = design["carrier_radius_m"] * scale
     theta_sun, planets = planetary_angles(t)
 
     d.ellipse([cx - r_car - 12, cy - r_car - 12, cx + r_car + 12, cy + r_car + 12],
               outline=DIM, width=2)
     txt(d, (cx, cy + r_car + 26), "carrier", fonts()["small"], DIM, "ma")
 
+    draw_gear(d, cx, cy, scale, module_m, nr, 0.0, (44, 60, 86), AMBER,
+              internal=True, width=3)
     for phi, theta_p in planets:
         px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
-        draw_gear(d, px, py, r_pl, r_pl * 0.80, PLANET_TEETH, theta_p,
-                  (44, 70, 104), CYAN, bore=r_pl * 0.22, hub=r_pl * 0.30)
-    draw_gear(d, cx, cy, r_sun, r_sun * 0.80, SUN_TEETH, theta_sun, (58, 84, 122),
-              ACCENT, bore=r_sun * 0.22, hub=r_sun * 0.32)
+        draw_gear(d, px, py, scale, module_m, npz, theta_p,
+                  (44, 70, 104), CYAN, bore=4.5e-9 * scale * 0.24,
+                  hub=4.5e-9 * scale * 0.34)
+    draw_gear(d, cx, cy, scale, module_m, ns, theta_sun, (58, 84, 122),
+              ACCENT, bore=6e-9 * scale * 0.24, hub=6e-9 * scale * 0.36)
 
-    d.ellipse([cx - r_ring, cy - r_ring, cx + r_ring, cy + r_ring],
-              outline=AMBER, width=20)
-    d.ellipse([cx - r_ring + 20, cy - r_ring + 20, cx + r_ring - 20, cy + r_ring - 20],
-              outline=AMBER, width=3)
-    for k in range(60):
-        ang = k * 2 * math.pi / 60
-        x0 = cx + r_ring * math.cos(ang)
-        y0 = cy + r_ring * math.sin(ang)
-        x1 = cx + (r_ring - 24) * math.cos(ang)
-        y1 = cy + (r_ring - 24) * math.sin(ang)
-        d.line([x0, y0, x1, y1], fill=AMBER, width=3)
-
-    lattice = r.get("lattice")
-    if lattice is not None:
-        peak = 0.85
+    gears = r.get("gears")
+    if gears is not None:
+        peak = 0.9
         if t < 2.5:
             alpha = peak * min(1.0, t / 0.4)
         else:
             alpha = peak * max(0.0, (4.0 - t) / 1.5)
         if alpha > 0.02:
-            lattice.draw(d, cx, cy, 300, t * 0.7, 0.5, alpha)
-            draw_atom_legend(d, 120, 165, alpha)
+            gears.draw(d, cx, cy, scale, t, alpha)
+            draw_atom_legend(d, 120, 165, alpha,
+                             n_atoms=len(gears.atoms),
+                             n_bonds=len(gears.bonds))
 
     panel(d, 120, H - 210, 660, H - 120, PANEL, LINE)
     txt(d, 150, H - 196, "sun ratio", fonts()["small"], DIM)
@@ -580,37 +631,42 @@ def scene_tests(r, t, shot):
 # ---------------------------------------------------------------- gear art
 def planetary_art(r, cx, cy, scale, t, show_joints=False, show_ratio=None):
     d = r["d"]
-    r_sun, r_pl, r_ring, r_car = 6e-9 * scale, 4.5e-9 * scale, 1.5e-8 * scale, 1.05e-8 * scale
+    design = design_of(r)
+    module_m = design["module_m"]
+    ns = int(design["sun_teeth"])
+    npz = int(design["planet_teeth"])
+    nr = int(design["ring_teeth"])
+    r_car = design["carrier_radius_m"] * scale
+    planet_pitch = design["planet_pitch_radius_m"] * scale
+    sun_pitch = design["sun_pitch_radius_m"] * scale
+    ring_pitch = design["ring_pitch_radius_m"] * scale
     theta_sun, planets = planetary_angles(t)
     d.ellipse([cx - r_car - 10, cy - r_car - 10, cx + r_car + 10, cy + r_car + 10],
               outline=DIM, width=2)
+    draw_gear(d, cx, cy, scale, module_m, nr, 0.0, (44, 60, 86), AMBER,
+              internal=True, width=3)
     for k, (phi, theta_p) in enumerate(planets):
         px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
-        draw_gear(d, px, py, r_pl, r_pl * 0.8, PLANET_TEETH, theta_p, (44, 70, 104),
-                  CYAN, bore=r_pl * 0.22, hub=r_pl * 0.30)
-        if r_pl > 40:
-            txt(d, (px, py + r_pl * 0.55), f"planet {k+1}", fonts()["small"], DIM, "ma")
-    draw_gear(d, cx, cy, r_sun, r_sun * 0.8, SUN_TEETH, theta_sun, (58, 84, 122),
-              ACCENT, bore=r_sun * 0.22, hub=r_sun * 0.32)
-    if r_sun > 40:
-        txt(d, (cx, cy + r_sun * 0.58), "sun 24", fonts()["small"], DIM, "ma")
-    d.ellipse([cx - r_ring, cy - r_ring, cx + r_ring, cy + r_ring],
-              outline=AMBER, width=14)
-    for k in range(60):
-        ang = k * 2 * math.pi / 60
-        d.line([cx + r_ring * math.cos(ang), cy + r_ring * math.sin(ang),
-                cx + (r_ring - 18) * math.cos(ang), cy + (r_ring - 18) * math.sin(ang)],
-               fill=AMBER, width=3)
+        draw_gear(d, px, py, scale, module_m, npz, theta_p, (44, 70, 104),
+                  CYAN, bore=planet_pitch * 0.24, hub=planet_pitch * 0.34)
+        if planet_pitch > 40:
+            txt(d, (px, py + planet_pitch * 0.55), f"planet {k+1}",
+                fonts()["small"], DIM, "ma")
+    draw_gear(d, cx, cy, scale, module_m, ns, theta_sun, (58, 84, 122),
+              ACCENT, bore=sun_pitch * 0.24, hub=sun_pitch * 0.36)
+    if sun_pitch > 40:
+        txt(d, (cx, cy + sun_pitch * 0.58), "sun 24", fonts()["small"], DIM, "ma")
     if show_joints:
         for phi, _theta_p in planets:
             px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
             d.ellipse([px - 9, py - 9, px + 9, py + 9], outline=VIOLET, width=3)
         d.ellipse([cx - 9, cy - 9, cx + 9, cy + 9], outline=VIOLET, width=3)
-        arrow(d, cx + r_ring + 20, cy, 70, 0, RED)
-        arrow(d, cx + r_ring + 20, cy, 0, -70, RED)
-        txt(d, (cx + r_ring + 30, cy - 96), "z axis", fonts()["small"], RED)
+        arrow(d, cx + ring_pitch + 20, cy, 70, 0, RED)
+        arrow(d, cx + ring_pitch + 20, cy, 0, -70, RED)
+        txt(d, (cx + ring_pitch + 30, cy - 96), "z axis", fonts()["small"], RED)
     if show_ratio is not None:
-        txt(d, (cx, cy - r_ring - 40), show_ratio, fonts()["mono_l"], GREEN, "ma")
+        txt(d, (cx, cy - ring_pitch - 40), show_ratio, fonts()["mono_l"], GREEN,
+            "ma")
 
 
 def json_box(r, x0, y0, x1, y1, header, body_lines, t, appear=0.0):
@@ -640,19 +696,22 @@ def scene_generate(r, t, shot):
     txt(d, 154, 596, "handle: part-1", fonts()["mono_b"], VIOLET)
     txt(d, 154, 636, "source: mcp/tools.json; mcp/README.md", fonts()["small"], DIM)
 
-    cx, cy, scale = 1440, 560, 150.0 / 1.5e-8
+    design = design_of(r)
+    module_m = design["module_m"]
+    cx, cy, scale = 1440, 560, 150.0 / design["ring_pitch_radius_m"]
     grow = min(1.0, max(0.0, (t - 1.2) / 1.2))
-    rr = r_ring = 1.5e-8 * scale * grow
-    r_sun, r_pl = 6e-9 * scale * grow, 4.5e-9 * scale * grow
-    r_car = 1.05e-8 * scale * grow
+    s = scale * grow
+    r_car = design["carrier_radius_m"] * s
     if grow > 0.05:
-        d.ellipse([cx - r_ring, cy - r_ring, cx + r_ring, cy + r_ring],
-                  outline=AMBER, width=12)
-        for k in range(3):
-            ang = 2 * math.pi * k / 3
+        draw_gear(d, cx, cy, s, module_m, int(design["ring_teeth"]), 0.0,
+                  (44, 60, 86), AMBER, internal=True, width=3)
+        for k in range(int(design["planet_count"])):
+            ang = 2 * math.pi * k / design["planet_count"]
             px, py = cx + r_car * math.cos(ang), cy + r_car * math.sin(ang)
-            draw_gear(d, px, py, r_pl, r_pl * 0.8, 18, 0, (44, 70, 104), CYAN)
-        draw_gear(d, cx, cy, r_sun, r_sun * 0.8, 24, 0, (58, 84, 122), ACCENT)
+            draw_gear(d, px, py, s, module_m, int(design["planet_teeth"]), 0.0,
+                      (44, 70, 104), CYAN)
+        draw_gear(d, cx, cy, s, module_m, int(design["sun_teeth"]), 0.0,
+                  (58, 84, 122), ACCENT)
 
     panel(d, 130, 830, 1200, 900, PANEL, LINE)
     for i, (lbl, val) in enumerate([("sun", "24"), ("planet", "18"),
@@ -766,26 +825,30 @@ def scene_urdf(r, t, shot):
     for i, (lbl, c) in enumerate(labels):
         on = i == idx
         txt(d, lx + i * 150, 860, lbl, fonts()["small_b"], c if on else DIM)
-    cx, cy, scale = 1580, 560, 90.0 / 1.5e-8
+    design = design_of(r)
+    cx, cy, scale = 1580, 560, 90.0 / design["ring_pitch_radius_m"]
+    gears = r.get("gears")
     if idx == 0:
-        lattice = r.get("lattice")
-        if lattice is not None:
-            lattice.draw(d, cx, cy, 320, t * 0.7, 0.5, 1.0)
-            draw_atom_legend(d, 120, 165, 1.0)
-        txt(d, cx, cy + 230, "diamond lattice snapshot", fonts()["small"], DIM, "ma")
+        if gears is not None:
+            gears.draw(d, cx, cy, scale, t, 1.0)
+            draw_atom_legend(d, 120, 165, 1.0, n_atoms=len(gears.atoms),
+                             n_bonds=len(gears.bonds))
+        txt(d, cx, cy + 230, "generator atom output", fonts()["small"], DIM, "ma")
     elif idx == 1:
         planetary_art(r, cx, cy, scale, t)
     else:
-        r_ring = 1.5e-8 * scale
+        r_ring = design["ring_pitch_radius_m"] * scale
+        r_sun = design["sun_pitch_radius_m"] * scale
+        r_pl = design["planet_pitch_radius_m"] * scale
+        r_car = design["carrier_radius_m"] * scale
         d.ellipse([cx - r_ring, cy - r_ring, cx + r_ring, cy + r_ring],
                   outline=AMBER, width=4)
-        d.ellipse([cx - 6e-9 * scale, cy - 6e-9 * scale,
-                   cx + 6e-9 * scale, cy + 6e-9 * scale], outline=AMBER, width=3)
+        d.ellipse([cx - r_sun, cy - r_sun, cx + r_sun, cy + r_sun],
+                  outline=AMBER, width=3)
         for k in range(3):
             a = 2 * math.pi * k / 3
-            px, py = cx + 1.05e-8 * scale * math.cos(a), cy + 1.05e-8 * scale * math.sin(a)
-            d.ellipse([px - 4.5e-9 * scale, py - 4.5e-9 * scale,
-                       px + 4.5e-9 * scale, py + 4.5e-9 * scale],
+            px, py = cx + r_car * math.cos(a), cy + r_car * math.sin(a)
+            d.ellipse([px - r_pl, py - r_pl, px + r_pl, py + r_pl],
                       outline=AMBER, width=3)
         txt(d, cx, cy + 230, "pitch circles + bounding cylinders", fonts()["small"], DIM, "ma")
     txt(d, 120, 940, "schematic three-scale cross-fade; source: docs/three-scale.md",
@@ -996,6 +1059,7 @@ def main():
     ap.add_argument("--srt", required=True)
     ap.add_argument("--build", required=True)
     ap.add_argument("--bonds", default="site/scene.bonds.json")
+    ap.add_argument("--scene", default="site/scene.json")
     ap.add_argument("--ffmpeg", default="/opt/homebrew/bin/ffmpeg")
     ap.add_argument("--ffprobe", default="/opt/homebrew/bin/ffprobe")
     ap.add_argument("--say", default="/usr/bin/say")
@@ -1026,21 +1090,26 @@ def main():
     print("writing srt...", file=sys.stderr)
     write_srt(args.srt)
 
-    lattice = None
-    if os.path.exists(args.bonds):
-        lattice = AtomLattice(args.bonds)
+    gears = None
+    if os.path.exists(args.scene) and os.path.exists(args.bonds):
+        gears = GearLattice(args.scene, args.bonds)
         print(
-            "loaded the atomistic layer: "
-            f"{len(lattice.atoms)} carbon atoms, {len(lattice.bonds)} bonds "
-            f"({args.bonds})",
+            "loaded the gear atom layer: "
+            f"{len(gears.atoms)} carbon atoms, {len(gears.bonds)} bonds "
+            "(planetary generator)",
             file=sys.stderr,
         )
     else:
-        print(f"WARNING: {args.bonds} not found; drawing no atom layer.",
-              file=sys.stderr)
+        print(f"WARNING: {args.scene} or {args.bonds} not found; "
+              "drawing no atom layer.", file=sys.stderr)
+
+    design = None
+    if os.path.exists(args.scene):
+        design = gp.design_from_scene(args.scene)
 
     img = Image.new("RGB", (W, H), BG)
-    r = {"img": img, "d": ImageDraw.Draw(img), "lattice": lattice}
+    r = {"img": img, "d": ImageDraw.Draw(img), "gears": gears,
+         "design": design}
     fonts()
 
     nframes = int(round(TOTAL * FPS))
