@@ -1,8 +1,14 @@
 # nano-cad gearbox — 90-second video script and storyboard
 
-This document is the M8-02 deliverable. It is the script and the storyboard
-for a 90-second video about the nano-cad planetary gearbox. The recording
-itself is a human task. This document contains only the plan.
+This document is the M8-02 storyboard. It is the script and the storyboard for
+a 90-second video about the nano-cad planetary gearbox. The generated video is
+a real artifact at `docs/media/nano-cad-gearbox.mp4`. Regenerate it with
+`sh scripts/make_video.sh`. See `docs/video.md` for the usage, the honesty
+caveats, and what is generated rather than captured.
+
+The video is produced from this script by a renderer, not by a camera. The
+narration is synthetic text-to-speech. The visuals are schematic drawings. No
+physical device is filmed.
 
 > **Claim rule.** The narration says "simulated". The narration never claims a
 > physical device or a medical validation. Every number on screen cites its
@@ -74,7 +80,7 @@ then the reproduce command. The terminal prints the seven steps.
 **Command on screen.**
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/dragon-str/nano-cad
 cd nano-cad
 just reproduce
 ```
@@ -84,8 +90,8 @@ The first run needs network access. It downloads the build and test tools."
 
 **On-screen text.** `7 steps`, `needs network on the first run`.
 
-**Source.** `docs/reproduce.md` and `README.md`. The repository URL is unknown
-in the sources, so the script shows a placeholder.
+**Source.** `docs/reproduce.md` and `README.md`. The repository URL is
+<https://github.com/dragon-str/nano-cad>.
 
 ### Shot 4 — The Rust gates pass (29 to 40 s)
 
@@ -218,10 +224,10 @@ The four-worker pass takes three hundred seventy-one microseconds."
 1e-14 relative, but it is a coding check, not a physics validation. This is a
 design hypothesis, not a validated device."
 
-**On-screen text.** `simulated`, `Apache-2.0`, `github.com/<owner>/nano-cad`.
+**On-screen text.** `simulated`, `Apache-2.0`, `github.com/dragon-str/nano-cad`.
 
-**Source.** `PLAN.md`, `README.md`, and `TASKS.md` M2-11. The repository URL
-is unknown in the sources, so the script uses a placeholder.
+**Source.** `PLAN.md`, `README.md`, and `TASKS.md` M2-11. The repository URL is
+<https://github.com/dragon-str/nano-cad>.
 
 ## Full command list
 
@@ -230,8 +236,8 @@ These commands appear on screen. They come from `docs/reproduce.md` and
 
 | Shot | Command or message | Source |
 |---|---|---|
-| 3 | `git clone <repository-url>` | placeholder; no URL in the sources |
-| 3 | `cd nano-cad` | placeholder path |
+| 3 | `git clone https://github.com/dragon-str/nano-cad` | repository URL |
+| 3 | `cd nano-cad` | repository path |
 | 3 | `just reproduce` | `docs/reproduce.md`, `README.md` |
 | 4 | `cargo test --workspace` | `docs/reproduce.md`, `justfile` |
 | 4 | `sh scripts/reproduce.sh` | `docs/reproduce.md` |
@@ -302,11 +308,9 @@ The handle names are `part-1`, `document-1`, and `assembly-1`. Source:
 
 - The video must not show a physical device. No physical device exists.
 - The video must label every result as simulated.
-- The video must show the repository URL as a placeholder until a real URL
-  exists. No URL is in the sources.
+- The video shows the repository URL <https://github.com/dragon-str/nano-cad>.
 - The benchmark shot must show the host and the caveat. The timings are from
   one Apple M4 host. Source: `docs/benchmarks.md`.
 - Shot 4 may state the OpenMM cross-check, but must call it a coding check,
   not a physics validation. Source: `benchmarks/results/openmm-water-crosscheck.txt`.
-- The disk estimate, the clone URL, and the repository path in shot 3 are
-  placeholders or estimates. The sources do not give them.
+- The disk estimate in shot 3 is an estimate. The sources do not give it.

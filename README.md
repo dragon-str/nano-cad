@@ -17,8 +17,8 @@ analytic 3.5 gear ratio. A clean checkout reproduces the demo with
 `just reproduce`. The periodic water box matches OpenMM 8.6.1 to 1e-14
 relative. The later-phase adapters are started: L0 quantum (PySCF), L3
 continuum (structural and flow), L4 lumped system (SBML subset), FL-01, FL-02
-and NM-01. M8-02 needs the video recording. See `docs/benchmarks.md` and
-`docs/report.md`.
+and NM-01. M8-02 generates the 90-second video at
+`docs/media/nano-cad-gearbox.mp4`. See `docs/benchmarks.md` and `docs/report.md`.
 
 ## Doctrine
 

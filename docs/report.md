@@ -482,7 +482,7 @@ The first run needs network access to download `maturin` and `pytest`. Source:
 | Task | State | Source |
 |---|---|---|
 | M2-11 OpenMM water-box cross-check | Done, passes | `benchmarks/results/openmm-water-crosscheck.txt` |
-| M8-02 90-second video | Script written, video not recorded | `docs/video-script.md` |
+| M8-02 90-second video | Done, generated | `docs/media/nano-cad-gearbox.mp4` |
 | M8-03 This report | Draft, needs review | `TASKS.md` M8-03 |
 | L0-01 Quantum adapter | Not implemented | `TASKS.md` |
 | L3-01 Continuum adapter | Not implemented | `TASKS.md` |

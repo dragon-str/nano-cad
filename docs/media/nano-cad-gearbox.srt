@@ -1,0 +1,57 @@
+1
+00:00,000 --> 00:08,000
+This is a planetary gearbox. It is simulated at the atomic
+scale and at the device scale. The sun gear turns. The
+planets turn. The carrier turns.
+
+2
+00:08,000 --> 00:19,000
+nano-cad is a multiscale design tool. It has five model
+levels. Only L1, the atomistic engine, and L2, the device
+layer, are implemented. L0, L3, and L4 are later work.
+
+3
+00:19,000 --> 00:29,000
+A clean checkout reproduces the whole demo with one
+command. The first run needs network access. It downloads
+the build and test tools.
+
+4
+00:29,000 --> 00:40,000
+Every force term has a finite-difference gradient test.
+Every integrator has an energy-conservation test. The
+tests are a merge gate, not a phase.
+
+5
+00:40,000 --> 00:52,000
+The agent calls typed tools. It never edits coordinates.
+It asks for a planetary set with three planets. The
+generator returns the atoms and the bonds.
+
+6
+00:52,000 --> 01:02,000
+The agent assembles the L2 device. The device has seven
+bodies and six joints. The constraints are position-level
+projections.
+
+7
+01:02,000 --> 01:12,000
+The agent drives the sun and measures the sun-to-carrier
+ratio. The analytic ratio is three point five. The
+simulated ratio is three point five. The relative error is
+one point one four six times ten to the minus ten.
+
+8
+01:12,000 --> 01:22,000
+The agent exports a URDF with seven links and six joints.
+The scene export carries three layers: atomistic, device,
+and coarse. A viewer animates across them.
+
+9
+01:22,000 --> 01:28,000
+Six hundred atoms. Serial: six hundred eighty
+microseconds. Four workers: three hundred seventy-one.
+
+10
+01:28,000 --> 01:30,000
+All results are simulated.

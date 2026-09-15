@@ -290,10 +290,16 @@ Start here on a clean session. `M0-01` is the first task.
     `scene_to_json_pretty`, `scene_from_json`, `write_scene_json`. Schema
     `nanocad.scene` version 1. Default design: 7 bodies, 6 joints, 3 planets.
     See `docs/three-scale.md`.
-- [ ] **M8-02** The 90-second gearbox video and its script.
-  - Result: the script is written at `docs/video-script.md` (10 shots, 90 s
-    budget, commands, asset list). The video is not recorded. This stays open
-    until the recording exists.
+- [x] **M8-02** The 90-second gearbox video and its script.
+  - Result: the generated artifact is `docs/media/nano-cad-gearbox.mp4` with
+    the sidecar `docs/media/nano-cad-gearbox.srt`. H.264, 1920x1080, 30 fps,
+    90.000 s, AAC audio, burned-in captions. `scripts/make_video.sh` regenerates
+    both from scratch with `/opt/homebrew/bin/python3` and ffmpeg;
+    `scripts/render_video.py` draws every frame. The narration is synthetic
+    text-to-speech (macOS voice Samantha), and the visuals are schematic and
+    labelled simulated. Every on-screen number cites its source file.
+    `docs/video-script.md` holds the storyboard and the real repository URL.
+    See `docs/video.md`. The video is not part of `just verify`.
 - [x] **M8-03** Written report with the measured numbers and the caveats.
   - Result: `docs/report.md`. Every number cites its source. Caveats and
     limitations section. Marked simulated, no medical claim.
