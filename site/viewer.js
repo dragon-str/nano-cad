@@ -1652,6 +1652,9 @@
     hasRenderer: function () {
       return !!renderer;
     },
+    stats: function () {
+      return renderer && renderer.stats ? renderer.stats() : null;
+    },
     spacingPx: function () {
       return atomSpacingPx();
     },
@@ -1661,6 +1664,15 @@
     fitR: function () {
       return fit.r;
     },
+    fitCenter: function () {
+      return [fit.c[0], fit.c[1], fit.c[2]];
+    },
+    fitMin: function () {
+      return fitMin;
+    },
+    fitMax: function () {
+      return fitMax;
+    },
     useGl: function () {
       return !!renderer && layerWeights()[0] > 0 && atomSpacingPx() >= 6;
     },
@@ -1668,10 +1680,47 @@
       if (!atomCache) {
         return null;
       }
-      return Array.prototype.slice.call(atomCache.position, 0, 6);
+      return Array.prototype.slice.call(atomCache.position);
     },
     redraw: function () {
       draw();
+    },
+    projectBounds: function () {
+      if (!atomCache) {
+        return null;
+      }
+      var p = atomCache.position;
+      var cy = Math.cos(view.yaw);
+      var sy = Math.sin(view.yaw);
+      var ct = Math.cos(view.tilt);
+      var st = Math.sin(view.tilt);
+      var scale = pixelSize();
+      var invR = 1 / Math.max(fit.r, 1e-30);
+      var minx = Infinity;
+      var maxx = -Infinity;
+      var miny = Infinity;
+      var maxy = -Infinity;
+      var minz = Infinity;
+      var maxz = -Infinity;
+      for (var i = 0; i < p.length; i += 3) {
+        var nx = (p[i] - fit.c[0]) * invR;
+        var ny = (p[i + 1] - fit.c[1]) * invR;
+        var nz = (p[i + 2] - fit.c[2]) * invR;
+        var x1 = nx * cy - ny * sy;
+        var y1 = nx * sy + ny * cy;
+        var y2 = y1 * ct - nz * st;
+        var depth = y1 * st + nz * ct;
+        var persp = 3.2 / (3.2 - depth * 0.6);
+        var sx = w * 0.5 + x1 * scale * persp + view.panX;
+        var sy2 = h * 0.5 + y2 * scale * persp + view.panY;
+        if (sx < minx) minx = sx;
+        if (sx > maxx) maxx = sx;
+        if (sy2 < miny) miny = sy2;
+        if (sy2 > maxy) maxy = sy2;
+        if (nz < minz) minz = nz;
+        if (nz > maxz) maxz = nz;
+      }
+      return { minx: minx, maxx: maxx, miny: miny, maxy: maxy, minz: minz, maxz: maxz, scale: scale, w: w, h: h };
     },
   };
 

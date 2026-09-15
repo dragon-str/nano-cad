@@ -540,7 +540,7 @@
 
     function drawQuad() {
       gl.bindVertexArray(emptyVao);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
     function render(state) {
@@ -635,6 +635,9 @@
       updatePositions: updatePositions,
       render: render,
       clear: clear,
+      stats: function () {
+        return { count: count, lineCount: lineCount };
+      },
     };
   }
 

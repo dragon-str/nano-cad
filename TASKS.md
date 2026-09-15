@@ -568,3 +568,15 @@ Phase 6. All result notes cite the test that measures the number.
     ratios 1 and 2 look the same. `node --check`, `node
     site/render_atoms.test.js` -> 11 passed, and the headless-browser
     feature check -> all features pass.
+
+- [x] **M9-11** Fix the black mask over the top-right of the atom view.
+  - Result: The final composite, the ambient-occlusion pass and the blur pass
+    all draw one full-screen quad. The quad helper drew three vertices as
+    triangles, so each pass covered one half of the screen. The final image
+    showed atoms in only one half-plane and left the other half transparent:
+    the reported black mask. The quad now draws four vertices as a triangle
+    strip.
+  - Verification: The composite, the direct atom pass and the composite again
+    give the same pixel grid at zoom 4. A vision check reports no black mask.
+    `node --check`, `node site/render_atoms.test.js` -> 11 passed, and the
+    headless-browser feature check -> all features pass.
