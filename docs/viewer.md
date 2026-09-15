@@ -17,8 +17,11 @@ The viewer draws the three layers of a `nanocad.scene` document.
 - **Coarse (handoff).** A dashed gear pitch circle for each gear and a bounding
   cylinder for each body.
 
-Three checkboxes hide or show one layer. There is no blend slider: the atom
-layer already switches to the schematic on its own (see below).
+Only the **Atoms** layer is on by default, so the view shows the atom layer or
+the schematic and nothing else. The **Device markers** and **Coarse** checkboxes
+add the rigid-body markers and the handoff circles when you want them. The
+**Hide** button at the top of the panel collapses the panel to a small tab, so
+the render is not covered at high zoom.
 
 Drag to rotate. Hold Shift and drag, or drag with the middle button, to pan.
 Use the wheel to zoom. Double-click to reset. The arrow keys pan, `+` and `-`
@@ -50,7 +53,8 @@ The panel groups the controls.
   them.
 
 The scale bar shows the length of a segment at the middle of the view. The
-triad shows the world x, y and z axes.
+triad shows the world x, y and z axes. Each atom sphere has a dark silhouette
+outline, so single atoms stay visible when they overlap.
 
 The renderer is a display effect only. The occlusion, the lighting and the
 sphere radius are not measurements and carry no physical result.

@@ -526,3 +526,14 @@ Phase 6. All result notes cite the test that measures the number.
   - Verification: `node --check site/render_atoms.js` and
     `node --check site/viewer.js` pass. `node site/render_atoms.test.js` -> 11
     passed. `/opt/homebrew/bin/python3 site/check.py` -> all checks passed.
+
+- [x] **M9-08** Show only the atoms or the schematic, outline the atoms, and
+  let the user hide the panel.
+  - Result: The **Atoms** layer is on by default; the **Device markers** and
+    **Coarse** layers are off, and the device body marker no longer draws a
+    translucent sphere over the atoms. Each atom sphere gets a dark silhouette
+    outline in the WebGL shader, and the flat fallback dots get a dark stroke.
+    A **Hide** button collapses the panel. See ADR-0045.
+  - Verification: `node --check` on both viewer files passes,
+    `node site/render_atoms.test.js` -> 11 passed, and
+    `/opt/homebrew/bin/python3 site/check.py` -> all checks passed.

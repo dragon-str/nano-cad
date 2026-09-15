@@ -50,6 +50,15 @@
     coarse: document.getElementById("toggle-coarse"),
   };
 
+  var panelEl = document.getElementById("panel");
+  var panelToggleEl = document.getElementById("panel-toggle");
+  if (panelEl && panelToggleEl) {
+    panelToggleEl.addEventListener("click", function () {
+      var collapsed = panelEl.classList.toggle("collapsed");
+      panelToggleEl.textContent = collapsed ? "Show" : "Hide";
+    });
+  }
+
   var glCanvas = document.getElementById("gl-canvas");
   var renderer = null;
   try {
@@ -844,14 +853,18 @@
     groups.forEach(function (group) {
       var base = elementColor(group.element);
       var factor = 0.45 + 0.18 * group.bin;
-      ctx.fillStyle = base.charAt(0) === "#" ? shadeColor(base, factor) : base;
+      var fill = base.charAt(0) === "#" ? shadeColor(base, factor) : base;
       ctx.beginPath();
       for (var j = 0; j < group.points.length; j += 1) {
         var q = group.points[j];
         ctx.moveTo(q[0] + radius, q[1]);
         ctx.arc(q[0], q[1], radius, 0, 2 * Math.PI);
       }
+      ctx.fillStyle = fill;
       ctx.fill();
+      ctx.strokeStyle = "rgba(8, 12, 17, 0.85)";
+      ctx.lineWidth = Math.max(0.5, radius * 0.22);
+      ctx.stroke();
     });
     ctx.globalAlpha = 1;
   }
@@ -944,12 +957,6 @@
       if (coarse && coarse.bounding_cylinder) {
         radius = Math.max(3, pixRadius(coarse.bounding_cylinder.radius_m, p[3]));
       }
-      ctx.fillStyle = color;
-      ctx.globalAlpha = alpha * 0.35;
-      ctx.beginPath();
-      ctx.arc(p[0], p[1], radius, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.globalAlpha = alpha;
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -962,7 +969,7 @@
         ctx.arc(p[0], p[1], 2, 0, 2 * Math.PI);
         ctx.fill();
       }
-      ctx.fillStyle = "rgba(230, 237, 243, 0.85)";
+      ctx.fillStyle = "rgba(230, 237, 243, 0.95)";
       ctx.font = "11px ui-monospace, Menlo, monospace";
       ctx.fillText(body.name, p[0] + radius + 3, p[1] - radius - 2);
     }

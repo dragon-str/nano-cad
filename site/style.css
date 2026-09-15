@@ -119,11 +119,42 @@ body {
   width: 19rem;
   max-height: calc(100% - 1.5rem);
   overflow: auto;
-  background: rgba(22, 27, 34, 0.94);
+  background: #161b22;
   border: 1px solid var(--panel-border);
   border-radius: 0.5rem;
   padding: 0.75rem 0.9rem;
-  backdrop-filter: blur(4px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  z-index: 4;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panel-head h2 {
+  margin: 0;
+}
+
+.panel-toggle {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  background: #21262d;
+  color: var(--text-dim);
+  border: 1px solid var(--panel-border);
+  border-radius: 0.3rem;
+  cursor: pointer;
+}
+
+#panel.collapsed {
+  width: auto;
+  padding: 0.4rem 0.5rem;
+}
+
+#panel.collapsed > *:not(.panel-head) {
+  display: none;
 }
 
 #panel h2 {

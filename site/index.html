@@ -32,32 +32,43 @@
       </svg>
 
       <aside id="panel">
-        <h2>Layers</h2>
+        <div class="panel-head">
+          <h2>Layers</h2>
+          <button
+            type="button"
+            id="panel-toggle"
+            class="panel-toggle"
+            aria-label="Hide the panel"
+          >
+            Hide
+          </button>
+        </div>
         <div class="layer-row">
           <input type="checkbox" id="toggle-atomistic" checked />
           <label for="toggle-atomistic"
-            ><span class="swatch" style="background: #4ec9b0"></span>Atomistic
+            ><span class="swatch" style="background: #4ec9b0"></span>Atoms
             (L1)</label
           >
         </div>
         <div class="layer-row">
-          <input type="checkbox" id="toggle-device" checked />
+          <input type="checkbox" id="toggle-device" />
           <label for="toggle-device"
             ><span class="swatch" style="background: #58a6ff"></span>Device
-            (L2)</label
+            markers (L2)</label
           >
         </div>
         <div class="layer-row">
-          <input type="checkbox" id="toggle-coarse" checked />
+          <input type="checkbox" id="toggle-coarse" />
           <label for="toggle-coarse"
             ><span class="swatch" style="background: #f0b429"></span>Coarse
             (handoff)</label
           >
         </div>
         <div class="hint">
-          The atom, device and coarse views share one world fit. The atom view
-          switches to the exact schematic when the atoms are closer than six
-          pixels, so the layers always agree.
+          The atom view is the default. Show the device markers or the coarse
+          handoff only when you want them. The atom view switches to the exact
+          involute schematic when the atoms are closer than six pixels, so the
+          two always agree.
         </div>
 
         <h2>View</h2>

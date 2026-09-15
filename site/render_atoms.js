@@ -173,6 +173,8 @@
     "  vec3 halfV = normalize(key + view);",
     "  float spec = pow(max(dot(nrm, halfV), 0.0), 56.0) * (1.0 - uBallStick) * 0.45;",
     "  vec3 col = vColor * (ambient + 0.95 * diff + fill + rim) + vec3(spec);",
+    "  float edge = smoothstep(0.0, 0.30, nrm.z);",
+    "  col = mix(col * 0.16, col, edge);",
     "  float fogFrac = clamp((surfaceDepth - 2.6) / 1.2, 0.0, 1.0);",
     "  float alpha = mix(0.98, 0.45, fogFrac);",
     "  fragColor = vec4(col, alpha);",
