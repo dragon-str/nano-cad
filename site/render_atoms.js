@@ -173,8 +173,8 @@
     "  vec3 halfV = normalize(key + view);",
     "  float spec = pow(max(dot(nrm, halfV), 0.0), 56.0) * (1.0 - uBallStick) * 0.45;",
     "  vec3 col = vColor * (ambient + 0.95 * diff + fill + rim) + vec3(spec);",
-    "  float edge = smoothstep(0.0, 0.30, nrm.z);",
-    "  col = mix(col * 0.16, col, edge);",
+    "  float edge = smoothstep(0.0, 0.22, nrm.z);",
+    "  col = mix(col * 0.45, col, edge);",
     "  float fogFrac = clamp((surfaceDepth - 2.6) / 1.2, 0.0, 1.0);",
     "  float alpha = mix(0.98, 0.45, fogFrac);",
     "  fragColor = vec4(col, alpha);",
@@ -375,12 +375,16 @@
       programs = {
         atoms: program(gl, ATOM_VS, ATOM_FS),
         lines: program(gl, LINE_VS, LINE_FS),
-        ao: program(gl, AO_FS, QUAD_VS),
-        blur: program(gl, BLUR_FS, QUAD_VS),
-        composite: program(gl, COMPOSITE_FS, QUAD_VS),
+        ao: program(gl, QUAD_VS, AO_FS),
+        blur: program(gl, QUAD_VS, BLUR_FS),
+        composite: program(gl, QUAD_VS, COMPOSITE_FS),
       };
     } catch (error) {
-      gl.getExtension("WEBGL_lose_context").loseContext();
+      console.error("NanoCadAtoms: renderer unavailable: " + error.message);
+      var lose = gl.getExtension("WEBGL_lose_context");
+      if (lose) {
+        lose.loseContext();
+      }
       return null;
     }
 
@@ -554,10 +558,8 @@
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LESS);
       gl.disable(gl.BLEND);
+      gl.disable(gl.CULL_FACE);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-      gl.enable(gl.CULL_FACE);
-      gl.cullFace(gl.BACK);
 
       var atomLoc = locations.atoms;
       gl.useProgram(programs.atoms);

@@ -430,6 +430,7 @@
       row.className = "legend-row";
       var box = document.createElement("input");
       box.type = "checkbox";
+      box.setAttribute("data-element", element);
       box.checked = !display.hiddenElements[element];
       box.addEventListener("change", function () {
         display.hiddenElements[element] = !box.checked;
@@ -804,6 +805,13 @@
     var planetIndex = 0;
     ctx.globalAlpha = alpha;
     ctx.lineWidth = 1.4;
+    var t = motion.time;
+    var ca = Math.cos(motion.w_carrier * t);
+    var sa = Math.sin(motion.w_carrier * t);
+    var cb = Math.cos(motion.w_planet * t);
+    var sb = Math.sin(motion.w_planet * t);
+    var cc = Math.cos(motion.w_sun * t);
+    var sc = Math.sin(motion.w_sun * t);
     scene.device.bodies.forEach(function (body) {
       var role = body.role;
       var index = 0;
@@ -815,14 +823,32 @@
       if (!local) {
         return;
       }
+      var cx = body.position_m[0];
+      var cy = body.position_m[1];
+      var rcx = cx * ca - cy * sa;
+      var rcy = cx * sa + cy * ca;
       ctx.strokeStyle = ROLE_COLORS[role] || "#8b98a5";
       ctx.beginPath();
       for (var i = 0; i < local.length; i += 1) {
-        var p = camera([
-          body.position_m[0] + local[i][0],
-          body.position_m[1] + local[i][1],
-          body.position_m[2],
-        ]);
+        var lx = local[i][0];
+        var ly = local[i][1];
+        var x;
+        var y;
+        if (role === "sun") {
+          x = cx + lx;
+          y = cy + ly;
+          var sx = x * cc - y * sc;
+          var sy = x * sc + y * cc;
+          x = sx;
+          y = sy;
+        } else if (role === "planet") {
+          x = rcx + (lx * cb - ly * sb);
+          y = rcy + (lx * sb + ly * cb);
+        } else {
+          x = cx + lx;
+          y = cy + ly;
+        }
+        var p = camera([x, y, body.position_m[2]]);
         if (i === 0) {
           ctx.moveTo(p[0], p[1]);
         } else {
@@ -838,10 +864,21 @@
   function drawAtoms(alpha) {
     var atoms = scene.atomistic.atoms;
     var spacing = atomSpacingPx();
-    var radius = Math.max(0.6, spacing * 0.30);
+    var radius = Math.max(0.6, spacing * 0.30 * display.atomSize);
+    var clipZ = null;
+    if (display.clip < 0.999) {
+      clipZ = fitMin[2] + display.clip * (fitMax[2] - fitMin[2]);
+    }
     var groups = new Map();
     for (var i = 0; i < atoms.length; i += 1) {
-      var p = camera(atoms[i].position_m);
+      if (display.hiddenElements[atoms[i].element]) {
+        continue;
+      }
+      var world = atomPoint(i);
+      if (clipZ !== null && world[2] > clipZ) {
+        continue;
+      }
+      var p = camera(world);
       var bin = Math.max(0, Math.min(3, Math.floor((p[2] + 1) * 2)));
       var key = atoms[i].element + ":" + bin;
       if (!groups.has(key)) {
@@ -862,8 +899,8 @@
       }
       ctx.fillStyle = fill;
       ctx.fill();
-      ctx.strokeStyle = "rgba(8, 12, 17, 0.85)";
-      ctx.lineWidth = Math.max(0.5, radius * 0.22);
+      ctx.strokeStyle = "rgba(8, 12, 17, 0.45)";
+      ctx.lineWidth = Math.max(0.4, radius * 0.12);
       ctx.stroke();
     });
     ctx.globalAlpha = 1;
@@ -1607,6 +1644,36 @@
           "Live edit needs the local server: python3 app/server.py";
       });
   }
+
+  window.NanoCadDebug = {
+    view: view,
+    display: display,
+    motion: motion,
+    hasRenderer: function () {
+      return !!renderer;
+    },
+    spacingPx: function () {
+      return atomSpacingPx();
+    },
+    zoom: function () {
+      return view.zoom;
+    },
+    fitR: function () {
+      return fit.r;
+    },
+    useGl: function () {
+      return !!renderer && layerWeights()[0] > 0 && atomSpacingPx() >= 6;
+    },
+    positions: function () {
+      if (!atomCache) {
+        return null;
+      }
+      return Array.prototype.slice.call(atomCache.position, 0, 6);
+    },
+    redraw: function () {
+      draw();
+    },
+  };
 
   load();
   initApp();

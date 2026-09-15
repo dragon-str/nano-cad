@@ -537,3 +537,20 @@ Phase 6. All result notes cite the test that measures the number.
   - Verification: `node --check` on both viewer files passes,
     `node site/render_atoms.test.js` -> 11 passed, and
     `/opt/homebrew/bin/python3 site/check.py` -> all checks passed.
+
+- [x] **M9-09** Make every viewer control work in a real browser and soften the
+  atom outlines.
+  - Result: Two defects stopped the WebGL path. The AO, blur and composite
+    programs were built with the vertex and fragment shaders swapped, so the
+    renderer failed to build and the viewer silently used the flat fallback. The
+    sphere impostor quads were then back-face culled because the NDC y-flip
+    reverses the winding. With both fixed the lit spheres, the SSAO pass, the
+    atom-size control, the clip and the legend behave. The gear spin now also
+    animates the 2D schematic, which is what shows at the default zoom where the
+    atom spacing is below six pixels. The outlines are softer: the WebGL edge
+    mixes to 45 percent and the flat dots use a 0.45-alpha stroke.
+  - Verification: `/tmp/nc-browser/verify.js` against `app/server.py` in headless
+    Chrome (swiftshader) -> play advances, turntable, presets, atom size, clip,
+    ambient occlusion, legend hide, panel hide, hover pick and measure all pass.
+    `node --check` on both files, `node site/render_atoms.test.js` -> 11 passed,
+    `site/check.py` -> all checks passed, `just verify` -> all gates passed.
