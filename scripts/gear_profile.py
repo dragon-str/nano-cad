@@ -19,8 +19,8 @@ PRESSURE_ANGLE_RAD = math.radians(20.0)
 
 # Full-depth addendum and dedendum coefficients `h_a*` and `h_f*`.
 # Source: J. E. Shigley, Mechanical Engineering Design.
-ADDENDUM_COEFF = 1.0
-DEDENDUM_COEFF = 1.25
+ADDENDUM_COEFF = 0.5
+DEDENDUM_COEFF = 1.7
 
 
 def involute_function(alpha_rad: float) -> float:

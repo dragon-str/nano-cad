@@ -42,6 +42,9 @@ use crate::rotor::CARBON_ATOM_MASS_KG;
 /// The library version used for the assembled part records.
 pub const ASSEMBLY_RECORD_VERSION: u32 = 1;
 
+/// The diamond C-C bond length, in metres. Sets the carrier body sampling.
+const CARBON_BOND_LENGTH_M: f64 = 1.544e-10;
+
 /// The part id of the sun record.
 pub const SUN_PART_ID: &str = "planetary.sun";
 /// The part id prefix of the planet records, with the planet index appended.
@@ -298,6 +301,15 @@ fn record_for_body(
 ) -> Result<PartRecord, AssemblyError> {
     let atoms = u64::try_from(atom_range.len()).unwrap_or(u64::MAX);
     let properties = body_mass_properties(topology, atom_range)?;
+    record_from_properties(part_id, atoms, material, properties)
+}
+
+fn record_from_properties(
+    part_id: &str,
+    atoms: u64,
+    material: &str,
+    properties: BodyMassProperties,
+) -> Result<PartRecord, AssemblyError> {
     let mass_kg = Quantity::from_si(properties.mass_kg, Unit::Kilogram);
     let inertia_kg_m2 = [
         Quantity::derived(properties.inertia_diagonal_kg_m2[0], "kg*m^2")
@@ -365,16 +377,36 @@ pub fn planetary_records(set: &PlanetarySet) -> Result<Vec<(BodyRole, PartRecord
         BodyRole::Ring,
         record_for_body(RING_PART_ID, topology, set.ring_atoms.clone(), material)?,
     ));
-    records.push((
-        BodyRole::Carrier,
-        record_for_body(
-            CARRIER_PART_ID,
-            topology,
-            set.carrier_atoms.clone(),
-            material,
-        )?,
-    ));
+    records.push((BodyRole::Carrier, carrier_record(set, material)?));
     Ok(records)
+}
+
+/// The carrier carries no atoms, so its mass and inertia are analytic.
+///
+/// The carrier is a diamondoid ring at the carrier radius, with one carbon
+/// per C-C bond length around the circumference. The z inertia is `m R^2`
+/// for a thin ring; the x and y inertia are half that.
+fn carrier_record(set: &PlanetarySet, material: &str) -> Result<PartRecord, AssemblyError> {
+    let radius_m = set.design.carrier_radius_m();
+    if !radius_m.is_finite() || radius_m <= 0.0 {
+        return Err(AssemblyError::InvalidRecord {
+            part_id: CARRIER_PART_ID.to_owned(),
+            reason: "the carrier radius must be positive".to_owned(),
+        });
+    }
+    let circumference_m = 2.0 * std::f64::consts::PI * radius_m;
+    let count = (circumference_m / CARBON_BOND_LENGTH_M).round().max(3.0) as u64;
+    let mass_kg = count as f64 * CARBON_ATOM_MASS_KG;
+    let properties = BodyMassProperties {
+        mass_kg,
+        center_of_mass_m: [0.0; 3],
+        inertia_diagonal_kg_m2: [
+            0.5 * mass_kg * radius_m * radius_m,
+            0.5 * mass_kg * radius_m * radius_m,
+            mass_kg * radius_m * radius_m,
+        ],
+    };
+    record_from_properties(CARRIER_PART_ID, count, material, properties)
 }
 
 fn record_mass_properties(record: &PartRecord) -> Result<BodyMassProperties, AssemblyError> {

@@ -638,9 +638,12 @@
   /* ---------- Involute gear profile (port of scripts/gear_profile.py) ---------- */
 
   var PRESSURE_ANGLE_RAD = (20.0 * Math.PI) / 180.0;
-  var ADDENDUM_COEFF = 1.0;
-  var DEDENDUM_COEFF = 1.25;
+  var ADDENDUM_COEFF = 0.5;
+  var DEDENDUM_COEFF = 1.7;
   var C_C_BOND_M = 1.544e-10;
+  // Must match GEAR_BACKLASH_M in crates/parts/src/planetary.rs so the
+  // schematic matches the atoms.
+  var GEAR_BACKLASH_M = 9.0e-10;
 
   function involuteFn(a) {
     return Math.tan(a) - a;
@@ -669,7 +672,8 @@
     }
     var cosine = Math.max(-1, Math.min(1, base / radiusM));
     var alphaR = Math.acos(cosine);
-    var halfTooth = Math.PI / (2 * teeth);
+    var halfTooth =
+      Math.PI / (2 * teeth) - GEAR_BACKLASH_M / (4 * pitchRadiusJS(moduleM, teeth));
     return (
       sign * (halfTooth + involuteFn(PRESSURE_ANGLE_RAD) - involuteFn(alphaR))
     );
@@ -683,8 +687,9 @@
     var outerM = outerRadiusJS(moduleM, teeth);
     var rootM = rootRadiusJS(moduleM, teeth);
     var baseM = baseRadiusJS(moduleM, teeth);
-    var tipHalf = halfPitch + involuteFn(PRESSURE_ANGLE_RAD)
-      - involuteFn(Math.acos(Math.max(-1, Math.min(1, baseM / outerM))));
+    // The tip arc joins the two flanks. Its half-angle is the flank angle at
+    // the outer radius. The half pitch would overhang the flanks.
+    var tipHalf = flankAngleRad(outerM, 1, moduleM, teeth);
     var flankStart = Math.max(rootM, baseM);
     var flankStartAngle = flankAngleRad(flankStart, -1, moduleM, teeth);
     var local = [];

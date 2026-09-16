@@ -10,12 +10,12 @@ use crate::parameter::{ParameterSet, ParameterSpec};
 /// The full-depth addendum coefficient `h_a*`. The addendum is `h_a* m`.
 ///
 /// Source: ISO 21771 / AGMA 908-B89 standard full-depth tooth form.
-const ADDENDUM_COEFFICIENT: f64 = 1.0;
+const ADDENDUM_COEFFICIENT: f64 = 0.5;
 
 /// The full-depth dedendum coefficient `h_f*`. The dedendum is `h_f* m`.
 ///
 /// Source: ISO 21771 standard full-depth tooth form.
-const DEDENDUM_COEFFICIENT: f64 = 1.25;
+const DEDENDUM_COEFFICIENT: f64 = 1.7;
 
 /// The undercut factor. The minimum tooth count without undercut is
 /// `2 h_a* / sin^2(alpha)`.
@@ -43,6 +43,7 @@ pub struct GearProfile {
     module_m: f64,
     teeth: usize,
     pressure_angle_rad: f64,
+    backlash_m: f64,
 }
 
 impl GearProfile {
@@ -70,7 +71,27 @@ impl GearProfile {
             module_m,
             teeth,
             pressure_angle_rad,
+            backlash_m: 0.0,
         })
+    }
+
+    /// Returns the profile with a circumferential backlash, in metres.
+    ///
+    /// The tooth is thinner by `backlash_m`. Two mating gears that each use
+    /// this profile then clear each other by twice `backlash_m` at the flanks.
+    pub fn with_backlash(mut self, backlash_m: f64) -> Self {
+        self.backlash_m = backlash_m.max(0.0);
+        self
+    }
+
+    /// The circumferential backlash, in metres.
+    pub fn backlash_m(&self) -> f64 {
+        self.backlash_m
+    }
+
+    /// The angular half-thickness removed from the tooth by the backlash.
+    fn backlash_half_angle_rad(&self) -> f64 {
+        self.backlash_m / (4.0 * self.pitch_radius_m())
     }
 
     /// The module, in metres.
@@ -158,7 +179,7 @@ impl GearProfile {
         }
         let cosine = (base_m / radius_m).clamp(-1.0, 1.0);
         let alpha_r = cosine.acos();
-        let half_tooth_rad = PI / (2.0 * self.teeth as f64);
+        let half_tooth_rad = PI / (2.0 * self.teeth as f64) - self.backlash_half_angle_rad();
         Ok(sign
             * (half_tooth_rad + involute_function(self.pressure_angle_rad)
                 - involute_function(alpha_r)))
@@ -187,9 +208,10 @@ impl GearProfile {
             )));
         }
 
-        let inv_pitch = involute_function(self.pressure_angle_rad);
-        let tip_ratio = (base_m / outer_m).clamp(-1.0, 1.0);
-        let tip_half_angle_rad = half_pitch_rad + inv_pitch - involute_function(tip_ratio.acos());
+        // The tip arc must join the two flanks. The half-angle at the outer
+        // radius is the flank angle there, not the half pitch: the half pitch
+        // is twice the tooth half-thickness and would overhang the flanks.
+        let tip_half_angle_rad = self.flank_angle_rad(outer_m, 1.0)?;
         if tip_half_angle_rad <= 0.0 {
             return Err(PartError::InvalidGeometry(
                 "tooth is pointed at the tip circle".to_owned(),

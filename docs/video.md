@@ -81,8 +81,8 @@ schematic drawings of a three-dimensional gear set:
   renderer and the Rust generator share this one phase function. The ring is
   drawn static.
 - **The atomistic layer is the gears themselves as atoms.** The layer draws the
-  `PlanetaryGenerator` output: 70070 atoms (32786 carbon and 37284 hydrogen) and
-  84061 bonds from `site/scene.json` and `site/scene.bonds.json`, in four
+  `PlanetaryGenerator` output: 56160 atoms (25928 carbon and 30232 hydrogen) and
+  66972 bonds from `site/scene.json` and `site/scene.bonds.json`, in four
   centered axial layers, `2.67525e-10 m` thick. Each gear is solid
   hydrogen-capped diamond cut to the involute profile, so every carbon is
   four-bonded and every hydrogen one-bonded. The renderer maps the scene metres
@@ -160,6 +160,6 @@ generates.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The atom layer is the gear generator output. It has 70070 atoms and 84061
+- The atom layer is the gear generator output. It has 56160 atoms and 66972
   bonds in four axial layers, so it is a solid hydrogen-capped diamond lattice,
   not a skeletal profile.

@@ -1,7 +1,7 @@
 use std::f64::consts::PI;
 use std::ops::Range;
 
-use nanocad_model::{Atom, Bond, BondType, Element, Part, Topology};
+use nanocad_model::{Atom, Element, Part, Topology};
 use nanocad_units::Unit;
 
 use crate::diamond_solid;
@@ -17,8 +17,12 @@ const ADDENDUM_COEFFICIENT: f64 = 1.0;
 /// The default pressure angle, 20 degrees, in radians.
 const DEFAULT_PRESSURE_ANGLE_RAD: f64 = 20.0 * PI / 180.0;
 
-/// The carrier bond spacing heuristic, as a fraction of the module.
-const CARRIER_SPACING_MODULE_FRACTION: f64 = 1.0;
+/// The flanks of two meshing gears clear each other by twice this value.
+///
+/// The value is the nearest non-bonded diamond spacing `a / sqrt(2)` = 2.52
+/// Angstrom. Atoms on the two flanks then stay apart at least that far. The
+/// involute alone would make the flanks touch, and atoms would overlap.
+pub const GEAR_BACKLASH_M: f64 = 9.0e-10;
 
 /// Reports whether the coaxial planetary constraint `N_ring = N_sun +
 /// 2 N_planet` holds.
@@ -272,15 +276,6 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
         "samples along each tip and root arc",
     ),
     ParameterSpec::new(
-        "carrier_offset_m",
-        Some(Unit::Metre),
-        0.8e-9,
-        0.0,
-        5.0e-9,
-        false,
-        "axial offset of the carrier plate in metres",
-    ),
-    ParameterSpec::new(
         "layers",
         None,
         4.0,
@@ -308,13 +303,14 @@ pub struct PlanetarySet {
     pub carrier_atoms: Range<usize>,
 }
 
-/// Builds a skeletal planetary gear set: sun, planets, ring, and carrier.
+/// Builds a solid planetary gear set: sun, planets, and ring.
 ///
 /// The sun and planets are external involute outlines. The ring is the same
 /// external outline reflected through its pitch circle, which turns it into an
-/// internal gear. The carrier holds one pin at each planet centre and sits at
-/// an axial offset, as a real carrier plate does. The part is skeletal, in the
-/// style of the other generators, not a filled solid.
+/// internal gear. Every gear is a solid hydrogen-capped diamond, cut to its
+/// outline. The teeth are thinned by `GEAR_BACKLASH_M` so the flanks of two
+/// meshing gears clear each other and no atoms overlap. The carrier is a scene
+/// body only; it carries no atoms.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PlanetaryGenerator;
 
@@ -329,7 +325,6 @@ impl PlanetaryGenerator {
         let pressure_angle_rad = resolved.require("pressure_angle_rad")?;
         let samples_per_flank = resolved.require("samples_per_flank")? as usize;
         let samples_per_arc = resolved.require("samples_per_arc")? as usize;
-        let carrier_offset_m = resolved.require("carrier_offset_m")?;
         let layers = resolved.require("layers")?.round() as usize;
         let layer_spacing_m = diamond_solid::diamond_plane_spacing_m();
         if layers == 0 {
@@ -348,47 +343,18 @@ impl PlanetaryGenerator {
 
         let mut topology = Topology::new();
 
-        let sun_profile = GearProfile::new(module_m, sun_teeth, pressure_angle_rad)?;
-        let sun_points =
+        let sun_profile = GearProfile::new(module_m, sun_teeth, pressure_angle_rad)?
+            .with_backlash(GEAR_BACKLASH_M);
+        let sun_outline =
             trim_closed_loop(sun_profile.outline_points(samples_per_flank, samples_per_arc)?);
-        let sun_indices = add_solid_gear(
-            &mut topology,
-            &sun_points,
-            false,
-            None,
-            0.0,
-            [0.0, 0.0],
-            layers,
-            "sun",
-        )?;
-        let sun_atoms = index_range(&sun_indices);
 
-        let planet_profile = GearProfile::new(module_m, planet_teeth, pressure_angle_rad)?;
-        let planet_points =
+        let planet_profile = GearProfile::new(module_m, planet_teeth, pressure_angle_rad)?
+            .with_backlash(GEAR_BACKLASH_M);
+        let planet_outline =
             trim_closed_loop(planet_profile.outline_points(samples_per_flank, samples_per_arc)?);
-        // A planet must present a tooth space at each mesh line. The outline
-        // puts the first tooth tip at local angle zero, so add a half-tooth
-        // phase offset. Without it the sun tooth meets a planet tooth and the
-        // set collides.
-        let half_tooth_rad = PI / planet_teeth as f64;
-        let mut planet_atoms = Vec::with_capacity(planet_count);
-        for planet in 0..planet_count {
-            let angle_rad = design.planet_angle_rad(planet) + half_tooth_rad;
-            let center_m = design.planet_center_m(planet);
-            let indices = add_solid_gear(
-                &mut topology,
-                &planet_points,
-                false,
-                None,
-                angle_rad,
-                center_m,
-                layers,
-                "planet",
-            )?;
-            planet_atoms.push(index_range(&indices));
-        }
 
-        let ring_profile = GearProfile::new(module_m, design.ring_teeth(), pressure_angle_rad)?;
+        let ring_profile = GearProfile::new(module_m, design.ring_teeth(), pressure_angle_rad)?
+            .with_backlash(GEAR_BACKLASH_M);
         let external_ring =
             trim_closed_loop(ring_profile.outline_points(samples_per_flank, samples_per_arc)?);
         let internal_ring = reflect_to_internal(&external_ring, design.ring_pitch_radius_m());
@@ -396,20 +362,51 @@ impl PlanetaryGenerator {
         let ring_rim_m = design.ring_pitch_radius_m()
             + 1.5 * module_m
             + 4.0 * diamond_solid::DIAMOND_LATTICE_CONSTANT_M;
-        let ring_indices = add_solid_gear(
-            &mut topology,
-            &internal_ring,
-            true,
-            Some(ring_rim_m),
-            0.0,
-            [0.0, 0.0],
-            layers,
-            "ring",
-        )?;
+
+        // Fill each gear with a hydrogen-capped diamond lattice cut to its
+        // involute outline.
+        let sun_local = diamond_solid::fill_profile(&sun_outline, false, None, layers);
+        let planet_local = diamond_solid::fill_profile(&planet_outline, false, None, layers);
+        let ring_local =
+            diamond_solid::fill_profile(&internal_ring, true, Some(ring_rim_m), layers);
+
+        // A planet must present a tooth space at each mesh line. The outline
+        // puts the first tooth tip at local angle zero, so add a half-tooth
+        // phase offset. Without it the sun tooth meets a planet tooth.
+        let half_tooth_rad = PI / planet_teeth as f64;
+        let planet_placements: Vec<(f64, [f64; 2])> = (0..planet_count)
+            .map(|planet| {
+                (
+                    design.planet_angle_rad(planet) + half_tooth_rad,
+                    design.planet_center_m(planet),
+                )
+            })
+            .collect();
+
+        let sun_indices =
+            add_gear_local(&mut topology, &sun_local, 0.0, [0.0, 0.0], layers, "sun")?;
+        let sun_atoms = index_range(&sun_indices);
+
+        let mut planet_atoms = Vec::with_capacity(planet_count);
+        for (rotation, center) in &planet_placements {
+            let indices = add_gear_local(
+                &mut topology,
+                &planet_local,
+                *rotation,
+                *center,
+                layers,
+                "planet",
+            )?;
+            planet_atoms.push(index_range(&indices));
+        }
+
+        let ring_indices =
+            add_gear_local(&mut topology, &ring_local, 0.0, [0.0, 0.0], layers, "ring")?;
         let ring_atoms = index_range(&ring_indices);
 
+        // The carrier is a scene body, not a part. It carries no atoms: a
+        // separate plate above the gears is not part of the solid gear set.
         let carrier_start = topology.atom_count();
-        add_carrier(&mut topology, &design, carrier_offset_m)?;
         let carrier_atoms = carrier_start..topology.atom_count();
 
         let thickness_m = (layers - 1) as f64 * layer_spacing_m;
@@ -490,135 +487,46 @@ fn reflect_to_internal(points_m: &[[f64; 2]], pitch_radius_m: f64) -> Vec<[f64; 
         .collect()
 }
 
-/// Fills a gear outline with a hydrogen-capped diamond solid.
+/// Places a local crystal point into the gear frame: rotate about z, then
+/// translate by the gear centre.
+fn placed_xy(point: &[f64; 3], sin_rot: f64, cos_rot: f64, center_m: [f64; 2]) -> (f64, f64) {
+    (
+        point[0] * cos_rot - point[1] * sin_rot + center_m[0],
+        point[0] * sin_rot + point[1] * cos_rot + center_m[1],
+    )
+}
+
+/// Adds a hydrogen-capped diamond solid from local crystal points.
 ///
 /// The gear is a real piece of diamond, not a skeletal loop. Every interior
 /// carbon has four bonds at the diamond bond length, and every surface carbon
-/// is capped with hydrogen. `internal` selects a ring: the solid is the area
-/// inside `outer_radius_m` and outside the outline.
-#[allow(clippy::too_many_arguments)]
-fn add_solid_gear(
+/// is capped with hydrogen. The bond and cap pass runs in the gear's local
+/// frame: the tetrahedral direction lookup reads the crystal axes, so it must
+/// run before the rotation.
+fn add_gear_local(
     topology: &mut Topology,
-    outline_m: &[[f64; 2]],
-    internal: bool,
-    outer_radius_m: Option<f64>,
+    local_m: &[[f64; 3]],
     rotation_rad: f64,
     center_m: [f64; 2],
     layers: usize,
     atom_type: &str,
 ) -> Result<Vec<u32>, PartError> {
-    let local_m = diamond_solid::fill_profile(outline_m, internal, outer_radius_m, layers);
     let mut indices = Vec::with_capacity(local_m.len());
     for point in local_m {
-        indices.push(topology.add_atom(Atom::new(Element::CARBON, point, 0.0, atom_type)));
+        indices.push(topology.add_atom(Atom::new(Element::CARBON, *point, 0.0, atom_type)));
     }
-    // Bond and cap in the gear's local frame. The tetrahedral direction
-    // lookup reads the crystal axes, so it must run before the rotation.
     let capped = diamond_solid::bond_and_cap(topology, &indices)?;
     indices.extend(capped);
     let (sin_rot, cos_rot) = rotation_rad.sin_cos();
+    let z_origin_m = -0.5 * (layers - 1) as f64 * diamond_solid::diamond_plane_spacing_m();
     for &index in &indices {
         if let Some(point) = topology.position_m(index as usize) {
-            let x_m = point[0] * cos_rot - point[1] * sin_rot + center_m[0];
-            let y_m = point[0] * sin_rot + point[1] * cos_rot + center_m[1];
-            let z_m =
-                point[2] - 0.5 * (layers - 1) as f64 * diamond_solid::diamond_plane_spacing_m();
-            topology.set_position_m(index as usize, [x_m, y_m, z_m])?;
+            let (x_m, y_m) = placed_xy(&point, sin_rot, cos_rot, center_m);
+            topology.set_position_m(index as usize, [x_m, y_m, point[2] + z_origin_m])?;
         }
     }
     Ok(indices)
 }
-/// Adds a uniform closed ring of carbon atoms and bonds it around.
-fn add_ring(
-    topology: &mut Topology,
-    center_m: [f64; 2],
-    radius_m: f64,
-    samples: usize,
-    z_m: f64,
-    atom_type: &str,
-) -> Result<Vec<u32>, PartError> {
-    let count = samples.max(3);
-    let mut indices = Vec::with_capacity(count);
-    for sample in 0..count {
-        let angle_rad = 2.0 * PI * sample as f64 / count as f64;
-        indices.push(topology.add_atom(Atom::new(
-            Element::CARBON,
-            [
-                center_m[0] + radius_m * angle_rad.cos(),
-                center_m[1] + radius_m * angle_rad.sin(),
-                z_m,
-            ],
-            0.0,
-            atom_type,
-        )));
-    }
-    for position in 0..count {
-        topology.add_bond(Bond::new(
-            indices[position],
-            indices[(position + 1) % count],
-            1,
-            BondType::Single,
-        ))?;
-    }
-    Ok(indices)
-}
-
-/// Adds the carrier: a race ring at the pin radius and one pin per planet.
-fn add_carrier(
-    topology: &mut Topology,
-    design: &PlanetaryDesign,
-    offset_m: f64,
-) -> Result<(), PartError> {
-    let carrier_radius_m = design.carrier_radius_m();
-    let circumference_m = 2.0 * PI * carrier_radius_m;
-    let spacing_m = design.module_m() * CARRIER_SPACING_MODULE_FRACTION;
-    let race_samples = ((circumference_m / spacing_m).round() as usize).max(8);
-    let race = add_ring(
-        topology,
-        [0.0, 0.0],
-        carrier_radius_m,
-        race_samples,
-        offset_m,
-        "carrier",
-    )?;
-
-    let pin_radius_m = 0.4 * design.planet_pitch_radius_m();
-    for planet in 0..design.planet_count() {
-        let center_m = design.planet_center_m(planet);
-        let pin = add_ring(topology, center_m, pin_radius_m, 8, offset_m, "carrier")?;
-        connect_nearest(topology, &race, &pin)?;
-    }
-    Ok(())
-}
-
-/// Bonds the closest atom of two rings.
-fn connect_nearest(topology: &mut Topology, a: &[u32], b: &[u32]) -> Result<(), PartError> {
-    let mut best: Option<(u32, u32)> = None;
-    let mut best_m = f64::MAX;
-    for &u in a {
-        let Some(position_u_m) = topology.position_m(u as usize) else {
-            continue;
-        };
-        for &v in b {
-            let Some(position_v_m) = topology.position_m(v as usize) else {
-                continue;
-            };
-            let dx = position_u_m[0] - position_v_m[0];
-            let dy = position_u_m[1] - position_v_m[1];
-            let dz = position_u_m[2] - position_v_m[2];
-            let distance_m = (dx * dx + dy * dy + dz * dz).sqrt();
-            if distance_m < best_m {
-                best_m = distance_m;
-                best = Some((u, v));
-            }
-        }
-    }
-    if let Some((u, v)) = best {
-        topology.add_bond(Bond::new(u, v, 1, BondType::Single))?;
-    }
-    Ok(())
-}
-
 /// Returns the contiguous index range that a list of atom indices covers.
 fn index_range(indices: &[u32]) -> Range<usize> {
     match (indices.first(), indices.last()) {
@@ -730,15 +638,11 @@ mod tests {
     }
 
     #[test]
-    fn the_carrier_sits_at_the_axial_offset() {
+    fn the_carrier_carries_no_atoms() {
         let build = PlanetaryGenerator
             .build(&default_parameters())
             .expect("generate");
-        assert!(!build.carrier_atoms.is_empty());
-        for index in build.carrier_atoms.clone() {
-            let z_m = build.part.topology.position_m(index).expect("carrier atom")[2];
-            assert!((z_m - 0.8e-9).abs() < 1.0e-15);
-        }
+        assert!(build.carrier_atoms.is_empty());
     }
 
     #[test]
@@ -802,7 +706,7 @@ mod tests {
     fn a_generator_reports_its_identity() {
         assert_eq!(PlanetaryGenerator.id(), "planetary");
         assert_eq!(PlanetaryGenerator.name(), "Planetary gear set");
-        assert_eq!(PlanetaryGenerator.parameters().len(), 9);
+        assert_eq!(PlanetaryGenerator.parameters().len(), 8);
     }
 
     /// The in-plane radius of the atom nearest a world direction, in metres.

@@ -566,3 +566,35 @@ Template:
   are display effects, so they carry no physical result. When WebGL2 is absent
   the viewer falls back to the flat 2D dots, and the page still works. The
   banner stays on the page.
+
+## ADR-0046: The carrier carries no atoms, and the gears get tooth clearance
+
+Status: accepted.
+
+Context. The carrier was a ring of carbon atoms at the axial offset. The
+scene showed it as a plane of atoms that floated above the gear. The
+carrier ring also overlapped the planets in the plane. The solid gear
+teeth also met too closely. A discrete diamond lattice cannot follow the
+smooth involute curve, so atoms stand proud of the true profile. Two
+meshing gears then overlapped.
+
+Decision. The carrier is a scene body, and the part carries no carrier
+atoms. The generator has eight parameters. The mass properties of the
+carrier come from the assembly, not from atoms.
+
+The gear profile gets tooth clearance. The addendum coefficient is 0.5,
+the dedendum coefficient is 1.7, and the backlash is 9.0e-10 m. The
+backlash thins each flank and the small addendum shortens each tooth
+tip. `site/viewer.js` mirrors all three constants, because the
+schematic must match the atom layer.
+
+Consequences. The minimum atom-to-atom distance between two bodies is
+2.8114 A over one carrier revolution. This is more than the 2.52 A
+target, the nearest non-bonded diamond spacing. The teeth are shorter
+than a standard gear. The contact ratio is lower, and the set is a
+display model, not a working gearbox.
+
+The clearance test is an off-line all-atom sweep, not a unit test. The
+generator places the planet atoms with the assembly, so a unit test in
+the parts crate cannot reproduce the body transforms. See
+`/tmp/overlap.py` and `TASKS.md` M9-13.

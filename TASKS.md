@@ -580,3 +580,22 @@ Phase 6. All result notes cite the test that measures the number.
     give the same pixel grid at zoom 4. A vision check reports no black mask.
     `node --check`, `node site/render_atoms.test.js` -> 11 passed, and the
     headless-browser feature check -> all features pass.
+
+- [x] **M9-12** Remove the carrier atom plate.
+  - Result: The carrier is a scene body only. The part carries no
+    carrier atoms, the `carrier_offset_m` parameter is gone, and the
+    generator has eight parameters. The assembly synthesises the
+    carrier mass properties from a carbon ring at the carrier radius.
+  - Verification: The scene has no atom at the carrier offset.
+    `cargo test -p nanocad-parts` -> 88 passed. `site/check.py` ->
+    all checks passed.
+
+- [x] **M9-13** Give the gear teeth clearance so no atoms overlap.
+  - Result: The addendum coefficient is 0.5, the dedendum coefficient is
+    1.7, and the backlash is 9.0e-10 m. `site/viewer.js` mirrors the
+    three constants.
+  - Verification: An all-atom sweep over one carrier revolution gives
+    sun-planet 3.0561 A, planet-ring 2.9265 A and planet-ring 2.8114 A.
+    The minimum is above the 2.52 A target. 56160 atoms, 25928 carbon
+    at degree 4 and 30232 hydrogen at degree 1. `check_atom_geometry.py`
+    -> PASS. `just verify` -> all gates passed.
