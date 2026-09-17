@@ -44,7 +44,7 @@ def test_layer_count_is_clamped():
 def test_more_teeth_changes_sun_and_planet():
     command = chat.parse("add more teeth to the gears")
     assert command.intent == "teeth_more"
-    assert command.changes == {"sun_teeth": 30.0, "planet_teeth": 21.0}
+    assert command.changes == {"sun_teeth": 18.0, "planet_teeth": 12.0}
 
 
 def test_planet_count():
@@ -82,4 +82,4 @@ def test_unknown_text_is_reported_without_a_change():
 def test_reply_reports_the_new_state():
     command = chat.parse("6 atoms thick")
     assert "6 atomic layers" in command.reply
-    assert "ring 60t" in command.reply
+    assert "ring 30t" in command.reply

@@ -76,16 +76,16 @@ the derived design, and the three layers.
   "angle_unit": "rad",
   "frame": "right-handed, z is the gear axis, x-y is the gear plane, metres and radians, quaternion [w, x, y, z]",
   "design": {
-    "module_m": 5e-10,
-    "sun_teeth": 24,
-    "planet_teeth": 18,
-    "ring_teeth": 60,
+    "module_m": 1.5e-9,
+    "sun_teeth": 12,
+    "planet_teeth": 9,
+    "ring_teeth": 30,
     "planet_count": 3,
     "gear_ratio": 3.5,
-    "sun_pitch_radius_m": 6e-9,
-    "planet_pitch_radius_m": 4.5e-9,
-    "ring_pitch_radius_m": 1.5e-8,
-    "carrier_radius_m": 1.05e-8
+    "sun_pitch_radius_m": 9e-9,
+    "planet_pitch_radius_m": 6.75e-9,
+    "ring_pitch_radius_m": 2.25e-8,
+    "carrier_radius_m": 1.575e-8
   },
   "atomistic": {
     "atom_count": 1,

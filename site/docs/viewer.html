@@ -29,7 +29,7 @@
 <h2>Generate the scene file</h2>
 <p>Run the example from the repository root. The first argument is the output path. The default path is <code>site/scene.json</code>.</p>
 <pre><code class="language-sh">cargo run -p nanocad-jigs --example scene_json -- site/scene.json</code></pre>
-<p>The command prints a one-line summary. The default output has 70070 atoms in four axial layers, <code>2.67525e-10 m</code> thick. The file is a few MB. The example creates the parent directory.</p>
+<p>The command prints a one-line summary. The default output has 142091 atoms in four axial layers, <code>2.67525e-10 m</code> thick. The file is a few MB. The example creates the parent directory.</p>
 <p>The example also accepts <code>key=value</code> arguments that override the generator parameters. The keys are the names in <code>PLANETARY_PARAMETERS</code>.</p>
 <pre><code class="language-sh">cargo run -p nanocad-jigs --example scene_json -- site/scene.json layers=6</code></pre>
 <p>This writes a scene with six atomic layers. The interactive app uses the same arguments.</p>
@@ -59,7 +59,7 @@
 <p>The check script verifies the scene counts, the viewer files, and the docs outputs.</p>
 <pre><code class="language-sh">python3 site/check.py</code></pre>
 <p>Expected output:</p>
-<pre><code>scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=70070
+<pre><code>scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=142091
 viewer ok: index.html, viewer.js, style.css, render_atoms.js present
 docs ok: 18 markdown inputs have HTML pages
 check: all checks passed</code></pre>

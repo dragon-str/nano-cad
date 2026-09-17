@@ -129,7 +129,7 @@ the sun, planets, and ring appearing. The handle `part-1` appears.
 asks for a planetary set with three planets. The generator returns the atoms
 and the bonds."
 
-**On-screen text.** `sun 24`, `planet 18`, `ring 60`, `planets 3`.
+**On-screen text.** `sun 12`, `planet 9`, `ring 30`, `planets 3`.
 
 **Source.** `TASKS.md` M4-06, `docs/three-scale.md`, and `mcp/README.md`.
 
@@ -269,7 +269,7 @@ The handle names are `part-1`, `document-1`, and `assembly-1`. Source:
 - A rendered orbit of the device layer, 8 seconds, 16:9.
 - A rendered cross-fade from the atomistic layer to the coarse layer, 4
   seconds.
-- A rendered planetary set with 24 sun teeth, 18 planet teeth, and 60 ring
+- A rendered planetary set with 12 sun teeth, 9 planet teeth, and 30 ring
   teeth. Source: `docs/three-scale.md`.
 - A rendered running device with a live ratio readout.
 - A URDF tree graphic with 7 links and 6 joints. Source: `TASKS.md` M7-04.

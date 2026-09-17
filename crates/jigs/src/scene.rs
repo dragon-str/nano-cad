@@ -768,7 +768,7 @@ mod tests {
         assert_eq!(scene.coarse.body_count, 7);
         assert_eq!(scene.coarse.bodies.len(), 7);
         assert_eq!(scene.design.planet_count, 3);
-        assert_eq!(scene.design.ring_teeth, 60);
+        assert_eq!(scene.design.ring_teeth, 30);
         assert_eq!(scene.design.gear_ratio, 3.5);
     }
 

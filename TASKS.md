@@ -618,3 +618,17 @@ Phase 6. All result notes cite the test that measures the number.
   - Verification: the browser shows atom count 56,160 atoms, contact ratio
     0.860 and clearance 0.278 nm with a pass mark. `just verify` -> all
     gates passed; 477 Rust tests. See ADR-0048.
+
+- [x] **M9-16** Rebuild the default set at the recommended nanoscale size.
+  - Result: The default is now module 1.5 nm, 12 sun teeth, 9 planet teeth,
+    30 ring teeth, a 30 degree pressure angle, addendum coefficient 0.8,
+    dedendum coefficient 1.25 and backlash 1.0e-9 m. The mesh phase follows
+    the tooth-count parity: a planet presents a space toward the sun when
+    its tooth count is odd, and the ring takes a half-pitch rotation when
+    the planet tooth count is odd. The scene has 142091 atoms, 68197 carbon
+    and 73894 hydrogen.
+  - Verification: `cargo run -p nanocad-meter --example score_json` ->
+    atom count 142091, contact ratio 1.0028, clearance 2.9968e-10 m
+    (passes). `check_atom_geometry.py` -> PASS. The renderer draws 142091
+    atoms in the browser. `just verify` -> all gates passed; 477 Rust
+    tests. See ADR-0049.

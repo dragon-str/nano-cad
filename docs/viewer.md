@@ -71,7 +71,7 @@ path. The default path is `site/scene.json`.
 cargo run -p nanocad-jigs --example scene_json -- site/scene.json
 ```
 
-The command prints a one-line summary. The default output has 56160 atoms in
+The command prints a one-line summary. The default output has 142091 atoms in
 four axial layers, `2.67525e-10 m` thick. The file is a few MB. The example
 creates the parent directory.
 
@@ -179,7 +179,7 @@ python3 site/check.py
 Expected output:
 
 ```
-scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=56160
+scene ok: bodies=7 joints=6 planets=3 ratio=3.5 atoms=142091
 viewer ok: index.html, viewer.js, style.css, render_atoms.js present
 docs ok: 18 markdown inputs have HTML pages
 check: all checks passed

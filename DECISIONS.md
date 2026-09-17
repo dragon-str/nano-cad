@@ -648,3 +648,31 @@ compare it with a high-fidelity value by accident. The first real finding
 is that the default contact ratio is 0.86, below 1. The short addendum of
 0.5, which the clearance work chose, reduces the contact ratio. The drive
 can skip a tooth. This is a design trade-off to present to the user.
+
+## ADR-0049: The default gear set uses the recommended nanoscale size
+
+Status: accepted.
+
+Context. The physics gives a smallest reasonable gear set. A tooth needs
+at least four diamond lattice rows, so the module needs about 1.5 nm. A
+small pressure angle undercuts a small planet, so 30 degrees is used.
+
+Decision. The default parameters are module `1.5e-9 m`, 12 sun teeth, 9
+planet teeth, 30 ring teeth, a 30 degree pressure angle, an addendum
+coefficient of 0.8, a dedendum coefficient of 1.25 and a backlash of
+`1.0e-9 m`. The set has 142091 atoms.
+
+The mesh phase depends on the tooth-count parity. A planet presents a
+space toward the sun when the planet tooth count is odd, and a tooth when
+it is even. The ring takes a half-pitch rotation `pi/N_r` when the planet
+tooth count is odd. Exactly one gear of the planet and ring pair takes the
+half-pitch offset, so the three gears interleave.
+
+The backlash of `1.0e-9 m` is larger than the van der Waals estimate of
+0.6 nm. A backlash of 0.6 nm gave a dynamic minimum of `1.3e-10 m`, which
+is an overlap for the 12 and 9 tooth pair. The clearance metric sets the
+real value.
+
+Consequences. The default set is 2.5 times the previous atom count, so a
+build is slower. The contact ratio is 1.00, which is a working value. The
+teeth are thin, because the backlash is large.

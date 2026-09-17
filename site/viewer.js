@@ -638,12 +638,12 @@
   /* ---------- Involute gear profile (port of scripts/gear_profile.py) ---------- */
 
   var PRESSURE_ANGLE_RAD = (20.0 * Math.PI) / 180.0;
-  var ADDENDUM_COEFF = 0.5;
-  var DEDENDUM_COEFF = 1.7;
+  var ADDENDUM_COEFF = 0.8;
+  var DEDENDUM_COEFF = 1.25;
   var C_C_BOND_M = 1.544e-10;
   // Must match GEAR_BACKLASH_M in crates/parts/src/planetary.rs so the
   // schematic matches the atoms.
-  var GEAR_BACKLASH_M = 9.0e-10;
+  var GEAR_BACKLASH_M = 1.0e-9;
 
   function involuteFn(a) {
     return Math.tan(a) - a;
@@ -756,6 +756,19 @@
     });
   }
 
+  function planetPhaseRad(teeth) {
+    var halfPitch = Math.PI / teeth;
+    var spaceHalfPitches = Math.floor(teeth / 2 - 0.5) + 0.5;
+    return Math.PI - spaceHalfPitches * 2 * halfPitch;
+  }
+
+  function ringPhaseRad(planetTeeth, ringTeeth) {
+    if (planetTeeth % 2 === 1) {
+      return Math.PI / ringTeeth;
+    }
+    return 0;
+  }
+
   function gearOutlineWorldPoints(role, index, design) {
     var moduleM = design.module_m;
     var teeth;
@@ -766,10 +779,11 @@
     } else if (role === "planet") {
       teeth = design.planet_teeth;
       rotation =
-        (index * 2 * Math.PI) / design.planet_count + Math.PI / design.planet_teeth;
+        (index * 2 * Math.PI) / design.planet_count + planetPhaseRad(teeth);
     } else if (role === "ring") {
       teeth = design.ring_teeth;
       internal = true;
+      rotation = ringPhaseRad(design.planet_teeth, design.ring_teeth);
     } else {
       return null;
     }

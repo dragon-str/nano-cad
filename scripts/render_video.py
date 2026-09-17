@@ -416,11 +416,11 @@ def planetary_angles(t, sun_teeth=SUN_TEETH, planet_teeth=PLANET_TEETH,
     w_p = w_c + w_rel. Set w_s = -1.0 so the sun turns clockwise on screen and
     the planets turn counter-clockwise.
 
-    The planet placement phase matches `PlanetaryGenerator`: planet k sits at
-    orbit angle phi_k and its first tooth points at local angle
-    phi_k + pi / N_p. The half-tooth offset pi / N_p makes each planet present a
-    space at the mesh line, so the sun tooth enters a planet space and the
-    planet tooth enters a ring space.
+    The planet placement phase matches `PlanetaryGenerator`. The sun puts a
+    tooth on each line of centres, so each planet must answer with a space.
+    That offset is half a planet pitch for an even planet tooth count and
+    zero for an odd one. When the planet tooth count is odd the ring then
+    takes half a ring pitch of rotation.
     """
     a = t * 0.34
     w_s = -1.0
@@ -430,15 +430,25 @@ def planetary_angles(t, sun_teeth=SUN_TEETH, planet_teeth=PLANET_TEETH,
     w_c = w_s * ns / (ns + nr)
     w_rel = -(ns / npz) * (w_s - w_c)
     w_p = w_c + w_rel
-    half_tooth = math.pi / npz
+    tooth_step = 2.0 * math.pi / npz
+    space_half_pitches = math.floor(npz / 2.0 - 0.5) + 0.5
+    planet_phase = math.pi - space_half_pitches * tooth_step
     theta_sun = w_s * a
     planets = []
     for k in range(int(planet_count)):
         orbit = 2.0 * math.pi * k / planet_count
         phi = w_c * a + orbit
-        theta_p = orbit + half_tooth + w_p * a
+        theta_p = orbit + planet_phase + w_p * a
         planets.append((phi, theta_p))
     return theta_sun, planets
+
+
+def ring_phase_rad(planet_teeth) -> float:
+    """The ring takes half a pitch of rotation when the planet teeth are odd."""
+    if int(planet_teeth) % 2 == 1:
+        nr = SUN_TEETH + 2 * int(planet_teeth)
+        return math.pi / nr
+    return 0.0
 
 
 DEFAULT_DESIGN = {
@@ -472,8 +482,8 @@ def scene_gears(r, t, shot):
               outline=DIM, width=2)
     txt(d, (cx, cy + r_car + 26), "carrier", fonts()["small"], DIM, "ma")
 
-    draw_gear(d, cx, cy, scale, module_m, nr, 0.0, (44, 60, 86), AMBER,
-              internal=True, width=3)
+    draw_gear(d, cx, cy, scale, module_m, nr, ring_phase_rad(npz),
+              (44, 60, 86), AMBER, internal=True, width=3)
     for phi, theta_p in planets:
         px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
         draw_gear(d, px, py, scale, module_m, npz, theta_p,
@@ -655,8 +665,8 @@ def planetary_art(r, cx, cy, scale, t, show_joints=False, show_ratio=None):
     theta_sun, planets = planetary_angles(t)
     d.ellipse([cx - r_car - 10, cy - r_car - 10, cx + r_car + 10, cy + r_car + 10],
               outline=DIM, width=2)
-    draw_gear(d, cx, cy, scale, module_m, nr, 0.0, (44, 60, 86), AMBER,
-              internal=True, width=3)
+    draw_gear(d, cx, cy, scale, module_m, nr, ring_phase_rad(npz), (44, 60, 86),
+              AMBER, internal=True, width=3)
     for k, (phi, theta_p) in enumerate(planets):
         px, py = cx + r_car * math.cos(phi), cy + r_car * math.sin(phi)
         draw_gear(d, px, py, scale, module_m, npz, theta_p, (44, 70, 104),
@@ -715,7 +725,8 @@ def scene_generate(r, t, shot):
     s = scale * grow
     r_car = design["carrier_radius_m"] * s
     if grow > 0.05:
-        draw_gear(d, cx, cy, s, module_m, int(design["ring_teeth"]), 0.0,
+        draw_gear(d, cx, cy, s, module_m, int(design["ring_teeth"]),
+                  ring_phase_rad(int(design["planet_teeth"])),
                   (44, 60, 86), AMBER, internal=True, width=3)
         for k in range(int(design["planet_count"])):
             ang = 2 * math.pi * k / design["planet_count"]
@@ -726,8 +737,10 @@ def scene_generate(r, t, shot):
                   (58, 84, 122), ACCENT)
 
     panel(d, 130, 830, 1200, 900, PANEL, LINE)
-    for i, (lbl, val) in enumerate([("sun", "24"), ("planet", "18"),
-                                    ("ring", "60"), ("planets", "3")]):
+    for i, (lbl, val) in enumerate([("sun", str(design["sun_teeth"])),
+                                    ("planet", str(design["planet_teeth"])),
+                                    ("ring", str(design["ring_teeth"])),
+                                    ("planets", str(design["planet_count"]))]):
         x = 180 + i * 250
         txt(d, x, 852, lbl, fonts()["small"], DIM)
         txt(d, x, 872, val, fonts()["mono_b"], GREEN)

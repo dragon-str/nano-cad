@@ -63,12 +63,13 @@ pipeline. The terminal shots are drawn, not filmed. The gear scenes are
 schematic drawings of a three-dimensional gear set:
 
 - Gears are drawn with the exact full-depth involute profile. The tooth counts,
-  the module, and the pitch radii follow `docs/three-scale.md`: 24 sun teeth,
-  18 planet teeth, 60 ring teeth, module `5e-10 m`, sun pitch radius `6e-9 m`,
-  planet `4.5e-9 m`, ring `1.5e-8 m`, carrier `1.05e-8 m`. The profile comes
+  the module, and the pitch radii follow `docs/three-scale.md`: 12 sun teeth,
+  9 planet teeth, 30 ring teeth, module `1.5e-9 m`, sun pitch radius `9e-9 m`,
+  planet `6.75e-9 m`, ring `2.25e-8 m`, carrier `1.575e-8 m`. The profile comes
   from `scripts/gear_profile.py`, which is a port of
   `crates/parts/src/gear_profile.rs`. The drawing and the Rust generator use one
-  formula. The addendum is `1.0 m` and the dedendum is `1.25 m`. The ring is an
+  formula. The pressure angle is 30 degrees, the addendum coefficient is 0.8
+  and the dedendum coefficient is 1.25. The backlash is `1.0e-9 m`. The ring is an
   internal gear: its teeth point inward, and the planet tips reach into the ring
   tooth spaces. Each gear has an axial thickness of four atomic layers, so the
   set is a solid with a stated thickness, not a flat outline.
@@ -76,13 +77,16 @@ schematic drawings of a three-dimensional gear set:
   carrier rate is `w_c = w_s * 2/7`, and the planet absolute spin is
   `w_p = w_c - (N_s/N_p) * (w_s - w_c) = -(2/3) * w_s`. The sun and the planets
   therefore turn in opposite directions. The planet centers orbit the carrier at
-  `w_c`. Each planet carries a half-tooth phase offset `pi/N_p`, so a sun tooth
-  enters a planet tooth space and a planet tooth enters a ring tooth space. The
+  `w_c`. The planet mesh phase follows the tooth-count parity: it is zero when
+  the planet tooth count is odd and `pi/N_p` when it is even. The ring takes a
+  half-pitch rotation `pi/N_r` when the planet tooth count is odd. So exactly
+  one gear of the planet and ring pair takes the half-pitch offset, a sun tooth
+  enters a planet tooth space, and the ring interleaves. The
   renderer and the Rust generator share this one phase function. The ring is
   drawn static.
 - **The atomistic layer is the gears themselves as atoms.** The layer draws the
-  `PlanetaryGenerator` output: 56160 atoms (25928 carbon and 30232 hydrogen) and
-  66972 bonds from `site/scene.json` and `site/scene.bonds.json`, in four
+  `PlanetaryGenerator` output: 142091 atoms (68197 carbon and 73894 hydrogen) and
+  173341 bonds from `site/scene.json` and `site/scene.bonds.json`, in four
   centered axial layers, `2.67525e-10 m` thick. Each gear is solid
   hydrogen-capped diamond cut to the involute profile, so every carbon is
   four-bonded and every hydrogen one-bonded. The renderer maps the scene metres
@@ -160,6 +164,6 @@ generates.
   wording for the other shots.
 - The video has no background music. The storyboard lists it as an asset. The
   generated artifact uses narration only.
-- The atom layer is the gear generator output. It has 56160 atoms and 66972
+- The atom layer is the gear generator output. It has 142091 atoms and 173341
   bonds in four axial layers, so it is a solid hydrogen-capped diamond lattice,
   not a skeletal profile.

@@ -239,20 +239,24 @@ def check_mesh_phase(atoms, design, centers, failures: list[str]) -> None:
                 f"mesh {k}: the sun presents a space, not a tooth, at the mesh "
                 f"line (r {sun_radius:.6e} m, tip {sun_outer:.6e} m)"
             )
-        for radius, side in ((planet_toward_sun, "sun"),
-                             (planet_toward_ring, "ring")):
+        for radius, side in ((planet_toward_sun, "sun"),):
             if radius > planet_root + 0.25 * planet_height:
                 failures.append(
                     f"mesh {k}: the planet presents a tooth, not a space, "
                     f"toward the {side} (r {radius:.6e} m, "
                     f"root {planet_root:.6e} m)"
                 )
-        if ring_radius > ring_tip + 0.25 * (ring_root - ring_tip):
+        # At the ring mesh the planet and the ring must interleave: exactly
+        # one of them presents a tooth at the mesh line, the other a space.
+        # The parity of the planet tooth count chooses which one.
+        planet_tooth = planet_toward_ring > planet_root + 0.25 * planet_height
+        ring_tooth = ring_radius < ring_tip + 0.25 * (ring_root - ring_tip)
+        if planet_tooth == ring_tooth:
             failures.append(
-                f"mesh {k}: the ring presents a space, not a tooth, at the mesh "
-                f"line (r {ring_radius:.6e} m, tip {ring_tip:.6e} m)"
+                f"mesh {k}: the planet and the ring do not interleave "
+                f"(planet tooth {planet_tooth}, ring tooth {ring_tooth})"
             )
-    print("mesh phase: sun tooth into planet space, planet tooth into ring space")
+    print("mesh phase: sun tooth into planet space, planet and ring interleave")
 
 
 def check_kinematics(failures: list[str]) -> None:

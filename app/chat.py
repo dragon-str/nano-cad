@@ -18,9 +18,9 @@ import re
 # The generator defaults. Keep in step with `PLANETARY_PARAMETERS` in
 # `crates/parts/src/planetary.rs`.
 DEFAULT_PARAMS = {
-    "module_m": 5e-10,
-    "sun_teeth": 24.0,
-    "planet_teeth": 18.0,
+    "module_m": 1.5e-9,
+    "sun_teeth": 12.0,
+    "planet_teeth": 9.0,
     "planet_count": 3.0,
     "layers": 4.0,
 }
@@ -34,7 +34,7 @@ DIAMOND_PLANE_SPACING_M = DIAMOND_LATTICE_CONSTANT_M / 4.0
 LIMITS = {
     "module_m": (1e-10, 5e-9),
     "sun_teeth": (12.0, 200.0),
-    "planet_teeth": (18.0, 120.0),
+    "planet_teeth": (6.0, 120.0),
     "planet_count": (1.0, 12.0),
     "layers": (1.0, 64.0),
 }

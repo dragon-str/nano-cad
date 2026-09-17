@@ -7,7 +7,7 @@ This module is a line-for-line port of the 2D geometry in
 check import it, so the schematic outline and the atomic layer use one
 formula. When the Rust profile changes, change this file in the same commit.
 
-All lengths are SI metres. The pressure angle is 20 degrees.
+All lengths are SI metres. The pressure angle is 30 degrees.
 """
 
 from __future__ import annotations
@@ -15,12 +15,16 @@ from __future__ import annotations
 import json
 import math
 
-PRESSURE_ANGLE_RAD = math.radians(20.0)
+PRESSURE_ANGLE_RAD = math.radians(30.0)
 
 # Full-depth addendum and dedendum coefficients `h_a*` and `h_f*`.
 # Source: J. E. Shigley, Mechanical Engineering Design.
-ADDENDUM_COEFF = 0.5
-DEDENDUM_COEFF = 1.7
+ADDENDUM_COEFF = 0.8
+DEDENDUM_COEFF = 1.25
+
+# The flank thinning that gives the gears clearance. It must match
+# `GEAR_BACKLASH_M` in `crates/parts/src/planetary.rs`.
+BACKLASH_M = 1.0e-9
 
 
 def involute_function(alpha_rad: float) -> float:
@@ -59,7 +63,8 @@ def flank_angle_rad(radius_m: float, sign: float, module_m: float, teeth: int,
         raise ValueError(f"radius {radius_m} m is inside the base circle")
     cosine = max(-1.0, min(1.0, base_m / radius_m))
     alpha_r = math.acos(cosine)
-    half_tooth_rad = math.pi / (2.0 * teeth)
+    half_tooth_rad = (math.pi / (2.0 * teeth)
+                      - BACKLASH_M / (4.0 * pitch_radius_m(module_m, teeth)))
     return sign * (half_tooth_rad + involute_function(pressure_angle_rad)
                    - involute_function(alpha_r))
 
@@ -80,14 +85,12 @@ def outline_points(module_m: float, teeth: int, flank_samples: int = 6,
     if root_m <= 0.0:
         raise ValueError(f"root radius {root_m} m must be positive")
 
-    inv_pitch = involute_function(pressure_angle_rad)
-    tip_ratio = max(-1.0, min(1.0, base_m / outer_m))
-    tip_half_angle = half_pitch_rad + inv_pitch - involute_function(
-        math.acos(tip_ratio))
-
     flank_start_m = max(root_m, base_m)
     flank_start_angle = flank_angle_rad(flank_start_m, -1.0, module_m, teeth,
                                         pressure_angle_rad)
+
+    tip_half_angle = flank_angle_rad(outer_m, 1.0, module_m, teeth,
+                                     pressure_angle_rad)
 
     local: list[tuple[float, float]] = []
     if root_m < base_m:

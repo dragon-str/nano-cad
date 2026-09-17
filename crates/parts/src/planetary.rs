@@ -15,14 +15,14 @@ use crate::parameter::{ParameterSet, ParameterSpec};
 const ADDENDUM_COEFFICIENT: f64 = 1.0;
 
 /// The default pressure angle, 20 degrees, in radians.
-const DEFAULT_PRESSURE_ANGLE_RAD: f64 = 20.0 * PI / 180.0;
+const DEFAULT_PRESSURE_ANGLE_RAD: f64 = 30.0 * PI / 180.0;
 
 /// The flanks of two meshing gears clear each other by twice this value.
 ///
 /// The value is the nearest non-bonded diamond spacing `a / sqrt(2)` = 2.52
 /// Angstrom. Atoms on the two flanks then stay apart at least that far. The
 /// involute alone would make the flanks touch, and atoms would overlap.
-pub const GEAR_BACKLASH_M: f64 = 9.0e-10;
+pub const GEAR_BACKLASH_M: f64 = 1.0e-9;
 
 /// Reports whether the coaxial planetary constraint `N_ring = N_sun +
 /// 2 N_planet` holds.
@@ -215,7 +215,7 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "module_m",
         Some(Unit::Metre),
-        0.5e-9,
+        1.5e-9,
         0.05e-9,
         5.0e-9,
         false,
@@ -224,7 +224,7 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "sun_teeth",
         None,
-        24.0,
+        12.0,
         3.0,
         120.0,
         true,
@@ -233,7 +233,7 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "planet_teeth",
         None,
-        18.0,
+        9.0,
         3.0,
         120.0,
         true,
@@ -253,7 +253,7 @@ static PLANETARY_PARAMETERS: &[ParameterSpec] = &[
         None,
         DEFAULT_PRESSURE_ANGLE_RAD,
         10.0 * PI / 180.0,
-        25.0 * PI / 180.0,
+        35.0 * PI / 180.0,
         false,
         "pressure angle in radians",
     ),
@@ -358,6 +358,15 @@ impl PlanetaryGenerator {
         let external_ring =
             trim_closed_loop(ring_profile.outline_points(samples_per_flank, samples_per_arc)?);
         let internal_ring = reflect_to_internal(&external_ring, design.ring_pitch_radius_m());
+        // The ring must present a tooth space at each mesh line. The planet
+        // fixes that line. With an odd planet tooth count the planet phase is
+        // zero, so the ring turns by half a ring tooth. With an even planet
+        // tooth count the planet already carries the half-tooth phase.
+        let internal_ring = if design.planet_teeth() % 2 == 1 {
+            rotate_xy(&internal_ring, PI / design.ring_teeth() as f64)
+        } else {
+            internal_ring
+        };
         // The ring is the diamond between the internal outline and an outer rim.
         let ring_rim_m = design.ring_pitch_radius_m()
             + 1.5 * module_m
@@ -370,14 +379,17 @@ impl PlanetaryGenerator {
         let ring_local =
             diamond_solid::fill_profile(&internal_ring, true, Some(ring_rim_m), layers);
 
-        // A planet must present a tooth space at each mesh line. The outline
-        // puts the first tooth tip at local angle zero, so add a half-tooth
-        // phase offset. Without it the sun tooth meets a planet tooth.
-        let half_tooth_rad = PI / planet_teeth as f64;
+        // A planet must present a tooth space on the line of centres. The sun
+        // puts a tooth tip on that line, because each planet centre falls on a
+        // sun tooth line. A tooth space lies at a half-integer tooth pitch, so
+        // turn the planet to the nearest space.
+        let tooth_step_rad = 2.0 * PI / planet_teeth as f64;
+        let space_half_pitches = ((planet_teeth as f64) / 2.0 - 0.5).floor() + 0.5;
+        let planet_phase_rad = PI - space_half_pitches * tooth_step_rad;
         let planet_placements: Vec<(f64, [f64; 2])> = (0..planet_count)
             .map(|planet| {
                 (
-                    design.planet_angle_rad(planet) + half_tooth_rad,
+                    design.planet_angle_rad(planet) + planet_phase_rad,
                     design.planet_center_m(planet),
                 )
             })
@@ -487,6 +499,20 @@ fn reflect_to_internal(points_m: &[[f64; 2]], pitch_radius_m: f64) -> Vec<[f64; 
         .collect()
 }
 
+/// Rotates a 2D outline about the origin by `angle_rad`.
+fn rotate_xy(points_m: &[[f64; 2]], angle_rad: f64) -> Vec<[f64; 2]> {
+    let (sin_rot, cos_rot) = angle_rad.sin_cos();
+    points_m
+        .iter()
+        .map(|point| {
+            [
+                point[0] * cos_rot - point[1] * sin_rot,
+                point[0] * sin_rot + point[1] * cos_rot,
+            ]
+        })
+        .collect()
+}
+
 /// Places a local crystal point into the gear frame: rotate about z, then
 /// translate by the gear centre.
 fn placed_xy(point: &[f64; 3], sin_rot: f64, cos_rot: f64, center_m: [f64; 2]) -> (f64, f64) {
@@ -556,13 +582,13 @@ mod tests {
             .build(&default_parameters())
             .expect("generate");
         let design = build.design;
-        assert_eq!(design.ring_teeth(), 24 + 2 * 18);
+        assert_eq!(design.ring_teeth(), 12 + 2 * 9);
         assert!(design.constraint_holds());
         assert!(planetary_constraint_holds(24, 18, 60));
         assert!(!planetary_constraint_holds(24, 18, 61));
         assert_eq!(
             build.part.metadata.get("ring_teeth").map(String::as_str),
-            Some("60")
+            Some("30")
         );
     }
 
@@ -571,7 +597,7 @@ mod tests {
         let build = PlanetaryGenerator
             .build(&default_parameters())
             .expect("generate");
-        let expected = (24.0 + 60.0) / 24.0;
+        let expected = (12.0 + 30.0) / 12.0;
         assert!((build.design.gear_ratio() - expected).abs() < 1.0e-12);
         assert_eq!(build.design.gear_ratio(), 3.5);
     }
@@ -652,7 +678,7 @@ mod tests {
             .expect("generate");
         assert!(build.part.atom_count() > 100);
         assert!(build.part.bond_count() > 0);
-        assert_eq!(build.part.name, "planetary-s24-p18x3");
+        assert_eq!(build.part.name, "planetary-s12-p9x3");
         assert_eq!(build.part.material, "diamondoid");
         let mut seen = std::collections::BTreeSet::new();
         for bond in build.part.topology.bonds() {

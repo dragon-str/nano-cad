@@ -223,9 +223,9 @@ The URDF export has 7 links and 6 joints. Source: `TASKS.md` M7-04 and
 Source: `mcp/tests/test_agent_demo.py`.
 
 The scene export has 7 bodies, 6 joints, and 3 planets. Source: `TASKS.md`
-M8-01. The scene design states the module as `5e-10 m`, the sun pitch radius
-as `6e-9 m`, the planet pitch radius as `4.5e-9 m`, the ring pitch radius as
-`1.5e-8 m`, and the carrier radius as `1.05e-8 m`. Source:
+M8-01. The scene design states the module as `1.5e-9 m`, the sun pitch radius
+as `9e-9 m`, the planet pitch radius as `6.75e-9 m`, the ring pitch radius as
+`2.25e-8 m`, and the carrier radius as `1.575e-8 m`. Source:
 `docs/three-scale.md`.
 
 ## 6. The device constraint errors
@@ -571,11 +571,11 @@ invent them.
 | Scene bodies | 7 | `TASKS.md` M8-01 |
 | Scene joints | 6 | `TASKS.md` M8-01 |
 | Scene planets | 3 | `TASKS.md` M8-01 |
-| Scene module | 5e-10 m | `docs/three-scale.md` |
-| Sun pitch radius | 6e-9 m | `docs/three-scale.md` |
-| Planet pitch radius | 4.5e-9 m | `docs/three-scale.md` |
-| Ring pitch radius | 1.5e-8 m | `docs/three-scale.md` |
-| Carrier radius | 1.05e-8 m | `docs/three-scale.md` |
+| Scene module | 1.5e-9 m | `docs/three-scale.md` |
+| Sun pitch radius | 9e-9 m | `docs/three-scale.md` |
+| Planet pitch radius | 6.75e-9 m | `docs/three-scale.md` |
+| Ring pitch radius | 2.25e-8 m | `docs/three-scale.md` |
+| Carrier radius | 1.575e-8 m | `docs/three-scale.md` |
 | Energy mean, run 1 | 680.97 µs | `benchmarks/results/2026-09-14-engine-timings.txt` |
 | Serial mean, run 1 | 679.83 µs | `benchmarks/results/2026-09-14-engine-timings.txt` |
 | Parallel mean, run 1 | 370.97 µs | `benchmarks/results/2026-09-14-engine-timings.txt` |

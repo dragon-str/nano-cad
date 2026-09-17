@@ -54,7 +54,7 @@ sh scripts/reproduce.sh</code></pre>
 <p><strong>Command on screen.</strong></p>
 <pre><code class="language-json">{&quot;jsonrpc&quot;:&quot;2.0&quot;,&quot;id&quot;:2,&quot;method&quot;:&quot;tools/call&quot;,&quot;params&quot;:{&quot;name&quot;:&quot;generate_gear&quot;,&quot;arguments&quot;:{&quot;name&quot;:&quot;planetary&quot;,&quot;specs&quot;:{&quot;planet_count&quot;:3}}}}</code></pre>
 <p><strong>Narration.</strong> "The agent calls typed tools. It never edits coordinates. It asks for a planetary set with three planets. The generator returns the atoms and the bonds."</p>
-<p><strong>On-screen text.</strong> <code>sun 24</code>, <code>planet 18</code>, <code>ring 60</code>, <code>planets 3</code>.</p>
+<p><strong>On-screen text.</strong> <code>sun 12</code>, <code>planet 9</code>, <code>ring 30</code>, <code>planets 3</code>.</p>
 <p><strong>Source.</strong> <code>TASKS.md</code> M4-06, <code>docs/three-scale.md</code>, and <code>mcp/README.md</code>.</p>
 <h3>Shot 6 — The agent assembles the L2 device (52 to 62 s)</h3>
 <p><strong>Visual.</strong> The JSON-RPC request, then the device view. Seven bodies and six joints appear. Revolute joints are marked with axis arrows.</p>
@@ -99,7 +99,7 @@ sh scripts/reproduce.sh</code></pre>
 <p>The handle names are <code>part-1</code>, <code>document-1</code>, and <code>assembly-1</code>. Source: <code>mcp/README.md</code>.</p>
 <h2>Assets needed</h2>
 <h3>Rendered assets</h3>
-<ul><li>A three-scale scene JSON file from <code>build_scene</code>. The default design has 7 bodies, 6 joints, and 3 planets. Source: <code>TASKS.md</code> M8-01.</li><li>A rendered orbit of the device layer, 8 seconds, 16:9.</li><li>A rendered cross-fade from the atomistic layer to the coarse layer, 4 seconds.</li><li>A rendered planetary set with 24 sun teeth, 18 planet teeth, and 60 ring teeth. Source: <code>docs/three-scale.md</code>.</li><li>A rendered running device with a live ratio readout.</li><li>A URDF tree graphic with 7 links and 6 joints. Source: <code>TASKS.md</code> M7-04.</li><li>A bar chart of the three benchmark means. Source: <code>benchmarks/results/2026-09-14-engine-timings.txt</code>.</li></ul>
+<ul><li>A three-scale scene JSON file from <code>build_scene</code>. The default design has 7 bodies, 6 joints, and 3 planets. Source: <code>TASKS.md</code> M8-01.</li><li>A rendered orbit of the device layer, 8 seconds, 16:9.</li><li>A rendered cross-fade from the atomistic layer to the coarse layer, 4 seconds.</li><li>A rendered planetary set with 12 sun teeth, 9 planet teeth, and 30 ring teeth. Source: <code>docs/three-scale.md</code>.</li><li>A rendered running device with a live ratio readout.</li><li>A URDF tree graphic with 7 links and 6 joints. Source: <code>TASKS.md</code> M7-04.</li><li>A bar chart of the three benchmark means. Source: <code>benchmarks/results/2026-09-14-engine-timings.txt</code>.</li></ul>
 <h3>Screen recordings</h3>
 <ul><li>A clean terminal session for shot 3.</li><li>A terminal session of <code>cargo test --workspace</code> for shot 4.</li><li>A terminal session of <code>cargo bench -p nanocad-engine</code> for shot 9.</li><li>A terminal session that sends the JSON-RPC messages, or a screen-capture of an MCP client.</li></ul>
 <h3>Text and graphics</h3>

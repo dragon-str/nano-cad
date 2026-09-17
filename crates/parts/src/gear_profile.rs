@@ -10,12 +10,12 @@ use crate::parameter::{ParameterSet, ParameterSpec};
 /// The full-depth addendum coefficient `h_a*`. The addendum is `h_a* m`.
 ///
 /// Source: ISO 21771 / AGMA 908-B89 standard full-depth tooth form.
-const ADDENDUM_COEFFICIENT: f64 = 0.5;
+const ADDENDUM_COEFFICIENT: f64 = 0.8;
 
 /// The full-depth dedendum coefficient `h_f*`. The dedendum is `h_f* m`.
 ///
 /// Source: ISO 21771 standard full-depth tooth form.
-const DEDENDUM_COEFFICIENT: f64 = 1.7;
+const DEDENDUM_COEFFICIENT: f64 = 1.25;
 
 /// The undercut factor. The minimum tooth count without undercut is
 /// `2 h_a* / sin^2(alpha)`.
