@@ -1109,6 +1109,7 @@
     scene = data;
     if (scene.design && scene.design.layers !== undefined) {
       currentParams = paramsFromDesign(scene.design);
+      commitParams(currentParams);
       syncParamInputs();
     }
     message.textContent = "";
@@ -1470,6 +1471,8 @@
   var paramsEl = document.getElementById("params");
   var scoreEl = document.getElementById("scorecard");
   var paramReset = document.getElementById("param-reset");
+  var paramUndo = document.getElementById("param-undo");
+  var paramRedo = document.getElementById("param-redo");
   var optimizeRun = document.getElementById("optimize-run");
   var optimizeResult = document.getElementById("optimize-result");
   var chatLog = document.getElementById("chat-log");
@@ -1480,6 +1483,71 @@
   var live = false;
   var currentParams = null;
   var busy = false;
+  var paramHistory = [];
+  var paramCursor = -1;
+  var PARAM_HISTORY_LIMIT = 64;
+
+  function paramSignature(params) {
+    if (!params) {
+      return "";
+    }
+    return Object.keys(params)
+      .sort()
+      .map(function (key) {
+        return key + "=" + params[key];
+      })
+      .join(",");
+  }
+
+  function paramCopy(params) {
+    return JSON.parse(JSON.stringify(params));
+  }
+
+  function updateHistoryButtons() {
+    if (paramUndo) {
+      paramUndo.disabled = !(paramCursor > 0);
+    }
+    if (paramRedo) {
+      paramRedo.disabled = !(paramCursor >= 0 && paramCursor + 1 < paramHistory.length);
+    }
+  }
+
+  function commitParams(params) {
+    if (!params) {
+      return;
+    }
+    var signature = paramSignature(params);
+    if (paramCursor >= 0 && paramSignature(paramHistory[paramCursor]) === signature) {
+      return;
+    }
+    paramHistory = paramHistory.slice(0, paramCursor + 1);
+    paramHistory.push(paramCopy(params));
+    if (paramHistory.length > PARAM_HISTORY_LIMIT) {
+      paramHistory.shift();
+    }
+    paramCursor = paramHistory.length - 1;
+    updateHistoryButtons();
+  }
+
+  function undoParams() {
+    if (paramCursor <= 0) {
+      return false;
+    }
+    paramCursor -= 1;
+    requestBuild(paramCopy(paramHistory[paramCursor]));
+    updateHistoryButtons();
+    return true;
+  }
+
+  function redoParams() {
+    if (paramCursor < 0 || paramCursor + 1 >= paramHistory.length) {
+      return false;
+    }
+    paramCursor += 1;
+    requestBuild(paramCopy(paramHistory[paramCursor]));
+    updateHistoryButtons();
+    return true;
+  }
 
   function paramsFromDesign(design) {
     return {
@@ -1819,6 +1887,17 @@
         requestBuild(meta.defaults);
       }
     });
+    if (paramUndo) {
+      paramUndo.addEventListener("click", function () {
+        undoParams();
+      });
+    }
+    if (paramRedo) {
+      paramRedo.addEventListener("click", function () {
+        redoParams();
+      });
+    }
+    updateHistoryButtons();
     fetch("api/meta")
       .then(function (response) {
         return response.json();
@@ -1832,6 +1911,7 @@
         buildParamInputs();
         if (!currentParams && scene) {
           currentParams = paramsFromDesign(scene.design);
+          commitParams(currentParams);
         }
         syncParamInputs();
         requestScore(currentParams);
@@ -1854,6 +1934,21 @@
     },
     optimizeResult: function () {
       return optimizeResult;
+    },
+    params: function () {
+      return currentParams ? paramCopy(currentParams) : null;
+    },
+    historyDepth: function () {
+      return paramHistory.length;
+    },
+    historyCursor: function () {
+      return paramCursor;
+    },
+    undoParams: function () {
+      return undoParams();
+    },
+    redoParams: function () {
+      return redoParams();
     },
     stats: function () {
       return renderer && renderer.stats ? renderer.stats() : null;

@@ -142,6 +142,12 @@ each value to a stated limit. It returns the new state and says why. A command
 it does not understand changes nothing and returns help. `app/chat.py` holds
 the parser; `app/tests/test_chat_parser.py` tests it.
 
+The panel has **Undo** and **Redo** buttons. Each rebuild stores a snapshot of
+the parameters. The buttons are dark when the history has no step in that
+direction. The history holds at most 64 snapshots. A new change after an undo
+drops the redo tail. The Rust model is `crates/jigs/src/design.rs`; the app
+keeps the same rule in `site/viewer.js`.
+
 The panel also has an **Optimize** section. The **Search the tooth geometry**
 button runs a CMA-ES search over the sun teeth, the planet teeth and the
 planet count. The search scores each candidate with the slip barrier and a

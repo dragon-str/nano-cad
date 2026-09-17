@@ -927,5 +927,25 @@ defect. Every later part generator uses them.
     `a_placed_part_moves_to_the_socket` and
     `an_assembly_holds_every_placed_part`. 8 new tests. `just verify` -> all
     gates passed; 581 Rust tests. See ADR-0059.
-- [ ] **M12-03** Store a design document with the parameters, the parts
+- [x] **M12-03** Store a design document with the parameters, the parts
   and the measurements, and add multi-level undo and redo.
+  - Result: `crates/jigs/src/design.rs` adds the design document. A
+    `DesignSnapshot` holds named parameters, part records and measurements as
+    plain data. `DesignDocument` holds a bounded history of snapshots and a
+    cursor, so undo and redo walk one array. `MAX_HISTORY` is 64. A commit
+    equal to the current snapshot is refused, and a new commit drops the redo
+    tail. `Measurement::from_metric` reads a `MetricValue`, and
+    `PartRecord::from_schema` reads a part schema. The file gains no generator
+    dependency, so a document loads without the parts crate.
+  - Result: the app panel has **Undo** and **Redo** buttons next to Reset.
+    Each build commits a parameter snapshot. `site/viewer.js` keeps the same
+    rule as the Rust model.
+  - Verification: `cargo test -p nanocad-jigs` -> 96 passed, including the 10
+    new tests `a_new_document_has_one_snapshot`,
+    `an_identical_commit_is_refused`, `undo_and_redo_walk_the_history`,
+    `a_new_commit_drops_the_redo_tail` and `the_history_is_bounded`.
+    `cargo run -p nanocad-jigs --example design_json` ->
+    `appended=true refused=false undone=true redone=true depth=2 cursor=1`.
+    The headless browser changes the module to 2.5e-9 m, undoes to 1.5e-9 m
+    and redoes to 2.5e-9 m, with no page error. `just verify` -> all gates
+    passed; 591 Rust tests. See ADR-0060.

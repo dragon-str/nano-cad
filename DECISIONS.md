@@ -1003,3 +1003,32 @@ parts into one document.
 
 The frame is planar, because the port model is planar. A placement with a
 three-dimensional rotation needs a full transform, and that is future work.
+
+## ADR-0060
+
+### The design document is a plain-data snapshot history
+
+Status: accepted.
+
+A design has parameters, parts and measurements. The user needs to walk the
+history back and forward. The parts crate holds the generators, and a saved
+document must load without them.
+
+`crates/jigs/src/design.rs` holds the document. A `DesignSnapshot` carries
+named parameters, part records and measurements. Every field is plain data, so
+serde reads and writes a document with no generator present. `PartRecord`
+reads a part schema, and `Measurement` reads a metric value, but neither value
+holds a live part.
+
+`DesignDocument` holds one array of snapshots and one cursor. Undo and redo
+move the cursor, so the two operations share one code path. `MAX_HISTORY` is
+64. A commit equal to the current snapshot changes nothing and returns false.
+A new commit drops every snapshot after the cursor, because the redo tail is
+no longer reachable.
+
+The app keeps the same rule in `site/viewer.js`, with the same limit. Each
+build commits a parameter snapshot, and the Undo and Redo buttons move the
+cursor and rebuild the scene.
+
+The document holds parameters, parts and measurements. It does not hold a
+motion, a force field, or a camera. Those belong to a later document version.

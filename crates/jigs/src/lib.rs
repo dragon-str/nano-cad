@@ -16,6 +16,7 @@
 
 mod anchor;
 mod assembly;
+mod design;
 mod device;
 mod error;
 mod jig;
@@ -31,6 +32,9 @@ pub use assembly::{
     assemble_from_records, assemble_planetary, planetary_records, AssemblyError, BodyRole,
     PlanetaryAssembly, ASSEMBLY_RECORD_VERSION, CARRIER_PART_ID, PLANET_PART_ID_PREFIX,
     RING_PART_ID, SUN_PART_ID,
+};
+pub use design::{
+    DesignDocument, DesignSnapshot, Measurement, NamedValue, PartRecord, MAX_HISTORY,
 };
 pub use device::{
     ConstraintOptions, DeviceError, FixedJoint, GearConstraint, GearCoupling, GearTerm,

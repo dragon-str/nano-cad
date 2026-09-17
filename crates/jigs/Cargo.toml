@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+nanocad-meter.workspace = true
 nanocad-model.workspace = true
 nanocad-params.workspace = true
 nanocad-parts.workspace = true
