@@ -10,12 +10,14 @@ pub mod bonded;
 pub mod clearance;
 pub mod geometry;
 pub mod harmonic;
+pub mod loaded;
 pub mod relaxed;
 pub mod slip;
 
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
 pub use geometry::{atom_count, contact_ratio};
 pub use harmonic::{HarmonicMesh, HarmonicReport, HarmonicTarget};
+pub use loaded::{LoadedContact, LoadedContactReport, LoadedContactTarget};
 pub use relaxed::{RelaxedSlipBarrier, RelaxedSlipBarrierReport, RelaxedSlipBarrierTarget};
 pub use slip::{SlipBarrier, SlipBarrierReport, SlipBarrierTarget};
 
@@ -96,5 +98,11 @@ pub fn score_planetary(set: &PlanetarySet, sun_rad_per_s: f64) -> Result<Score, 
             .to_metric_value(&relaxed.target),
     );
     score.push(HarmonicMesh::default().measure(set).to_metric_value());
+    let contact = LoadedContact::default();
+    score.push(
+        contact
+            .measure(&moving, set.design.sun_teeth())
+            .to_metric_value(),
+    );
     Ok(score)
 }

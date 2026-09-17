@@ -835,9 +835,23 @@ defect. Every later part generator uses them.
     torsions over that cut-out add about -8e-6 N/m of curvature, which
     overlaps the genuine soft-mode band. A whole part is the correct host;
     see task M11-04.
-- [ ] **M11-02** Add a loaded-contact friction metric. The slip barrier
+- [x] **M11-02** Add a loaded-contact friction metric. The slip barrier
   has no normal load. Press two surfaces together, slide them, and report
   the friction force and the wear.
+  - Result: New metric `contact_friction` in `crates/meter/src/loaded.rs`. A
+    bisection finds the press offset that makes the normal force equal the
+    stated load, then the sweep slides the pair through one sun tooth pitch.
+    The lateral force is the energy fall over the arc length. The report holds
+    the mean force, the peak force, the coefficient, the wear pair count, the
+    contact pair count and the pressed separation. The coherence count comes
+    from the same potential terms as the slip barrier. The bodies are rigid, so
+    the value is a screening estimate.
+  - Verification: `cargo test -p nanocad-meter` -> 26 passed, including
+    `a_pressed_pair_has_friction` and
+    `a_heavier_load_presses_the_bodies_together`. The default set reports a
+    mean friction force of 1.6766e-10 N at a 1.0e-11 N load, 10 wear pairs and
+    a pressed separation of about 3e-10 m. The app scorecard shows seven
+    metrics. `just verify` -> all gates passed; 553 Rust tests. See ADR-0055.
 - [ ] **M11-03** Add a steered joint drive with a torque report. Hold one
   port and drive another at a stated rate. Report the torque, the energy
   loss, and the temperature rise.

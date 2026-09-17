@@ -862,3 +862,29 @@ that work.
 The result is a simulated estimate of a model potential. The amplitudes are
 representative values, not fitted parameters, and they are not validated
 against an experiment.
+
+## ADR-0055
+
+### A loaded contact reports the friction force as a screening estimate
+
+Status: accepted.
+
+The slip barrier gives no normal load. A real tooth pair carries a load, so the
+tangential force under that load is the useful number.
+
+The metric is `contact_friction` in `crates/meter/src/loaded.rs`. It presses the
+sun and the first planet together along the contact normal. A bisection finds
+the offset that makes the normal force equal the stated load. It then slides the
+pair through one sun tooth pitch. The lateral force is the fall of the
+interaction energy over the arc length. The mean of the absolute value is the
+friction force, and the peak is the static value. The wear count is the number
+of unique sun-planet pairs that come within the wear distance at any sample.
+
+The bodies are rigid, so the model has no elastic contact area and no plastic
+flow. The normal load is a small model value, so the friction coefficient can
+exceed one. That is a property of the model, not of a real material. The metric
+is a screening estimate. It compares designs and it does not certify a friction
+coefficient.
+
+The default set gives a mean friction force of 1.677e-10 N at a 1.0e-11 N load
+over a 60-step sweep. Ten pairs come within 3.0e-10 m during the slide.
