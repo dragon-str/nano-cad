@@ -6,6 +6,7 @@
 //! fidelity field.
 #![forbid(unsafe_code)]
 
+pub mod bonded;
 pub mod clearance;
 pub mod geometry;
 pub mod harmonic;

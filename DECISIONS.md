@@ -819,3 +819,46 @@ candidate builds a full gear set and runs the slip sweep. The app route
 `/api/optimize` caps the population at 16 and the generations at 12. The
 search is a local improvement, not a global optimum. The result is a
 simulated estimate, and it is not a validated design.
+
+## ADR-0054
+
+### The bonded terms are built as reusable helpers, but the mesh Hessian keeps its cut-out limit
+
+Status: accepted.
+
+The meter potential needs every bonded term that the engine can provide. The
+engine already has a torsion term and an out-of-plane term. The meter built
+bonds and van der Waals only. The new module `crates/meter/src/bonded.rs` adds
+both missing terms as reusable builders.
+
+The torsion builder takes the neighbour list of every atom. For each central
+bond `j->k` it pairs every `i` on `j` with every `l` on `k`, and adds one
+torsion for each path. The amplitude is `V3` only, with
+`TORSION_V3_J = 2.0e-20` J, which is about 12 kJ per mole. The diamond lattice
+is staggered, so this term sits at its minimum in the ideal crystal. A test
+confirms that the generated geometry has a torsion energy of exactly zero.
+
+The out-of-plane builder adds an improper term at a three-coordinate centre.
+The amplitude is `IMPROPER_K_J_PER_RAD2 = 2.0e-18` J per radian squared. The
+builder reads the current positions and adds the term only when the measured
+out-of-plane angle is within `TRIGONAL_TOLERANCE_RAD = 0.5` rad. A tetrahedral
+centre sits at about 0.616 rad, so the gate keeps it out. The gate exists
+because a cut-out cluster leaves boundary carbons with three neighbours. Their
+geometry is still tetrahedral. Forcing them planar made the minimizer fail with
+`LineSearchFailed`.
+
+**The two terms are not wired into the `mesh_mode` Hessian.** The investigation
+found the reason. The engine torsion gradient is correct: a test relaxes a
+small torsion system to a stationary point and then finds no unstable mode. But
+the `mesh_mode` cluster is a cut-out of a larger gear. Its 536 torsions add
+about `-8e-6` N/m of negative curvature. That value overlaps the genuine soft
+mode band, because a 1e9 Hz mode is `4e19` per second squared and a 1e10 Hz
+mode is `3.9e21`. No threshold separates the artifact from a real soft mode.
+With the torsion on, the softest mode fell from `1.184e13` Hz with 0 unstable
+modes to `1.094e9` Hz with 21 unstable modes. The Hessian of a whole part has no
+cut-out boundary, so it is the correct host for these terms. Task M11-04 does
+that work.
+
+The result is a simulated estimate of a model potential. The amplitudes are
+representative values, not fitted parameters, and they are not validated
+against an experiment.

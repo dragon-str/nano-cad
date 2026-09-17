@@ -814,9 +814,27 @@ defect. Every later part generator uses them.
 
 ## M11 — Loaded contact and driven motion
 
-- [ ] **M11-01** Build the full bonded terms in the meter potentials. The
+- [x] **M11-01** Build the full bonded terms in the meter potentials. The
   engine has torsion and out-of-plane terms. The meter builds bonds and
   van der Waals only. Add the missing terms with real parameters.
+  - Result: New module `crates/meter/src/bonded.rs` adds `add_torsions`
+    (every three-bond dihedral path, with `TORSION_V3_J = 2.0e-20` about
+    12 kJ per mole) and `add_impropers` (an out-of-plane term with
+    `IMPROPER_K_J_PER_RAD2 = 2.0e-18`). The improper is added only at a
+    three-coordinate centre whose measured out-of-plane angle is within
+    `TRIGONAL_TOLERANCE_RAD = 0.5`, so a tetrahedral centre stays out.
+  - Verification: `cargo test -p nanocad-meter` -> 21 passed, including the
+    relaxation test `a_relaxed_torsion_has_no_negative_curvature`, which
+    relaxes a small torsion system and finds 0 unstable modes, so the
+    engine torsion energy and its analytic gradient agree. `cargo test
+    --workspace` -> 548 passed. `just verify` -> all gates passed. See
+    ADR-0054.
+  - Limit: the terms are built and tested, but they are not wired into the
+    `mesh_mode` Hessian yet. The `mesh_mode` cluster is a cut-out of a
+    larger gear, so its boundary carbons have fewer neighbours. The 536
+    torsions over that cut-out add about -8e-6 N/m of curvature, which
+    overlaps the genuine soft-mode band. A whole part is the correct host;
+    see task M11-04.
 - [ ] **M11-02** Add a loaded-contact friction metric. The slip barrier
   has no normal load. Press two surfaces together, slide them, and report
   the friction force and the wear.
