@@ -345,6 +345,7 @@ dependencies = [
 name = "nanocad-meter"
 version = "0.1.0"
 dependencies = [
+ "nanocad-engine",
  "nanocad-model",
  "nanocad-parts",
 ]

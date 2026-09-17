@@ -107,4 +107,8 @@ pub enum EngineError {
     InvalidInitialStep { step_m: f64 },
     #[error("the line search did not find a lower point at iteration {iteration}")]
     LineSearchFailed { iteration: usize },
+    #[error("the finite-difference step must be a positive, finite length, got {step_m} m")]
+    NonPositiveDifferenceStep { step_m: f64 },
+    #[error("the spectrum is empty; at least one atom is required")]
+    EmptySpectrum,
 }

@@ -11,6 +11,7 @@ mod bond_stretch;
 mod electrostatic;
 mod error;
 mod geometry;
+mod hessian;
 mod integrator;
 mod langevin;
 mod minimize;
@@ -32,6 +33,10 @@ pub use berendsen::BerendsenThermostat;
 pub use bond_stretch::{BondInfo, BondStretchParams, BondStretchTerm};
 pub use electrostatic::{ElectrostaticTerm, COULOMB_CONSTANT_N_M2_PER_C2};
 pub use error::EngineError;
+pub use hessian::{
+    hessian_finite_difference, mass_weighted, spectrum, symmetric_eigenvalues, Spectrum,
+    UNSTABLE_TOLERANCE_PER_S2,
+};
 pub use integrator::VelocityVerlet;
 pub use langevin::LangevinThermostat;
 pub use minimize::{minimize, minimize_with, MinimizeMethod, MinimizeOptions, MinimizeResult};

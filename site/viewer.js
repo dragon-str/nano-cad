@@ -1549,7 +1549,11 @@
     if (metric.unit === "J") {
       return Number(metric.value).toExponential(2) + " J";
     }
-    return Number(metric.value).toFixed(3);
+    var magnitude = Math.abs(metric.value);
+    if (metric.unit && (magnitude >= 1e5 || (magnitude > 0 && magnitude < 1e-3))) {
+      return Number(metric.value).toExponential(2) + " " + metric.unit;
+    }
+    return Number(metric.value).toFixed(3) + (metric.unit ? " " + metric.unit : "");
   }
 
   function renderScore(metrics) {

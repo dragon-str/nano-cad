@@ -671,3 +671,18 @@ Phase 6. All result notes cite the test that measures the number.
     13.9 kT at 300 K. 12 unit tests pass. The scorecard shows 5 rows in
     the browser. `just verify` -> all gates passed; 483 Rust tests. See
     ADR-0051.
+
+- [x] **M9-20** Add the harmonic analyze stage with the mesh normal modes.
+  - Result: `crates/engine/src/hessian.rs` adds a central-difference
+    Hessian, a Jacobi symmetric eigensolver, a mass weighting and a
+    `Spectrum`. `crates/meter/src/harmonic.rs` adds the `mesh_mode`
+    metric at `Fidelity::Harmonic`. It cuts a cluster of up to 180 atoms
+    from the sun and the first planet around their closest approach,
+    builds a `System` with a 300 N/m bond stretch on the real bonds and a
+    Buckingham van der Waals term, relaxes the cluster, and reports the
+    softest internal mode. The scorecard now shows six metrics.
+  - Verification: `cargo run -p nanocad-meter --example score_json` ->
+    mesh mode 1.184e13 Hz (395.1 per cm) over 148 atoms and 157 bonds,
+    with 0 unstable modes. `cargo test -p nanocad-engine` -> 112 pass;
+    `cargo test -p nanocad-meter` -> 15 pass. `just verify` -> all gates
+    passed; 489 Rust tests. See ADR-0052.

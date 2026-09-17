@@ -742,3 +742,41 @@ bound and the two metrics agree on the verdict. The relaxed metric is a
 check on the rigid one, not a replacement. A true relaxed value needs the
 real bond topology and a full minimization. It can use the engine
 `System` and `minimize` later.
+
+## ADR-0052: A finite-difference Hessian gives the mesh normal modes
+
+Status: accepted.
+
+Context. The scorecard has geometric and quasi-static metrics. The next
+fidelity rung is `Harmonic`. No Hessian code existed in the workspace.
+
+Decision. The `nanocad-engine` crate gets a `hessian` module. The Hessian
+is a central finite difference of the analytic gradient, and a Jacobi
+rotation sweep gives the symmetric eigenvalues. The finite-difference
+step must be much smaller than a bond: 1e-8 m crosses the bond minimum
+and gives a 1.5 percent error, so the tests use 1e-12 m and the meter
+uses 1e-13 m.
+
+The `nanocad-meter` crate gets a `mesh_mode` metric with `Fidelity::Harmonic`.
+It cuts a cluster of up to 180 atoms from the sun and the first planet
+around their closest approach, builds a `System` with a 300 N/m bond
+stretch on the real bonds and a Buckingham van der Waals term, relaxes
+the cluster, and reports the softest internal mode.
+
+The exclusion rules carry the physics. A bonded carbon pair sits at
+1.54e-10 m, far below the van der Waals minimum, so the term repels it;
+without exclusions the relaxation fails. The long-range van der Waals
+tail has negative curvature and makes the cluster unstable, so the
+contact shell is limited to 3.5e-10 m. Above that radius the tail is
+excluded. With both rules the cluster has zero unstable modes.
+
+Consequences. On the default set the softest mesh mode is 1.184e13 Hz
+(395.1 per cm) over 148 atoms and 157 bonds, with zero unstable modes.
+The mode is far above the thermal frequency, so the mesh is stiff. This
+agrees with the slip-barrier verdict.
+
+The cost is one relaxation and one 444x444 Hessian per score, about nine
+seconds in release, in line with the other metrics. The cluster is a
+local model, not the whole gear, so the value is a local mode. Six rigid
+modes are always zero, and a cluster atom with no bond and no contact
+adds three more, so the report skips every frequency below 1e9 Hz.
