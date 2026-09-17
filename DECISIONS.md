@@ -780,3 +780,42 @@ seconds in release, in line with the other metrics. The cluster is a
 local model, not the whole gear, so the value is a local mode. Six rigid
 modes are always zero, and a cluster atom with no bond and no contact
 adds three more, so the report skips every frequency below 1e9 Hz.
+
+## ADR-0053
+
+### A CMA-ES search over the tooth counts lowers the slip barrier
+
+Status: accepted.
+
+The design loop needs a search stage. The score already measures a design,
+so the search only needs to propose designs and read the score. We add a
+new crate, `nanocad-opt`, with a self-contained covariance matrix
+adaptation evolution strategy (CMA-ES).
+
+The strategy is deterministic. The workspace has no random crate, and a
+reproducible run matters more than a fast one here. A SplitMix64 generator
+seeds the Box-Muller normal draws from a stated seed, so one seed gives one
+result. The population is `max(4, population)`, and the search stops early
+when it finds no better design for eight generations.
+
+The objective is the slip barrier in units of the thermal energy. An
+infeasible design has no gradient, so the objective adds a penalty for the
+clearance shortfall, scaled by 100 kT for every 1.0e-10 m. Without the
+penalty 18 of 24 candidates were rejected and the search had no signal.
+
+The search covers three integer parameters: the sun teeth (9 to 16), the
+planet teeth (7 to 12) and the planet count (2 to 4). The module and the
+layer count stay at their defaults, so the designs compare at one size.
+
+Consequences. On the default set the search starts at 13.84 kT (12 sun
+teeth, 9 planet teeth, 3 planets) and reaches 8.92 kT (12 sun teeth, 10
+planet teeth, 4 planets) in 80 evaluations. The barrier falls by 36
+percent. The clearance of the best design is 2.8865e-10 m, which passes
+the 2.52e-10 m target. The best design has 178073 atoms, so it is larger
+than the default.
+
+The cost is about two seconds for each evaluation in release, because each
+candidate builds a full gear set and runs the slip sweep. The app route
+`/api/optimize` caps the population at 16 and the generations at 12. The
+search is a local improvement, not a global optimum. The result is a
+simulated estimate, and it is not a validated design.

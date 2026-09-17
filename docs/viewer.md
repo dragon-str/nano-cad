@@ -142,6 +142,14 @@ each value to a stated limit. It returns the new state and says why. A command
 it does not understand changes nothing and returns help. `app/chat.py` holds
 the parser; `app/tests/test_chat_parser.py` tests it.
 
+The panel also has an **Optimize** section. The **Search the tooth geometry**
+button runs a CMA-ES search over the sun teeth, the planet teeth and the
+planet count. The search scores each candidate with the slip barrier and a
+clearance penalty, and it takes about a minute. The result shows the best
+design, its barrier next to the starting barrier, and the evaluation count.
+An apply button writes the best design into the parameters and rebuilds the
+scene.
+
 The server binds to `127.0.0.1` only. It serves these routes:
 
 | Route | Purpose |
@@ -149,6 +157,8 @@ The server binds to `127.0.0.1` only. It serves these routes:
 | `GET /api/meta` | The parameters, their display units, and their limits. |
 | `GET /api/build?<params>` | Build a scene with the given parameters. |
 | `POST /api/chat` | Parse a message, apply the change, and build. |
+| `GET /api/score` | Score the last generated scene with every metric. |
+| `GET /api/optimize?<budget>` | Search the tooth counts and return the best design. |
 | `GET /api/scene` | The last generated `site/scene.json`. |
 
 When the engine rejects a value, for example a planet with too few teeth for

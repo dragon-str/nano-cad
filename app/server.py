@@ -125,6 +125,21 @@ def score_scene(params: dict) -> dict:
     return score
 
 
+def optimize_scene(args: list) -> dict:
+    """Run the CMA-ES parameter search and return its result."""
+    result = _run_example("nanocad-opt", "optimize_planetary", args)
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the search failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the search printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the search output was not JSON: {error}") from None
+
+
 def _params_from_query(query: str) -> dict:
     params = {}
     for key, values in urllib.parse.parse_qs(query).items():
@@ -203,6 +218,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(error)})
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the generator timed out"})
+            return
+        if route == "/api/optimize":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                args = []
+                for key, limit in (
+                    ("population", 16),
+                    ("generations", 12),
+                    ("steps", 240),
+                    ("seed", 1000000),
+                ):
+                    values = query.get(key)
+                    if values and values[0]:
+                        args.append(f"{key}={min(int(values[0]), limit)}")
+                self._send_json(200, optimize_scene(args))
+            except ValueError:
+                self._send_json(400, {"error": "the search budget must be a number"})
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the search timed out"})
             return
         if route == "/api/score":
             try:

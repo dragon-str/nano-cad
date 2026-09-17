@@ -358,6 +358,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nanocad-opt"
+version = "0.1.0"
+dependencies = [
+ "nanocad-meter",
+ "nanocad-parts",
+]
+
+[[package]]
 name = "nanocad-params"
 version = "0.1.0"
 dependencies = [

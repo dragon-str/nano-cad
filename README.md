@@ -3,9 +3,9 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **489 Rust tests plus
+Status: **pre-alpha.** The core is built end to end and **496 Rust tests plus
 93 Python and app tests and 11 JavaScript tests pass** (14 Python tests skip
-without their optional dependency). The 9-crate workspace has: units, the model and
+without their optional dependency). The 10-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,
 van der Waals, electrostatic, periodic minimum image, velocity Verlet,
 conjugate gradient with an L-BFGS stage, a deterministic parallel reduction and
@@ -30,7 +30,8 @@ viewer with zoom level of detail, a generated documentation site, and an
 interactive app with a live parameter panel and a chat interface live in
 `site/` and `app/`. The app scores the default set with atom count, contact
 ratio, clearance, a quasi-static slip barrier and its relaxed form, and a
-harmonic mesh mode, and each metric carries a fidelity badge. See `docs/benchmarks.md`, `docs/validation.md`,
+harmonic mesh mode, and each metric carries a fidelity badge. An optimize
+stage searches the tooth counts with CMA-ES to lower the slip barrier. See `docs/benchmarks.md`, `docs/validation.md`,
 `docs/viewer.md` and `docs/report.md`.
 
 ## Doctrine

@@ -9,6 +9,7 @@ members = [
     "crates/parts",
     "crates/params",
     "crates/meter",
+    "crates/opt",
     "crates/python",
     "crates/cli",
 ]
@@ -30,6 +31,7 @@ nanocad-jigs = { path = "crates/jigs" }
 nanocad-parts = { path = "crates/parts" }
 nanocad-params = { path = "crates/params" }
 nanocad-meter = { path = "crates/meter" }
+nanocad-opt = { path = "crates/opt" }
 thiserror = "2"
 criterion = "0.5"
 

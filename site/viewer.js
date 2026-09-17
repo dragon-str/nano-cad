@@ -1470,6 +1470,8 @@
   var paramsEl = document.getElementById("params");
   var scoreEl = document.getElementById("scorecard");
   var paramReset = document.getElementById("param-reset");
+  var optimizeRun = document.getElementById("optimize-run");
+  var optimizeResult = document.getElementById("optimize-result");
   var chatLog = document.getElementById("chat-log");
   var chatForm = document.getElementById("chat-form");
   var chatInput = document.getElementById("chat-input");
@@ -1500,7 +1502,88 @@
       syncParamInputs();
       draw();
       setMessage("");
+      if (live) {
+        requestScore(currentParams);
+      }
     }
+  }
+
+  var OPTIMIZE_DEFAULT = { population: 8, generations: 6, steps: 60 };
+
+  function runOptimize(options) {
+    var budget = options || OPTIMIZE_DEFAULT;
+    if (!live) {
+      optimizeResult.textContent = "Start python3 app/server.py to search.";
+      return;
+    }
+    if (busy) {
+      return;
+    }
+    busy = true;
+    optimizeRun.disabled = true;
+    optimizeResult.textContent = "Searching the tooth geometry ...";
+    fetch(
+      "api/optimize?population=" + budget.population +
+        "&generations=" + budget.generations +
+        "&steps=" + budget.steps
+    )
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload.error) {
+          optimizeResult.textContent = "error: " + payload.error;
+          return;
+        }
+        showOptimize(payload);
+      })
+      .catch(function (error) {
+        optimizeResult.textContent = "error: " + error.message;
+      })
+      .then(function () {
+        busy = false;
+        optimizeRun.disabled = false;
+      });
+  }
+
+  function showOptimize(payload) {
+    optimizeResult.innerHTML = "";
+    var names = payload.names || [];
+    var values = payload.best_parameters || [];
+    var best = names
+      .map(function (name, index) {
+        return name.replace(/_/g, " ") + " " + Math.round(values[index]);
+      })
+      .join(", ");
+    var start = Number(payload.start_cost);
+    var found = Number(payload.barrier_over_kt);
+    var change = start > 0 ? ((found - start) / start) * 100 : 0;
+    var verdict = change < -0.5 ? change.toFixed(1) + " percent lower" :
+      change > 0.5 ? change.toFixed(1) + " percent higher" : "unchanged";
+    var line = document.createElement("div");
+    line.textContent =
+      "best " + best + " | barrier " + found.toFixed(2) + " kT from " +
+      start.toFixed(2) + " kT, " + verdict + " | " +
+      payload.evaluations + " candidates, " + payload.rejected + " rejected";
+    optimizeResult.appendChild(line);
+    if (payload.converged) {
+      var done = document.createElement("div");
+      done.textContent = "the search stopped early, because it found no better design";
+      optimizeResult.appendChild(done);
+    }
+    var apply = document.createElement("button");
+    apply.type = "button";
+    apply.textContent = "Apply the best design";
+    apply.addEventListener("click", function () {
+      if (!currentParams) {
+        return;
+      }
+      names.forEach(function (name, index) {
+        currentParams[name] = values[index];
+      });
+      requestBuild(currentParams);
+    });
+    optimizeResult.appendChild(apply);
   }
 
   function syncParamInputs() {
@@ -1726,6 +1809,11 @@
       return;
     }
     chatForm.addEventListener("submit", sendChat);
+    if (optimizeRun) {
+      optimizeRun.addEventListener("click", function () {
+        runOptimize();
+      });
+    }
     paramReset.addEventListener("click", function () {
       if (meta) {
         requestBuild(meta.defaults);
@@ -1760,6 +1848,12 @@
     motion: motion,
     hasRenderer: function () {
       return !!renderer;
+    },
+    runOptimize: function (options) {
+      return runOptimize(options);
+    },
+    optimizeResult: function () {
+      return optimizeResult;
     },
     stats: function () {
       return renderer && renderer.stats ? renderer.stats() : null;

@@ -686,3 +686,22 @@ Phase 6. All result notes cite the test that measures the number.
     with 0 unstable modes. `cargo test -p nanocad-engine` -> 112 pass;
     `cargo test -p nanocad-meter` -> 15 pass. `just verify` -> all gates
     passed; 489 Rust tests. See ADR-0052.
+
+- [x] **M9-21** Add the optimize stage with a parameter search.
+  - Result: New crate `nanocad-opt` with a self-contained, deterministic
+    CMA-ES and a planetary objective. `ParameterBounds` clamps each
+    parameter and keeps an integer parameter whole. `Objective` maps a
+    parameter vector to a cost, and returns `None` for a design the
+    generator refuses. `PlanetarySearch` searches the sun teeth, the
+    planet teeth and the planet count; the objective is the slip barrier
+    in kT plus a clearance-shortfall penalty. The app route
+    `/api/optimize` runs the search, and the panel has an Optimize
+    section that shows the best design and applies it.
+  - Verification: `cargo run --release -p nanocad-opt --example
+    optimize_planetary -- population=8 generations=10 seed=5` -> best 12
+    sun teeth, 10 planet teeth, 4 planets at 8.92 kT from a start of
+    13.84 kT (36 percent lower), clearance 2.8865e-10 m passes, 178073
+    atoms, 80 evaluations and 35 rejected. `cargo test --workspace` ->
+    496 passed (7 new opt tests, 1 ignored). The browser clicks the
+    Optimize button and shows the best design with an apply button. See
+    ADR-0053.

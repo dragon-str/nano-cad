@@ -1,0 +1,10 @@
+[package]
+name = "nanocad-opt"
+description = "Parameter search for generated parts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nanocad-meter.workspace = true
+nanocad-parts.workspace = true
