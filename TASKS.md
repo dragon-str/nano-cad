@@ -643,3 +643,13 @@ Phase 6. All result notes cite the test that measures the number.
     slip barrier 5.7328e-20 J, which is 13.8 kT at 300 K ("the slip is
     marginal") with 27531 pairs at the peak. 9 unit tests pass. See
     ADR-0050.
+
+- [x] **M9-18** Make the default drag rotate the scene with the pointer.
+  - Result: The default drag rotates, so a point follows the pointer: a drag
+    right turns the scene right and a drag up turns it up. Pan moves to
+    Shift-drag and middle-drag. The hint text and `docs/viewer.md` follow.
+  - Verification: A headless drag right gives yaw -0.650 -> -1.650 with panX
+    unchanged, a drag up gives tilt 1.020 -> 1.820 with panY unchanged, and
+    a Shift-drag right gives panX 0 -> 100 with yaw unchanged. `node --check
+    site/viewer.js` passes, the JS suite is 11 passed, and `site/check.py`
+    -> all checks passed.

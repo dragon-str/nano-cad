@@ -23,8 +23,9 @@ add the rigid-body markers and the handoff circles when you want them. The
 **Hide** button at the top of the panel collapses the panel to a small tab, so
 the render is not covered at high zoom.
 
-Drag to rotate. Hold Shift and drag, or drag with the middle button, to pan.
-Use the wheel to zoom. Double-click to reset. The arrow keys pan, `+` and `-`
+Drag to rotate the scene, so a point follows the pointer. Hold Shift and drag,
+or drag with the middle button, to move the scene. Use the wheel to zoom. Double-click to reset. The
+arrow keys pan, `+` and `-`
 zoom, `R` resets, `F` toggles fullscreen, `T` toggles a turntable, `P` toggles
 motion, and Escape clears a measurement.
 

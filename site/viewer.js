@@ -1249,8 +1249,8 @@
       view.panX += dx;
       view.panY += dy;
     } else {
-      view.yaw += dx * 0.01;
-      view.tilt += dy * 0.01;
+      view.yaw -= dx * 0.01;
+      view.tilt -= dy * 0.01;
       view.tilt = Math.max(0.05, Math.min(Math.PI - 0.05, view.tilt));
     }
     pointerState.x = event.clientX;
