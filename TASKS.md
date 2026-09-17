@@ -895,7 +895,37 @@ defect. Every later part generator uses them.
 
 ## M12 — Design workflow
 
-- [ ] **M12-01** Add a node selection language for atoms, bonds and parts.
-- [ ] **M12-02** Add a part library and an interactive placement tool.
+- [x] **M12-01** Add a node selection language for atoms, bonds and parts.
+  - Result: `crates/model/src/selection.rs` adds `parse_selection(text) ->
+    Result<Selection, ModelError>` and `Selection::evaluate(&Document) ->
+    SelectionResult { parts, atoms, bonds }`. The grammar is a boolean
+    expression over predicates: `and`, `or`, `not`, parentheses, `all`,
+    `none`, `atom`, `bond`, `part`, the element names, and the comparisons
+    `charge`, `degree`, `atom_index`, `order`, `bond_length`, `bond_index`,
+    `part_index`, `name == "..."` and `within <d> of atom [i]`. Keywords are
+    case-insensitive. An expression evaluates to one set per node kind, so
+    `and`, `or` and `not` stay per kind. A parse error is
+    `ModelError::SelectionParse { position, message }`.
+  - Verification: `cargo test -p nanocad-model` -> 54 passed, including
+    `carbon_and_degree_selects_the_middle_carbon`,
+    `bond_length_selects_by_length`,
+    `parse_errors_carry_a_position_and_do_not_panic` and
+    `within_and_of_atom_stays_in_one_part`. 11 new tests. `just verify` -> all
+    gates passed; 581 Rust tests. See ADR-0058.
+- [x] **M12-02** Add a part library and an interactive placement tool.
+  - Result: `crates/parts/src/registry.rs` is now a general library. It
+    registers all 18 generators in four categories (`gears`, `lattice`,
+    `structure`, `device`) and exposes `library()`, `generator(name)`,
+    `generate(name, specs)` and `library_categories()`. The gear-only
+    functions stay. `crates/parts/src/placement.rs` adds `place(part, plug,
+    socket, separation_m) -> PlacedPart` and
+    `assembly_document(&[PlacedPart]) -> Document`. A placed part carries the
+    port frame, and `transformed_part` moves every atom into the socket frame.
+  - Verification: `cargo test -p nanocad-parts` -> 142 passed, including
+    `the_library_lists_every_generator_with_a_unique_id`,
+    `every_library_entry_names_a_generator`,
+    `a_placed_part_moves_to_the_socket` and
+    `an_assembly_holds_every_placed_part`. 8 new tests. `just verify` -> all
+    gates passed; 581 Rust tests. See ADR-0059.
 - [ ] **M12-03** Store a design document with the parameters, the parts
   and the measurements, and add multi-level undo and redo.

@@ -12,6 +12,7 @@ mod element;
 mod encoding;
 mod error;
 mod part;
+mod selection;
 mod topology;
 
 pub use atom::Atom;
@@ -20,6 +21,7 @@ pub use document::{Document, SCHEMA_VERSION};
 pub use element::Element;
 pub use error::ModelError;
 pub use part::Part;
+pub use selection::{parse_selection, Selection, SelectionResult};
 pub use topology::Topology;
 
 /// Returns the crate version string.

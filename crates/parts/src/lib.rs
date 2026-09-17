@@ -19,6 +19,7 @@ pub mod lattice;
 pub mod lattice_fill;
 pub mod nanotube;
 pub mod parameter;
+pub mod placement;
 pub mod planetary;
 pub mod port;
 pub mod registry;
@@ -41,11 +42,15 @@ pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;
 pub use nanotube::NanotubeGenerator;
 pub use parameter::{ParameterSet, ParameterSpec};
+pub use placement::{assembly_document, place, PlacedPart};
 pub use planetary::{
     planetary_constraint_holds, PlanetaryDesign, PlanetaryGenerator, PlanetarySet,
 };
 pub use port::{connect, mate_offset_m, Dof, Port, PortFrame};
-pub use registry::{gear_generator, gear_generators, generate_gear};
+pub use registry::{
+    gear_generator, gear_generators, generate, generate_gear, generator, library,
+    library_categories, LibraryEntry,
+};
 pub use respirocyte::{
     respirocyte_pump, respirocyte_rotor, respirocyte_tank, AnnularGapFlow, RespirocytePump,
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,

@@ -951,3 +951,55 @@ The smallest plate, 477 atoms and 612 bonds, gives a softest internal mode of
 cluster of the same mesh gave 21 unstable modes under the same terms. This
 confirms the ADR-0054 diagnosis: the boundary, not the terms, caused the
 artifact.
+
+## ADR-0058
+
+### A small selection language chooses nodes
+
+Status: accepted.
+
+A design grows past the size where a caller can name nodes by index. A short
+query text is the practical interface, and SAMSON shows the value of the idea
+with its Node Specification Language.
+
+The language lives in `crates/model/src/selection.rs`. It is a boolean
+expression over predicates: `and`, `or`, `not`, parentheses, `all`, `none`,
+`atom`, `bond`, `part`, the four element names, and the comparisons `charge`,
+`degree`, `atom_index`, `order`, `bond_length`, `bond_index`, `part_index`,
+`name == "..."` and `within <d> of atom [i]`. The keywords are
+case-insensitive.
+
+The language is a stated subset of the SAMSON language. It has no arithmetic,
+no variables, no units, and no nested node sets. `within` works inside one part
+only, because an atom index is part-local along with the rest of the model.
+
+Every expression evaluates to one set per node kind. `and`, `or` and `not` act
+per kind, so `carbon or bond` is well defined. A predicate that produces only
+atoms leaves the bond and part sets empty.
+
+The parser is a hand-written recursive descent. It returns
+`ModelError::SelectionParse { position, message }` and it does not panic.
+
+## ADR-0059
+
+### The part library is one table and placement is a port frame
+
+Status: accepted.
+
+M10 added nine generators, and M10-05 to M10-08 left them out of the registry.
+The registry was gear-only, so nothing could list or dispatch the full set.
+
+`crates/parts/src/registry.rs` now holds one static table of 18 generators,
+each with a category: `gears`, `lattice`, `structure` or `device`. The
+`LibraryEntry` list is built from that table by calling `id()` and `name()` on
+each generator, so a name cannot drift from its generator. The gear-only
+functions stay, because the gear tests and the gear callers depend on them.
+
+Placement is a small piece of the connector idea from M10-03.
+`crates/parts/src/placement.rs` resolves a plug port and a socket port into a
+`PortFrame`, then moves a whole part by that frame: a rotation about z through
+the origin, then the frame offset. `assembly_document` collects the placed
+parts into one document.
+
+The frame is planar, because the port model is planar. A placement with a
+three-dimensional rotation needs a full transform, and that is future work.

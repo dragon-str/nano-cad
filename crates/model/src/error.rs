@@ -29,4 +29,6 @@ pub enum ModelError {
     TrailingBytes { remaining: usize },
     #[error("a length or count does not fit the encoded width")]
     IntegerOverflow,
+    #[error("selection parse error at {position}: {message}")]
+    SelectionParse { position: usize, message: String },
 }
