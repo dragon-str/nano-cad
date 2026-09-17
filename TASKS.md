@@ -632,3 +632,14 @@ Phase 6. All result notes cite the test that measures the number.
     (passes). `check_atom_geometry.py` -> PASS. The renderer draws 142091
     atoms in the browser. `just verify` -> all gates passed; 477 Rust
     tests. See ADR-0049.
+
+- [x] **M9-17** Add the quasi-static slip-barrier metric.
+  - Result: New metric `slip_barrier` in `crates/meter/src/slip.rs`. It
+    sweeps one sun tooth pitch with the real gear kinematics and sums a
+    shifted Lennard-Jones interaction between the sun and the first
+    planet. The barrier is the largest energy minus the smallest. The
+    verdict reads the ratio to the thermal energy `k T`.
+  - Verification: `cargo run -p nanocad-meter --example score_json` ->
+    slip barrier 5.7328e-20 J, which is 13.8 kT at 300 K ("the slip is
+    marginal") with 27531 pairs at the peak. 9 unit tests pass. See
+    ADR-0050.

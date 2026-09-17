@@ -676,3 +676,32 @@ real value.
 Consequences. The default set is 2.5 times the previous atom count, so a
 build is slower. The contact ratio is 1.00, which is a working value. The
 teeth are thin, because the backlash is large.
+
+## ADR-0050: A quasi-static slip barrier measures the friction at the mesh
+
+Status: accepted.
+
+Context. The clearance metric proves the atoms do not overlap. It says
+nothing about the friction. Two meshing surfaces can be clear and still
+jam, if the potential energy swings by much more than the thermal energy
+as one tooth passes. Stick-slip friction is the sign of that barrier.
+
+Decision. The `nanocad-meter` crate gets a `slip_barrier` metric. The
+metric sweeps one sun tooth pitch with the real gear kinematics. At every
+step it sums a shifted Lennard-Jones interaction between the sun and the
+first planet. The barrier is the largest energy minus the smallest.
+
+The barrier is compared with the thermal energy `k T`. Below 5 `k T` the
+thermal motion smooths the slip. Between 5 and 20 `k T` the slip is
+marginal. Above 20 `k T` the surfaces jam. The metric carries the
+`quasi_static` fidelity label.
+
+The model is rigid. The atoms follow the gear motion, and the lattice
+does not relax. A relaxed lattice has a lower barrier, so this value is an
+upper bound. The interaction uses one carbon-like well for every atom, so
+the value compares designs. It is not an absolute friction coefficient.
+
+Consequences. The metric adds about 4 seconds to a score in release mode.
+It is the first quasi-static metric, so the scorecard now shows two
+fidelity labels. A relaxed variant can use the engine `System` and
+`minimize`, and it will lower the bound.

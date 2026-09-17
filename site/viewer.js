@@ -1546,6 +1546,9 @@
     if (metric.unit === "m") {
       return (metric.value * 1e9).toFixed(3) + " nm";
     }
+    if (metric.unit === "J") {
+      return Number(metric.value).toExponential(2) + " J";
+    }
     return Number(metric.value).toFixed(3);
   }
 
@@ -1581,9 +1584,9 @@
       var note = document.createElement("div");
       note.className = "metric-note";
       note.textContent = metric.note;
-      if (/\bfails\b/.test(metric.note)) {
+      if (/\bfails\b|\bjam\b/.test(metric.note)) {
         note.classList.add("metric-fail");
-      } else if (/\bpasses\b/.test(metric.note)) {
+      } else if (/\bpasses\b|smooths the slip/.test(metric.note)) {
         note.classList.add("metric-pass");
       }
       block.appendChild(head);

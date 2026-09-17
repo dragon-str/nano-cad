@@ -8,9 +8,11 @@
 
 pub mod clearance;
 pub mod geometry;
+pub mod slip;
 
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
 pub use geometry::{atom_count, contact_ratio};
+pub use slip::{SlipBarrier, SlipBarrierReport, SlipBarrierTarget};
 
 use nanocad_parts::planetary::PlanetarySet;
 use nanocad_parts::PartError;
@@ -78,6 +80,11 @@ pub fn score_planetary(set: &PlanetarySet, sun_rad_per_s: f64) -> Result<Score, 
         clearance
             .measure(&moving)
             .to_metric_value(&clearance.target),
+    );
+    let slip = SlipBarrier::default();
+    score.push(
+        slip.measure(&moving, set.design.sun_teeth())
+            .to_metric_value(&slip.target),
     );
     Ok(score)
 }
