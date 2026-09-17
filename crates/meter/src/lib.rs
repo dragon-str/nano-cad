@@ -7,8 +7,13 @@
 #![forbid(unsafe_code)]
 
 pub mod clearance;
+pub mod geometry;
 
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
+pub use geometry::{atom_count, contact_ratio};
+
+use nanocad_parts::planetary::PlanetarySet;
+use nanocad_parts::PartError;
 
 /// The fidelity at which a metric was computed.
 ///
@@ -58,4 +63,21 @@ impl Score {
     pub fn get(&self, name: &str) -> Option<&MetricValue> {
         self.values.iter().find(|value| value.name == name)
     }
+}
+
+/// Scores a planetary set with every metric that is available now.
+///
+/// The sun rate sets the motion. The ring stays fixed.
+pub fn score_planetary(set: &PlanetarySet, sun_rad_per_s: f64) -> Result<Score, PartError> {
+    let mut score = Score::default();
+    score.push(geometry::atom_count(set));
+    score.push(geometry::contact_ratio(&set.design)?);
+    let moving = MovingAtoms::planetary(set, &set.design, sun_rad_per_s);
+    let clearance = Clearance::default();
+    score.push(
+        clearance
+            .measure(&moving)
+            .to_metric_value(&clearance.target),
+    );
+    Ok(score)
 }

@@ -547,3 +547,55 @@ input[type="range"] {
   fill: rgba(232, 238, 245, 0.85);
   font: 10px ui-monospace, Menlo, monospace;
 }
+
+/* Scorecard (M9-15) */
+#scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.metric {
+  border-top: 1px solid #21262d;
+  padding-top: 0.3rem;
+}
+.metric-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.metric-name {
+  flex: 1 1 auto;
+  color: #c9d1d9;
+}
+.metric-value {
+  font-family: monospace;
+  color: #e6edf3;
+}
+.metric-badge {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 0.6rem;
+  padding: 0.05rem 0.4rem;
+  background: #30363d;
+  color: #8b949e;
+}
+.metric-badge.fidelity-quasi_static {
+  color: #d29922;
+}
+.metric-badge.fidelity-harmonic {
+  color: #a371f7;
+}
+.metric-badge.fidelity-dynamics {
+  color: #f85149;
+}
+.metric-note {
+  color: #8b949e;
+  font-size: 0.72rem;
+}
+.metric-note.metric-pass {
+  color: #7ee787;
+}
+.metric-note.metric-fail {
+  color: #f85149;
+}

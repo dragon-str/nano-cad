@@ -609,3 +609,12 @@ Phase 6. All result notes cite the test that measures the number.
     -> least distance 2.7753e-10 m between planet_1 and ring at 1.3475 s,
     which passes the 2.52e-10 m target and agrees with the off-line sweep.
     6 unit tests pass. `just verify` -> all gates passed. See ADR-0047.
+
+- [x] **M9-15** Show a scorecard in the app.
+  - Result: Geometric metrics live in `nanocad-meter`: atom count, contact
+    ratio and clearance. The server route `GET /api/score` returns them as
+    JSON. The app shows one row per metric with its value, its unit and its
+    fidelity badge. `crates/meter/examples/score_json.rs` writes the JSON.
+  - Verification: the browser shows atom count 56,160 atoms, contact ratio
+    0.860 and clearance 0.278 nm with a pass mark. `just verify` -> all
+    gates passed; 477 Rust tests. See ADR-0048.

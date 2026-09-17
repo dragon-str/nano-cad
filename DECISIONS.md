@@ -626,3 +626,25 @@ The clearance metric found a real error on its first use. The planet
 motion applies the spin in the world frame, so the absolute planet rate
 is the carrier rate plus the rate relative to the carrier. The earlier
 off-line sweep had this right; the first version of the metric did not.
+
+## ADR-0048: The app shows a scorecard with a fidelity badge on each metric
+
+Status: accepted.
+
+Context. The metric layer must be visible to the user. A raw number hides
+how it was measured, and cheap and expensive metrics must not be confused.
+
+Decision. The app shows a Score panel with one row for each metric. Each
+row shows the name, the value in a readable unit, the fidelity badge
+(`geometric`, `quasi_static`, `harmonic`, `dynamics`) and the note. The
+server route `GET /api/score` returns the score as JSON, and the metric
+crate writes that JSON through `crates/meter/examples/score_json.rs`.
+
+The first metrics are all `geometric`, because they read the generated
+geometry. Later metrics carry a higher fidelity.
+
+Consequences. A low-fidelity value is always labelled, so the user cannot
+compare it with a high-fidelity value by accident. The first real finding
+is that the default contact ratio is 0.86, below 1. The short addendum of
+0.5, which the clearance work chose, reduces the contact ratio. The drive
+can skip a tooth. This is a design trade-off to present to the user.

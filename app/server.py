@@ -52,6 +52,14 @@ def _cargo() -> str:
     return shutil.which("cargo") or os.path.expanduser("~/.cargo/bin/cargo")
 
 
+def _param_args(params: dict) -> list:
+    """Turn a parameter map into the `key=value` arguments of an example."""
+    args = []
+    for key, value in params.items():
+        args.append(f"{key}={value!r}" if isinstance(value, float) else f"{key}={value}")
+    return args
+
+
 def build_scene(params: dict) -> dict:
     """Run the Rust generator with `params` and return the scene and bonds."""
     workdir = tempfile.mkdtemp(prefix="ncad-app-")
@@ -61,8 +69,7 @@ def build_scene(params: dict) -> dict:
             _cargo(), "run", "--quiet", "-p", "nanocad-jigs",
             "--example", "scene_json", "--", output,
         ]
-        for key, value in params.items():
-            command.append(f"{key}={value!r}" if isinstance(value, float) else f"{key}={value}")
+        command.extend(_param_args(params))
         result = subprocess.run(
             command, cwd=ROOT, capture_output=True, text=True,
             timeout=BUILD_TIMEOUT_S,
@@ -77,6 +84,28 @@ def build_scene(params: dict) -> dict:
         return {"scene": scene, "bonds": bonds, "log": result.stdout.strip()}
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def score_scene(params: dict) -> dict:
+    """Run the Rust metric example with `params` and return the metric list."""
+    command = [
+        _cargo(), "run", "--quiet", "-p", "nanocad-meter",
+        "--example", "score_json", "--",
+    ]
+    command.extend(_param_args(params))
+    result = subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the metric run failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the metric run printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the metric output was not JSON: {error}") from None
 
 
 def _params_from_query(query: str) -> dict:
@@ -157,6 +186,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(error)})
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the generator timed out"})
+            return
+        if route == "/api/score":
+            try:
+                params = _params_from_query(parsed.query)
+                self._send_json(200, score_scene(params))
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the metric run timed out"})
             return
         self._send_file(self._site_path(route.lstrip("/")))
 

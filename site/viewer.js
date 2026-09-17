@@ -1108,6 +1108,9 @@
     measureEl.textContent = "";
     setReadout();
     resize();
+    if (live) {
+      requestScore(currentParams);
+    }
   }
 
   function showFallback(reason) {
@@ -1451,6 +1454,7 @@
   /* ---------- Live parameters and chat (served by app/server.py) ---------- */
 
   var paramsEl = document.getElementById("params");
+  var scoreEl = document.getElementById("scorecard");
   var paramReset = document.getElementById("param-reset");
   var chatLog = document.getElementById("chat-log");
   var chatForm = document.getElementById("chat-form");
@@ -1519,6 +1523,84 @@
       paramsEl.appendChild(row);
     });
     syncParamInputs();
+  }
+
+  function formatMetric(metric) {
+    if (metric.unit === "atoms") {
+      return Math.round(metric.value).toLocaleString("en-US") + " atoms";
+    }
+    if (metric.unit === "m") {
+      return (metric.value * 1e9).toFixed(3) + " nm";
+    }
+    return Number(metric.value).toFixed(3);
+  }
+
+  function renderScore(metrics) {
+    if (!scoreEl) {
+      return;
+    }
+    scoreEl.innerHTML = "";
+    if (!metrics || !metrics.length) {
+      var empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No metrics yet.";
+      scoreEl.appendChild(empty);
+      return;
+    }
+    metrics.forEach(function (metric) {
+      var block = document.createElement("div");
+      block.className = "metric";
+      var head = document.createElement("div");
+      head.className = "metric-head";
+      var name = document.createElement("span");
+      name.className = "metric-name";
+      name.textContent = String(metric.name).replace(/_/g, " ");
+      var value = document.createElement("span");
+      value.className = "metric-value";
+      value.textContent = formatMetric(metric);
+      var badge = document.createElement("span");
+      badge.className = "metric-badge fidelity-" + metric.fidelity;
+      badge.textContent = metric.fidelity;
+      head.appendChild(name);
+      head.appendChild(value);
+      head.appendChild(badge);
+      var note = document.createElement("div");
+      note.className = "metric-note";
+      note.textContent = metric.note;
+      if (/\bfails\b/.test(metric.note)) {
+        note.classList.add("metric-fail");
+      } else if (/\bpasses\b/.test(metric.note)) {
+        note.classList.add("metric-pass");
+      }
+      block.appendChild(head);
+      block.appendChild(note);
+      scoreEl.appendChild(block);
+    });
+  }
+
+  function requestScore(params) {
+    if (!live || !params) {
+      return;
+    }
+    var query = Object.keys(params)
+      .map(function (key) {
+        return encodeURIComponent(key) + "=" + encodeURIComponent(params[key]);
+      })
+      .join("&");
+    fetch("api/score?" + query)
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload.error) {
+          setMessage("score failed: " + payload.error);
+          return;
+        }
+        renderScore(payload.metrics);
+      })
+      .catch(function (error) {
+        setMessage("score failed: " + error.message);
+      });
   }
 
   function buildFromInputs() {
@@ -1643,6 +1725,7 @@
           currentParams = paramsFromDesign(scene.design);
         }
         syncParamInputs();
+        requestScore(currentParams);
       })
       .catch(function () {
         chatHint.textContent =
