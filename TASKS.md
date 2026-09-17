@@ -653,3 +653,21 @@ Phase 6. All result notes cite the test that measures the number.
     a Shift-drag right gives panX 0 -> 100 with yaw unchanged. `node --check
     site/viewer.js` passes, the JS suite is 11 passed, and `site/check.py`
     -> all checks passed.
+
+- [x] **M9-19** Add a relaxed slip barrier that lowers the rigid bound.
+  - Result: New metric `relaxed_slip_barrier` in
+    `crates/meter/src/relaxed.rs`. It selects the atoms that face the mesh,
+    frees the planet contact atoms, and relaxes them against the sun on a
+    300 N/m tether. The energy is the interaction energy plus the tether
+    energy, so the rigid path is a feasible point. The report also carries
+    `rigid_barrier_j` on the same samples and atom sets.
+  - Fix: the sample count was too low. One sun tooth pitch spans about
+    fifty carbon bonds, so 24 samples aliased the barrier by 70 percent.
+    The default is now 240 samples for the rigid metric and 120 for the
+    relaxed metric. The rigid value at 60 and 240 samples agrees.
+  - Verification: `cargo run -p nanocad-meter --example score_json` ->
+    relaxed barrier 5.7371e-20 J against the rigid 5.7328e-20 J, so
+    relaxation changes the bound by +0.07 percent and both read 13.8 and
+    13.9 kT at 300 K. 12 unit tests pass. The scorecard shows 5 rows in
+    the browser. `just verify` -> all gates passed; 483 Rust tests. See
+    ADR-0051.

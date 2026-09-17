@@ -705,3 +705,40 @@ Consequences. The metric adds about 4 seconds to a score in release mode.
 It is the first quasi-static metric, so the scorecard now shows two
 fidelity labels. A relaxed variant can use the engine `System` and
 `minimize`, and it will lower the bound.
+
+## ADR-0051: A relaxed sweep bounds the slip barrier from below
+
+Status: accepted.
+
+Context. ADR-0050 gives a rigid slip barrier. The atoms follow the gear
+path and the lattice never relaxes. That value is an upper bound. The
+real barrier depends on how much the lattice gives way at the mesh.
+
+Decision. The `nanocad-meter` crate also gets a `relaxed_slip_barrier`
+metric. At every time sample it selects the atoms of the sun and the
+first planet that face each other inside a contact radius. The planet
+contact atoms are free. Each free atom feels the shifted Lennard-Jones
+interaction of the sun and a harmonic tether to its own rigid position.
+The tether stiffness is 300 N/m, the value the parameter crate extracts
+for a carbon bond. The free atoms relax by damped gradient descent, with
+the displacement of one step capped at 4e-12 m.
+
+The reported energy is the interaction energy plus the tether energy, so
+the rigid configuration is a feasible point of the relaxation. The
+metric also reports the rigid barrier on the same samples and atom sets,
+so the two numbers compare directly.
+
+The samples must resolve the atom spacing. One sun tooth pitch of 9 nm
+spans about fifty carbon bonds, so the default is 240 samples for the
+rigid metric and 120 for the relaxed metric. A coarse sweep of 24 samples
+raised the barrier by 70 percent through aliasing. The value at 60 and
+240 samples agrees to all printed digits, which shows that 240 samples
+resolve the curve.
+
+Consequences. On the default set the relaxed barrier is 5.7371e-20 J
+against a rigid 5.7328e-20 J. Relaxation changes the bound by +0.07
+percent. The lattice is stiff, so the rigid value is already a tight
+bound and the two metrics agree on the verdict. The relaxed metric is a
+check on the rigid one, not a replacement. A true relaxed value needs the
+real bond topology and a full minimization. It can use the engine
+`System` and `minimize` later.

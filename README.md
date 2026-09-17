@@ -3,7 +3,7 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **480 Rust tests plus
+Status: **pre-alpha.** The core is built end to end and **483 Rust tests plus
 93 Python and app tests and 11 JavaScript tests pass** (14 Python tests skip
 without their optional dependency). The 9-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,
@@ -29,8 +29,8 @@ a solid hydrogen-capped diamond lattice in four verified atomic layers. A 3D
 viewer with zoom level of detail, a generated documentation site, and an
 interactive app with a live parameter panel and a chat interface live in
 `site/` and `app/`. The app scores the default set with atom count, contact
-ratio, clearance and a quasi-static slip barrier, and each metric carries a
-fidelity badge. See `docs/benchmarks.md`, `docs/validation.md`,
+ratio, clearance, a quasi-static slip barrier and its relaxed form, and each
+metric carries a fidelity badge. See `docs/benchmarks.md`, `docs/validation.md`,
 `docs/viewer.md` and `docs/report.md`.
 
 ## Doctrine

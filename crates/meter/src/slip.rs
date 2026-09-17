@@ -24,17 +24,21 @@ use crate::{Fidelity, MetricValue};
 pub const BOLTZMANN_J_PER_K: f64 = 1.380_649e-23;
 
 /// A carbon-like Lennard-Jones well depth in joules.
-const WELL_DEPTH_J: f64 = 5.98e-22;
+pub(crate) const WELL_DEPTH_J: f64 = 5.98e-22;
 
 /// A carbon-like Lennard-Jones zero crossing in metres.
-const ZERO_CROSSING_M: f64 = 3.4e-10;
+pub(crate) const ZERO_CROSSING_M: f64 = 3.4e-10;
 
-type Cell = (i64, i64, i64);
+pub(crate) type Cell = (i64, i64, i64);
 
 /// The settings of a slip-barrier measurement.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SlipBarrierTarget {
     /// The number of time samples over one sun tooth pitch.
+    ///
+    /// The samples must resolve the atom spacing, or the barrier aliases.
+    /// One sun tooth pitch spans about fifty atoms, so 240 samples is the
+    /// default count.
     pub steps: usize,
     /// The interaction cutoff in metres. A farther pair does not interact.
     pub cutoff_m: f64,
@@ -45,7 +49,7 @@ pub struct SlipBarrierTarget {
 impl Default for SlipBarrierTarget {
     fn default() -> Self {
         Self {
-            steps: 60,
+            steps: 240,
             cutoff_m: 1.2e-9,
             temperature_k: 300.0,
         }
@@ -214,14 +218,14 @@ impl SlipBarrier {
 }
 
 /// Returns the Lennard-Jones energy of one pair, in joules.
-fn lennard_jones(distance_m: f64) -> f64 {
+pub(crate) fn lennard_jones(distance_m: f64) -> f64 {
     let ratio = ZERO_CROSSING_M / distance_m;
     let ratio6 = ratio * ratio * ratio * ratio * ratio * ratio;
     4.0 * WELL_DEPTH_J * (ratio6 * ratio6 - ratio6)
 }
 
 /// Returns the grid cell that holds a point, for the given cell size.
-fn cell_of(point_m: [f64; 3], cell_m: f64) -> Cell {
+pub(crate) fn cell_of(point_m: [f64; 3], cell_m: f64) -> Cell {
     (
         (point_m[0] / cell_m).floor() as i64,
         (point_m[1] / cell_m).floor() as i64,
