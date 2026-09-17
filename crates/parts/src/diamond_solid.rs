@@ -40,7 +40,7 @@ pub(crate) fn diamond_plane_spacing_m() -> f64 {
 
 /// The eight basis atoms of the diamond cubic cell, in fractional
 /// coordinates. Two interpenetrating FCC lattices, offset by (1/4,1/4,1/4).
-const BASIS: [[f64; 3]; 8] = [
+pub(crate) const BASIS: [[f64; 3]; 8] = [
     [0.0, 0.0, 0.0],
     [0.0, 0.5, 0.5],
     [0.5, 0.0, 0.5],
@@ -98,41 +98,17 @@ pub(crate) fn fill_profile(
         max_y = max_y.max(radius_m);
     }
 
-    let margin_m = a;
-    let ix0 = ((min_x - margin_m) / a).floor() as i64;
-    let ix1 = ((max_x + margin_m) / a).ceil() as i64;
-    let iy0 = ((min_y - margin_m) / a).floor() as i64;
-    let iy1 = ((max_y + margin_m) / a).ceil() as i64;
-    let iz1 = ((layers as i64) + 3) / 4;
-
-    let mut positions_m = Vec::new();
-    for iz in 0..=iz1 {
-        for ix in ix0..=ix1 {
-            for iy in iy0..=iy1 {
-                for basis in BASIS {
-                    let plane = (iz as f64 + basis[2]) * 4.0;
-                    let plane_index = plane.round() as i64;
-                    if plane_index < 0 || plane_index >= layers as i64 {
-                        continue;
-                    }
-                    let x_m = (ix as f64 + basis[0]) * a;
-                    let y_m = (iy as f64 + basis[1]) * a;
-                    let z_m = plane_index as f64 * quarter_m;
-                    let radius_m = (x_m * x_m + y_m * y_m).sqrt();
-                    let inside = if internal {
-                        let within_rim = outer_radius_m.is_none_or(|rim| radius_m <= rim);
-                        within_rim && !point_in_polygon(x_m, y_m, outline_m)
-                    } else {
-                        point_in_polygon(x_m, y_m, outline_m)
-                    };
-                    if inside {
-                        positions_m.push([x_m, y_m, z_m]);
-                    }
-                }
-            }
+    let min_m = [min_x, min_y, 0.0];
+    let max_m = [max_x, max_y, (layers - 1) as f64 * quarter_m];
+    crate::lattice_fill::lattice_atoms(min_m, max_m, &mut |point_m| {
+        let radius_m = (point_m[0] * point_m[0] + point_m[1] * point_m[1]).sqrt();
+        if internal {
+            let within_rim = outer_radius_m.is_none_or(|rim| radius_m <= rim);
+            within_rim && !point_in_polygon(point_m[0], point_m[1], outline_m)
+        } else {
+            point_in_polygon(point_m[0], point_m[1], outline_m)
         }
-    }
-    positions_m
+    })
 }
 
 /// Bonds every first-shell carbon pair in `atoms` and caps the surface.

@@ -705,3 +705,97 @@ Phase 6. All result notes cite the test that measures the number.
     496 passed (7 new opt tests, 1 ignored). The browser clicks the
     Optimize button and shows the best design with an apply button. See
     ADR-0053.
+
+## M10 — Part vocabulary and general molecular shapes
+
+M9 designs one part: an involute gear. A molecular machine needs many
+parts that connect. M10 adds a general solid, a port, and a lattice
+defect. Every later part generator uses them.
+
+- [x] **M10-01** Add a solid-shape trait with primitives and boolean
+  operations. A `Solid` answers one question: is a point inside? The
+  shapes are a box, a hex prism, a cylinder, and a placed (rotated)
+  shape. The operations are difference, intersection, and union. Every
+  shape returns its bounding box, so the lattice filler can enumerate
+  sites without a scan of the whole cell.
+  - Result: `crates/parts/src/shape.rs` adds the `Solid` trait with
+    `contains_m` and `bounds_m`, the `Bounds` box, and the shapes `Box3`,
+    `HexPrism`, `Cylinder`, `Placed`, `Difference`, `Intersection`, `Union`
+    and `Profile`. The trait carries `clone_box`, because a boxed trait
+    object is not `Clone`. A hex prism states its circumradius and its
+    rotation, and a profile states a polygon plus an internal-rim mode.
+  - Verification: 8 unit tests pass, including the hex six-side test, the
+    placed rotation test and the difference hole test. `cargo clippy -p
+    nanocad-parts --all-targets -- -D warnings` is clean.
+- [x] **M10-02** Fill any solid with the diamond lattice. Generalise
+  `diamond_solid::fill_profile` to a solid. The gear profile becomes one
+  `Solid` implementation, so the gear set and the new parts share one
+  filler and one bond-and-cap pass.
+  - Result: `crates/parts/src/lattice_fill.rs` adds `fill_solid` and the
+    shared `lattice_atoms` enumeration. `diamond_solid::fill_profile` now
+    calls `lattice_atoms` with the polygon test, so the gear path and the
+    general path place atoms on the same diamond sites. A solid with an
+    unbounded axis gives an empty list instead of a hang.
+  - Verification: 4 unit tests pass: the box fills, the nearest site is
+    the diamond bond length (relative error below 1e-6), a difference
+    removes the inner sites, and an unbounded profile returns nothing.
+    The 13 existing diamond-solid tests still pass after the refactor.
+- [x] **M10-03** Add a port model and a part connector. A port is a
+  frame on a part: an origin, an axis, one allowed degree of freedom, and
+  a stated interface gap. `connect` returns the transform that mates two
+  ports. This is how an axle meets a bearing and a clutch meets a shaft.
+  - Result: `crates/parts/src/port.rs` adds `Dof`, `Port`, `PortFrame`,
+    `connect` and `mate_offset_m`. A plug meets a socket at the sum of the
+    two gaps, and the plug axis turns to face the socket axis. The map is
+    planar, so a vertical axis takes no rotation.
+  - Verification: 6 unit tests pass, including the gap sum, the extra
+    separation, the x-axis yaw flip and the vertical no-rotation case.
+    Clippy is clean.
+- [x] **M10-04** Add a wedge disclination for the 5-7 lattice defect.
+  A wedge disclination removes a 60 degree wedge from the lattice. It
+  turns two six-membered rings into a five-membered ring and a
+  seven-membered ring. This defect curves a surface, so a tooth flank or
+  a bearing race is not a staircase.
+  - Result: `crates/parts/src/dislocation.rs` adds `WedgeDisclination`,
+    `five_seven_wedge_rad`, `displace_point_m`, `displace` and
+    `core_atom_mask`. The angular map is `theta / (1 - strength)`; the
+    radius and z stay. A singular wedge and a core atom pass through
+    unchanged, so no value becomes a NaN.
+  - Verification: 7 unit tests pass, including the radius-and-z
+    preservation, the angle stretch, the singular refusal and the core
+    mask. Clippy is clean.
+- [ ] **M10-05** Generate a hex axle and a plain shaft. The cross section
+  is a hexagonal prism, because a hex axle passes torque with a flat
+  face. The generator states the across-flats size, the length, and the
+  end chamfer.
+- [ ] **M10-06** Generate structural blocks: a plate, a beam, and a
+  bracket. A beam states its section and its length. A bracket is an
+  L shape with a stated leg length and thickness.
+- [ ] **M10-07** Generate a radial bearing and a bushing. A bearing has
+  an inner race, an outer race, and a stated radial gap. The rolling
+  elements are a stated count of cylinders. A bushing is a plain sleeve
+  with a stated clearance.
+- [ ] **M10-08** Generate a clutch plate and a ratchet. The clutch is a
+  stack of toothed plates with a stated gap. The ratchet is a pawl and a
+  toothed wheel with a stated tooth count.
+
+## M11 — Loaded contact and driven motion
+
+- [ ] **M11-01** Build the full bonded terms in the meter potentials. The
+  engine has torsion and out-of-plane terms. The meter builds bonds and
+  van der Waals only. Add the missing terms with real parameters.
+- [ ] **M11-02** Add a loaded-contact friction metric. The slip barrier
+  has no normal load. Press two surfaces together, slide them, and report
+  the friction force and the wear.
+- [ ] **M11-03** Add a steered joint drive with a torque report. Hold one
+  port and drive another at a stated rate. Report the torque, the energy
+  loss, and the temperature rise.
+- [ ] **M11-04** Report the normal modes of a whole part. The harmonic
+  metric uses a 148-atom cluster. Extend it to a complete part.
+
+## M12 — Design workflow
+
+- [ ] **M12-01** Add a node selection language for atoms, bonds and parts.
+- [ ] **M12-02** Add a part library and an interactive placement tool.
+- [ ] **M12-03** Store a design document with the parameters, the parts
+  and the measurements, and add multi-level undo and redo.

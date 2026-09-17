@@ -6,33 +6,45 @@
 #![forbid(unsafe_code)]
 
 pub mod diamond_solid;
+pub mod dislocation;
 pub mod error;
 pub mod gear_profile;
 pub mod generator;
 pub mod geometry;
 pub mod lattice;
+pub mod lattice_fill;
 pub mod nanotube;
 pub mod parameter;
 pub mod planetary;
+pub mod port;
 pub mod registry;
 pub mod respirocyte;
+pub mod shape;
 pub mod spur_gear;
 pub mod validation;
 
+pub use dislocation::{
+    core_atom_mask, displace, displace_point_m, five_seven_wedge_rad, WedgeDisclination,
+};
 pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
 pub use generator::{PartGenerator, PartSchema};
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
+pub use lattice_fill::fill_solid;
 pub use nanotube::NanotubeGenerator;
 pub use parameter::{ParameterSet, ParameterSpec};
 pub use planetary::{
     planetary_constraint_holds, PlanetaryDesign, PlanetaryGenerator, PlanetarySet,
 };
+pub use port::{connect, mate_offset_m, Dof, Port, PortFrame};
 pub use registry::{gear_generator, gear_generators, generate_gear};
 pub use respirocyte::{
     respirocyte_pump, respirocyte_rotor, respirocyte_tank, AnnularGapFlow, RespirocytePump,
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
     RespirocyteTankGenerator,
+};
+pub use shape::{
+    Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, Solid, Union,
 };
 pub use spur_gear::SpurGearGenerator;
 pub use validation::{
