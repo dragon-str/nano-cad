@@ -1,0 +1,10 @@
+[package]
+name = "nanocad-meter"
+description = "Fidelity-tiered performance metrics for generated parts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nanocad-model.workspace = true
+nanocad-parts.workspace = true

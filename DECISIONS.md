@@ -598,3 +598,31 @@ The clearance test is an off-line all-atom sweep, not a unit test. The
 generator places the planet atoms with the assembly, so a unit test in
 the parts crate cannot reproduce the body transforms. See
 `/tmp/overlap.py` and `TASKS.md` M9-13.
+
+## ADR-0047: Metrics live in a separate crate and carry a fidelity label
+
+Status: accepted.
+
+Context. The user wants the software to guide the design of nanoscale
+parts and to optimise them. A design needs scores, and the scores come
+from many methods at different cost and accuracy. A single number hides
+that difference.
+
+Decision. Add the crate `nanocad-meter`. A metric returns a
+`MetricValue` with a name, a value, a unit, a `Fidelity` and a note.
+`Fidelity` has four levels in cost order: `Geometric`, `QuasiStatic`,
+`Harmonic` and `Dynamics`. A `Score` collects metric values.
+
+The first metric is `Clearance`. It sweeps the relative motion of the
+bodies and reports the least atom-to-atom distance between two bodies.
+The default target is 2.52e-10 m, the nearest non-bonded diamond
+spacing.
+
+Consequences. A score is comparable only at one fidelity level. The
+optimiser must not mix levels. Every metric needs a reference check, as
+every force term needs a finite-difference gradient test.
+
+The clearance metric found a real error on its first use. The planet
+motion applies the spin in the world frame, so the absolute planet rate
+is the carrier rate plus the rate relative to the carrier. The earlier
+off-line sweep had this right; the first version of the metric did not.

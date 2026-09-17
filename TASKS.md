@@ -599,3 +599,13 @@ Phase 6. All result notes cite the test that measures the number.
     The minimum is above the 2.52 A target. 56160 atoms, 25928 carbon
     at degree 4 and 30232 hydrogen at degree 1. `check_atom_geometry.py`
     -> PASS. `just verify` -> all gates passed.
+
+- [x] **M9-14** Add the metric crate and the clearance metric.
+  - Result: New crate `nanocad-meter` with `Fidelity`, `MetricValue`,
+    `Score` and a `Clearance` metric over the relative motion of the
+    planetary bodies. `crates/meter/examples/planetary_score.rs` prints
+    the score of the default set.
+  - Verification: `cargo run -p nanocad-meter --example planetary_score`
+    -> least distance 2.7753e-10 m between planet_1 and ring at 1.3475 s,
+    which passes the 2.52e-10 m target and agrees with the off-line sweep.
+    6 unit tests pass. `just verify` -> all gates passed. See ADR-0047.
