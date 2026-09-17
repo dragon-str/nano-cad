@@ -888,3 +888,66 @@ coefficient.
 
 The default set gives a mean friction force of 1.677e-10 N at a 1.0e-11 N load
 over a 60-step sweep. Ten pairs come within 3.0e-10 m during the slide.
+
+## ADR-0056
+
+### A steered drive reports the torque on a held joint
+
+Status: accepted.
+
+A design is not proven by a static score. The question is what torque the drive
+must supply, and how much energy the contact loses.
+
+The metric is `steered_drive` in `crates/meter/src/drive.rs`, at the dynamics
+fidelity. It builds a contact cluster around the sun-planet mesh. It holds the
+planet atoms at their relaxed positions. At every velocity-Verlet step it writes
+the sun velocity from the stated drive rate. The resisting torque is the
+negative z component of the torque on the sun atoms. The report holds the mean
+and peak torque, the drive work, the energy loss, the free-atom count, the final
+temperature, and the temperature rise.
+
+The bodies are rigid and the cluster is a cut-out, so the value is a screening
+estimate. The cluster rejects every atom that holds a bond across its own
+boundary; a free atom is one that only moves through the non-bonded term.
+
+On the default set the cluster holds 66 atoms and the mean torque is
+1.99e-45 N m. That is effectively zero: the non-bonded contact at the relaxed
+mesh is nearly torque-free. The ring sits about 1.0e-8 m away, so it never
+enters the 6.0e-10 m collection radius, and the cluster has no free atom. The
+temperature rise is therefore not measurable, and the note says so.
+
+The metric is not in the app scorecard. A dynamics metric with 4000 steps is
+too slow for the score route, and a near-zero torque is not a useful scorecard
+row. It stays available as a metric and as
+`crates/meter/examples/drive_json.rs`.
+
+## ADR-0057
+
+### A whole part carries the bonded terms in its Hessian
+
+Status: accepted.
+
+ADR-0054 kept the torsion and out-of-plane terms out of the mesh Hessian. The
+reason was the cut-out cluster: its dangling crystal boundary turned the bonded
+terms into spurious negative curvature. A complete part has no such boundary, so
+the terms are physical there.
+
+`HarmonicMesh::measure_part` in `crates/meter/src/harmonic.rs` measures a whole
+part. It returns the same `mesh_mode` metric at the same harmonic fidelity. It
+adds the torsion and out-of-plane terms from `crates/meter/src/bonded.rs`,
+because a whole part has no dangling boundary. It excludes every pair inside the
+`COVALENT_EXCLUSION_M = 3.1e-10` m covalent shell from the van der Waals term.
+Without that exclusion the minimizer fails with `CoincidentNonbondedAtoms`: a
+part is one covalent network, so its second and third shells must not act
+through the non-bonded term. It rebuilds the neighbour list after the relaxation
+and before the finite-difference Hessian, because the relaxation moves the
+atoms.
+
+A part above `target.max_atoms` is refused with an empty report, because the
+Jacobi diagonalisation is cubic in the atom count.
+
+The smallest plate, 477 atoms and 612 bonds, gives a softest internal mode of
+5.733e10 Hz with 1 unstable mode in a release run of about 215 s. The cut-out
+cluster of the same mesh gave 21 unstable modes under the same terms. This
+confirms the ADR-0054 diagnosis: the boundary, not the terms, caused the
+artifact.

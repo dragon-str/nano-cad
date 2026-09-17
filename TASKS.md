@@ -852,11 +852,46 @@ defect. Every later part generator uses them.
     mean friction force of 1.6766e-10 N at a 1.0e-11 N load, 10 wear pairs and
     a pressed separation of about 3e-10 m. The app scorecard shows seven
     metrics. `just verify` -> all gates passed; 553 Rust tests. See ADR-0055.
-- [ ] **M11-03** Add a steered joint drive with a torque report. Hold one
+- [x] **M11-03** Add a steered joint drive with a torque report. Hold one
   port and drive another at a stated rate. Report the torque, the energy
   loss, and the temperature rise.
-- [ ] **M11-04** Report the normal modes of a whole part. The harmonic
+  - Result: New metric `steered_drive` in `crates/meter/src/drive.rs`, at
+    `Fidelity::Dynamics`. It builds a contact cluster, holds the planet atoms
+    at their relaxed positions, and writes the sun velocity from the drive
+    rate at every velocity-Verlet step. The report holds the mean and peak
+    resisting torque, the drive work, the energy loss, the free-atom count,
+    the final temperature and its rise. The example
+    `crates/meter/examples/drive_json.rs` prints the report as JSON. The
+    metric is NOT in the app scorecard, because it is a dynamics metric and
+    the fit is a screening estimate.
+  - Verification: `cargo test -p nanocad-meter` -> 35 passed, including
+    `the_work_is_the_torque_times_the_angle` and
+    `a_closed_body_has_no_torque`. On the default set the cluster holds 66
+    atoms and the mean torque is 1.99e-45 N m, so the non-bonded contact at
+    the relaxed mesh is nearly torque-free. The cluster holds every atom (the
+    ring is about 1e-8 m away and out of the 6e-10 m collection radius), so
+    the note states that the temperature rise is not measurable. `just verify`
+    -> all gates passed; 562 Rust tests. See ADR-0056.
+- [x] **M11-04** Report the normal modes of a whole part. The harmonic
   metric uses a 148-atom cluster. Extend it to a complete part.
+  - Result: `HarmonicMesh::measure_part(&self, part: &nanocad_model::Part)`
+    in `crates/meter/src/harmonic.rs` measures a whole part instead of a
+    cut-out cluster. It returns the same `mesh_mode` metric at the same
+    harmonic fidelity: the softest internal mode above 1e9 Hz. Because a whole
+    part has no dangling crystal boundary, the potential now includes the
+    torsion and out-of-plane terms from `crates/meter/src/bonded.rs`. The van
+    der Waals term excludes every bonded pair and every pair inside the
+    `COVALENT_EXCLUSION_M = 3.1e-10` m covalent shell, and the neighbour list
+    is rebuilt after the relaxation and before the Hessian. A part above
+    `target.max_atoms` is refused with an empty report.
+  - Verification: `cargo test -p nanocad-meter` -> 35 passed, including
+    `a_small_part_has_a_spectrum`, `a_part_above_the_cap_is_refused` and
+    `the_whole_part_mode_is_at_the_harmonic_fidelity`. The smallest plate
+    (477 atoms, 612 bonds) gives `lowest_hz = 5.733e10 Hz` with 1 unstable
+    mode in a release run of about 215 s, against the 21 unstable modes of the
+    cut-out cluster; this confirms ADR-0054. The tests use small uncapped
+    diamond blocks because the diagonalisation is cubic in the atom count.
+    `just verify` -> all gates passed; 562 Rust tests. See ADR-0057.
 
 ## M12 — Design workflow
 

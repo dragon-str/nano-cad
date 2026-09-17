@@ -11,16 +11,21 @@
 //! inside the cluster and a Buckingham van der Waals term for every
 //! non-bonded pair. The bond rest length is the current length, so the
 //! expansion is about the generated geometry.
+//!
+//! [`HarmonicMesh::measure_part`] measures a whole part instead of a cut-out
+//! cluster. A whole part has no dangling crystal boundary, so its torsion and
+//! out-of-plane terms are physical and the potential includes them.
 
 use std::collections::HashMap;
 
 use nanocad_engine::{
     hessian_finite_difference, mass_weighted, minimize_with, spectrum, symmetric_eigenvalues,
-    BondStretchTerm, Cutoff, MinimizeMethod, MinimizeOptions, PeriodicBox, System, VanDerWaalsTerm,
-    VdwParams,
+    BondStretchTerm, Cutoff, MinimizeMethod, MinimizeOptions, OutOfPlaneTerm, PeriodicBox,
+    Spectrum, System, TorsionTerm, VanDerWaalsTerm, VdwParams,
 };
 use nanocad_parts::planetary::PlanetarySet;
 
+use crate::bonded::{add_impropers, add_torsions};
 use crate::slip::{cell_of, Cell};
 use crate::{Fidelity, MetricValue};
 
@@ -38,6 +43,14 @@ const VDW_B_PER_M: f64 = 4.0e10;
 
 /// The Buckingham attraction coefficient, in joule cubic metres to the sixth.
 const VDW_C_J_M6: f64 = 5.5e-78;
+
+/// The separation below which a non-bonded pair counts as covalent, in metres.
+///
+/// The diamond second and third shells sit below this distance. A whole part
+/// is one covalent network, so its van der Waals term must not act on those
+/// pairs. Without this exclusion the minimizer lands two atoms on the same
+/// point and fails with `CoincidentNonbondedAtoms`.
+const COVALENT_EXCLUSION_M: f64 = 3.1e-10;
 
 /// The speed of light in centimetres per second, for the wavenumber.
 const LIGHT_CM_PER_S: f64 = 2.997_924_58e10;
@@ -98,7 +111,7 @@ impl HarmonicReport {
     pub fn to_metric_value(&self) -> MetricValue {
         let wavenumber = self.lowest_wavenumber_per_cm();
         let verdict = if self.atom_count == 0 {
-            "the cluster is empty, so the mesh has no measured mode"
+            "the cluster is empty or the part is too large for the atom cap, so the mesh has no measured mode"
         } else if self.lowest_hz < 1.0e11 {
             "the mesh has a soft mode, so the teeth can slide"
         } else if self.lowest_hz < 1.0e12 {
@@ -174,6 +187,45 @@ impl HarmonicMesh {
             return empty_report();
         };
         report
+    }
+
+    /// Measures the softest internal mode of a whole part.
+    ///
+    /// Every topology atom enters the potential in topology index order, with
+    /// the carbon-like mass of the cluster path. The potential has bond
+    /// stretch, torsion, out-of-plane and Buckingham van der Waals terms. The
+    /// system is relaxed to a local minimum first, then the Hessian is
+    /// finite-differenced at the relaxed geometry.
+    ///
+    /// Returns an empty report when the part is empty or larger than
+    /// `target.max_atoms`, or when the potential does not build. When the part
+    /// is too large, the caller must generate a smaller part.
+    pub fn measure_part(&self, part: &nanocad_model::Part) -> HarmonicReport {
+        let topology = &part.topology;
+        let atom_count = topology.atom_count();
+        if atom_count == 0 || atom_count > self.target.max_atoms {
+            return empty_report();
+        }
+        let Some((found, _torsion_count, _improper_count)) = self.spectrum_of_part(topology) else {
+            return empty_report();
+        };
+
+        // The six rigid modes are zero. The softest real mode is the first
+        // frequency above the floor.
+        let floor_hz = 1.0e9;
+        let index = found
+            .frequencies_hz
+            .iter()
+            .position(|frequency| *frequency > floor_hz)
+            .unwrap_or(found.frequencies_hz.len() - 1);
+        HarmonicReport {
+            lowest_hz: found.frequencies_hz[index],
+            lowest_eigenvalue_per_s2: found.eigenvalues[index],
+            unstable_count: found.unstable_count,
+            atom_count,
+            bond_count: topology.bond_count(),
+            contact_m: self.target.contact_m,
+        }
     }
 
     /// Returns the cluster atoms, sorted by distance to the mesh point.
@@ -314,6 +366,121 @@ impl HarmonicMesh {
             contact_m: self.target.contact_m,
         })
     }
+
+    /// Builds the potential of a whole part and returns its spectrum with the
+    /// torsion and out-of-plane counts.
+    ///
+    /// The van der Waals term excludes every bonded pair and every pair inside
+    /// the covalent shell, because a whole part has no separate bodies. The
+    /// torsion and out-of-plane terms are added here: a whole part has no
+    /// under-coordinated crystal boundary, so those terms are physical. A
+    /// cut-out cluster cannot use them because its boundary carbons have too
+    /// few neighbours.
+    fn spectrum_of_part(
+        &self,
+        topology: &nanocad_model::Topology,
+    ) -> Option<(Spectrum, usize, usize)> {
+        let atom_count = topology.atom_count();
+        let mut positions_m = Vec::with_capacity(atom_count);
+        for index in 0..atom_count {
+            let (Some(position_m), Some(_element)) =
+                (topology.position_m(index), topology.element(index))
+            else {
+                return None;
+            };
+            positions_m.push(position_m);
+        }
+        let flat: Vec<f64> = positions_m.iter().flat_map(|p| p.iter().copied()).collect();
+
+        let mut bonds = BondStretchTerm::new();
+        let mut neighbours: Vec<Vec<u32>> = vec![Vec::new(); atom_count];
+        for index in 0..topology.bond_count() {
+            let (Some(u), Some(v)) = (topology.bond_u(index), topology.bond_v(index)) else {
+                continue;
+            };
+            let (u, v) = (u as usize, v as usize);
+            if u >= atom_count || v >= atom_count {
+                continue;
+            }
+            let r0_m = distance_squared(positions_m[u], positions_m[v]).sqrt();
+            if r0_m <= 0.0 {
+                continue;
+            }
+            bonds
+                .add_bond(u as u32, v as u32, BOND_STIFFNESS_N_PER_M, r0_m)
+                .ok()?;
+            neighbours[u].push(v as u32);
+            neighbours[v].push(u as u32);
+        }
+
+        let mut system =
+            System::with_masses_kg(atom_count, &vec![CARBON_MASS_KG; atom_count]).ok()?;
+        system.set_bond_stretch(bonds).ok()?;
+
+        // A whole part has no bodies, so the van der Waals term excludes every
+        // bonded pair and every covalent-shell pair by hand. The remaining
+        // pairs interact only inside the contact shell.
+        let contact_squared = self.target.contact_m * self.target.contact_m;
+        let covalent_squared = COVALENT_EXCLUSION_M * COVALENT_EXCLUSION_M;
+        let mut bonded_pair = vec![false; atom_count * atom_count];
+        for (u, list) in neighbours.iter().enumerate() {
+            for &v in list {
+                bonded_pair[u * atom_count + v as usize] = true;
+            }
+        }
+        for i in 0..atom_count {
+            for j in (i + 1)..atom_count {
+                let distance = distance_squared(positions_m[i], positions_m[j]);
+                let beyond_shell = distance > contact_squared;
+                let covalent = distance <= covalent_squared;
+                if bonded_pair[i * atom_count + j] || beyond_shell || covalent {
+                    system.add_exclusion(i as u32, j as u32).ok()?;
+                }
+            }
+        }
+        let params = vec![VdwParams::new(VDW_A_J, VDW_B_PER_M, VDW_C_J_M6); atom_count];
+        let cutoff = Cutoff::new(self.target.cutoff_m, 0.9 * self.target.cutoff_m).ok()?;
+        let vdw =
+            VanDerWaalsTerm::from_params(&params, cutoff, PeriodicBox::non_periodic()).ok()?;
+        system.set_van_der_waals(vdw).ok()?;
+
+        let mut torsions = TorsionTerm::new();
+        let torsion_count = add_torsions(&mut torsions, &neighbours).ok()?;
+        if torsion_count > 0 {
+            system.set_torsion(torsions).ok()?;
+        }
+        let mut impropers = OutOfPlaneTerm::new();
+        let improper_count = add_impropers(&mut impropers, &neighbours, &positions_m).ok()?;
+        if improper_count > 0 {
+            system.set_out_of_plane(impropers).ok()?;
+        }
+
+        let mut relaxed_m = flat.clone();
+        let options = MinimizeOptions {
+            max_iterations: 400,
+            gradient_tolerance_n: 1.0e-10,
+            initial_step_m: 1.0e-12,
+        };
+        minimize_with(
+            &mut system,
+            &mut relaxed_m,
+            &options,
+            MinimizeMethod::ConjugateGradientThenLbfgs,
+        )
+        .ok()?;
+
+        // The minimizer moves the atoms, so the vdW pair list must match the
+        // relaxed geometry before the Hessian reads it.
+        system.rebuild_neighbors(&relaxed_m).ok()?;
+
+        let hessian =
+            hessian_finite_difference(&mut system, &relaxed_m, self.target.difference_step_m)
+                .ok()?;
+        let masses = vec![CARBON_MASS_KG; atom_count];
+        let weighted = mass_weighted(&hessian, &masses).ok()?;
+        let eigenvalues = symmetric_eigenvalues(&weighted, 3 * atom_count).ok()?;
+        Some((spectrum(eigenvalues), torsion_count, improper_count))
+    }
 }
 
 /// Returns the closest sun-planet atom pair.
@@ -382,6 +549,95 @@ fn empty_report() -> HarmonicReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nanocad_parts::{DiamondGenerator, ParameterSet, PartGenerator, PlateGenerator};
+
+    /// Builds a small uncapped diamond block.
+    ///
+    /// A tiny part keeps the test fast: the diagonalisation is cubic in the
+    /// coordinate count and the test profile is unoptimised.
+    fn small_diamond(cells: (f64, f64, f64)) -> nanocad_model::Part {
+        DiamondGenerator
+            .generate(
+                &ParameterSet::new()
+                    .with("cells_x", cells.0)
+                    .with("cells_y", cells.1)
+                    .with("cells_z", cells.2),
+            )
+            .expect("valid diamond")
+    }
+
+    /// A small whole part has a spectrum, and the metric finds a soft one.
+    ///
+    /// Diamond `2x1x1` gives 16 atoms. Two of them carry no bond, so the
+    /// potential has more zero modes than the six rigid ones. The measured
+    /// count is two.
+    #[test]
+    fn a_small_part_has_a_spectrum() {
+        let part = small_diamond((2.0, 1.0, 1.0));
+        let target = HarmonicTarget {
+            max_atoms: 64,
+            ..HarmonicTarget::default()
+        };
+        let report = HarmonicMesh::new(target).measure_part(&part);
+        assert_eq!(report.atom_count, 16);
+        assert!(
+            report.lowest_hz > 0.0,
+            "the softest mode is not positive: {} Hz",
+            report.lowest_hz
+        );
+        assert_eq!(report.unstable_count, 2);
+    }
+
+    /// A part above the atom cap is refused with a "too large" note.
+    #[test]
+    fn a_part_above_the_cap_is_refused() {
+        let part = PlateGenerator
+            .generate(
+                &ParameterSet::new()
+                    .with("size_x_m", 1.5e-9)
+                    .with("size_y_m", 1.5e-9)
+                    .with("thickness_m", 7.0e-10),
+            )
+            .expect("valid plate");
+        let target = HarmonicTarget {
+            max_atoms: 4,
+            ..HarmonicTarget::default()
+        };
+        let report = HarmonicMesh::new(target).measure_part(&part);
+        assert_eq!(report.atom_count, 0);
+        assert!(
+            report.to_metric_value().note.contains("too large"),
+            "the note does not say the part is too large"
+        );
+    }
+
+    /// The whole-part report carries the harmonic `mesh_mode` identity.
+    #[test]
+    fn the_whole_part_mode_is_at_the_harmonic_fidelity() {
+        let part = small_diamond((2.0, 1.0, 1.0));
+        let target = HarmonicTarget {
+            max_atoms: 64,
+            ..HarmonicTarget::default()
+        };
+        let value = HarmonicMesh::new(target)
+            .measure_part(&part)
+            .to_metric_value();
+        assert_eq!(value.fidelity, Fidelity::Harmonic);
+        assert_eq!(value.name, "mesh_mode");
+    }
+
+    /// A larger whole part returns a non-empty report.
+    #[test]
+    fn a_bigger_part_does_not_crash() {
+        let part = small_diamond((2.0, 2.0, 1.0));
+        let target = HarmonicTarget {
+            max_atoms: 64,
+            ..HarmonicTarget::default()
+        };
+        let report = HarmonicMesh::new(target).measure_part(&part);
+        assert!(report.atom_count > 0, "the part returned an empty report");
+        assert!(report.lowest_hz > 0.0);
+    }
 
     /// A pair of atoms has a known mode, and the metric finds a soft one.
     #[test]

@@ -8,6 +8,7 @@
 
 pub mod bonded;
 pub mod clearance;
+pub mod drive;
 pub mod geometry;
 pub mod harmonic;
 pub mod loaded;
@@ -15,6 +16,7 @@ pub mod relaxed;
 pub mod slip;
 
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
+pub use drive::{DriveReport, DriveTarget, SteeredDrive};
 pub use geometry::{atom_count, contact_ratio};
 pub use harmonic::{HarmonicMesh, HarmonicReport, HarmonicTarget};
 pub use loaded::{LoadedContact, LoadedContactReport, LoadedContactTarget};

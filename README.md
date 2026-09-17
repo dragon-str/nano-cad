@@ -3,7 +3,7 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **553 Rust tests plus
+Status: **pre-alpha.** The core is built end to end and **562 Rust tests plus
 93 Python and app tests and 11 JavaScript tests pass** (14 Python tests skip
 without their optional dependency). The 11-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,
@@ -73,15 +73,6 @@ The script checks the toolchains, builds the extension with maturin from
 `python/`, runs the Rust tests, runs the MCP demo test, and prints the measured
 gear ratio. See `docs/reproduce.md` for the prerequisites, the exact commands,
 what each step proves, and what is not reproduced.
-
-## Start a clean session
-
-Point a fresh agent at this repository and give it this prompt:
-
-> Read AGENTS.md, then PLAN.md, ARCHITECTURE.md, PARAMETERS.md, TASKS.md, and
-> DECISIONS.md. Work on the first unchecked task in TASKS.md. Follow the work
-> loop in AGENTS.md. Do not copy GPL code. Run the verification commands before
-> you report done.
 
 ## License
 
