@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,6 +33,15 @@ import chat  # noqa: E402
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 BUILD_TIMEOUT_S = 240
+
+# The engine runs as a release build. The default gear set has 142091 atoms,
+# and the release binary is far faster than the debug one. Set `--debug-engine`
+# to rebuild and run the debug profile instead.
+CARGO_PROFILE = "--release"
+# The score of one parameter set does not change, so keep the last results. The
+# sweep is expensive, and a page reload repeats the same request.
+_SCORE_CACHE = {}
+_SCORE_LOCK = threading.Lock()
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -52,6 +62,18 @@ def _cargo() -> str:
     return shutil.which("cargo") or os.path.expanduser("~/.cargo/bin/cargo")
 
 
+def _run_example(package: str, example: str, args: list) -> subprocess.CompletedProcess:
+    """Run a Rust example in the chosen profile and capture its output."""
+    command = [
+        _cargo(), "run", "--quiet", CARGO_PROFILE,
+        "-p", package, "--example", example, "--",
+    ]
+    command.extend(args)
+    return subprocess.run(
+        command, cwd=ROOT, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
+    )
+
+
 def _param_args(params: dict) -> list:
     """Turn a parameter map into the `key=value` arguments of an example."""
     args = []
@@ -65,15 +87,9 @@ def build_scene(params: dict) -> dict:
     workdir = tempfile.mkdtemp(prefix="ncad-app-")
     try:
         output = os.path.join(workdir, "scene.json")
-        command = [
-            _cargo(), "run", "--quiet", "-p", "nanocad-jigs",
-            "--example", "scene_json", "--", output,
-        ]
-        command.extend(_param_args(params))
-        result = subprocess.run(
-            command, cwd=ROOT, capture_output=True, text=True,
-            timeout=BUILD_TIMEOUT_S,
-        )
+        args = [output]
+        args.extend(_param_args(params))
+        result = _run_example("nanocad-jigs", "scene_json", args)
         if result.returncode != 0:
             detail = result.stderr.strip().splitlines()
             raise BuildError(detail[-1] if detail else "the generator failed")
@@ -88,14 +104,12 @@ def build_scene(params: dict) -> dict:
 
 def score_scene(params: dict) -> dict:
     """Run the Rust metric example with `params` and return the metric list."""
-    command = [
-        _cargo(), "run", "--quiet", "-p", "nanocad-meter",
-        "--example", "score_json", "--",
-    ]
-    command.extend(_param_args(params))
-    result = subprocess.run(
-        command, cwd=ROOT, capture_output=True, text=True, timeout=BUILD_TIMEOUT_S,
-    )
+    key = tuple(sorted(params.items()))
+    with _SCORE_LOCK:
+        cached = _SCORE_CACHE.get(key)
+    if cached is not None:
+        return cached
+    result = _run_example("nanocad-meter", "score_json", _param_args(params))
     if result.returncode != 0:
         detail = result.stderr.strip().splitlines()
         raise BuildError(detail[-1] if detail else "the metric run failed")
@@ -103,9 +117,12 @@ def score_scene(params: dict) -> dict:
     if not lines:
         raise BuildError("the metric run printed nothing")
     try:
-        return json.loads(lines[-1])
+        score = json.loads(lines[-1])
     except json.JSONDecodeError as error:
         raise BuildError(f"the metric output was not JSON: {error}") from None
+    with _SCORE_LOCK:
+        _SCORE_CACHE[key] = score
+    return score
 
 
 def _params_from_query(query: str) -> dict:
@@ -241,12 +258,20 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> int:
+    global CARGO_PROFILE
     parser = argparse.ArgumentParser(description="nano-cad local web app")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument(
+        "--debug-engine", action="store_true",
+        help="run the debug profile of the Rust engine instead of the release profile",
+    )
     arguments = parser.parse_args()
+    if arguments.debug_engine:
+        CARGO_PROFILE = "--debug"
     server = ThreadingHTTPServer((arguments.host, arguments.port), Handler)
     print(f"nano-cad app on http://{arguments.host}:{arguments.port}/ (Ctrl-C stops)")
+    print(f"engine profile: {CARGO_PROFILE.lstrip('-')}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
