@@ -764,20 +764,53 @@ defect. Every later part generator uses them.
   - Verification: 7 unit tests pass, including the radius-and-z
     preservation, the angle stretch, the singular refusal and the core
     mask. Clippy is clean.
-- [ ] **M10-05** Generate a hex axle and a plain shaft. The cross section
+- [x] **M10-05** Generate a hex axle and a plain shaft. The cross section
   is a hexagonal prism, because a hex axle passes torque with a flat
   face. The generator states the across-flats size, the length, and the
   end chamfer.
-- [ ] **M10-06** Generate structural blocks: a plate, a beam, and a
+  - Result: `crates/parts/src/axle.rs` adds `HexAxleGenerator` (id
+    `hex_axle`) and `PlainShaftGenerator` (id `plain_shaft`). The hex
+    prism circumradius is `across_flats_m / sqrt(3)`. The chamfer is an
+    axial shortening, stated in the module doc as not a conical cut. The
+    default hex axle has 19537 atoms and 33140 bonds; the shaft has 7309
+    atoms and 11828 bonds.
+  - Verification: 5 unit tests pass. The radius and length tests read
+    the filled carbon atoms, because a hydrogen cap sits up to the C-H
+    length outside the surface. `cargo test --workspace` -> 542 passed.
+    Clippy is clean.
+- [x] **M10-06** Generate structural blocks: a plate, a beam, and a
   bracket. A beam states its section and its length. A bracket is an
   L shape with a stated leg length and thickness.
-- [ ] **M10-07** Generate a radial bearing and a bushing. A bearing has
+  - Result: `crates/parts/src/block.rs` adds `PlateGenerator` (`plate`),
+    `BeamGenerator` (`beam`) and `BracketGenerator` (`bracket`). One
+    private `part_from_solid` helper fills the shape. A plate hole is a
+    subtracted cylinder. Default counts: plate 6097 atoms and 9524
+    bonds, beam 3677 and 5476, bracket 2825 and 4180.
+  - Verification: 5 unit tests pass. The hole test reads carbons only,
+    because the caps point into the void. Clippy is clean.
+- [x] **M10-07** Generate a radial bearing and a bushing. A bearing has
   an inner race, an outer race, and a stated radial gap. The rolling
   elements are a stated count of cylinders. A bushing is a plain sleeve
   with a stated clearance.
-- [ ] **M10-08** Generate a clutch plate and a ratchet. The clutch is a
+  - Result: `crates/parts/src/bearing.rs` adds `RadialBearingGenerator`
+    (`radial_bearing`) and `BushingGenerator` (`bushing`), plus the
+    `inner_port`, `outer_port` and `shaft_port` helpers. A bearing with
+    an outer radius below `inner + 2 * gap` is refused with
+    `PartError::InvalidGeometry`. Default counts: bearing 19480 atoms
+    and 26876 bonds, bushing 9668 and 13996.
+  - Verification: 6 unit tests pass, including the port degree of
+    freedom and the refusal. Clippy is clean.
+- [x] **M10-08** Generate a clutch plate and a ratchet. The clutch is a
   stack of toothed plates with a stated gap. The ratchet is a pawl and a
   toothed wheel with a stated tooth count.
+  - Result: `crates/parts/src/clutch.rs` adds `ClutchPlateGenerator`
+    (`clutch_plate`) and `RatchetGenerator` (`ratchet`). The plate is a
+    square-tooth annular outline filled through a `Profile` clipped by a
+    `Box3`, with the centre removed. The ratchet is a one-way saw-tooth
+    wheel plus a rigid block pawl. Default counts: clutch plate 3760
+    atoms, ratchet 13538 atoms.
+  - Verification: 5 unit tests pass. The radius test reads carbons only,
+    because the caps sit past the surface. Clippy is clean.
 
 ## M11 — Loaded contact and driven motion
 

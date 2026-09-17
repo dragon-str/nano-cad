@@ -5,6 +5,10 @@
 //! crate holds SI positions and unit-suffixed names, following ADR-0003.
 #![forbid(unsafe_code)]
 
+pub mod axle;
+pub mod bearing;
+pub mod block;
+pub mod clutch;
 pub mod diamond_solid;
 pub mod dislocation;
 pub mod error;
@@ -23,6 +27,10 @@ pub mod shape;
 pub mod spur_gear;
 pub mod validation;
 
+pub use axle::{HexAxleGenerator, PlainShaftGenerator};
+pub use bearing::{BushingGenerator, RadialBearingGenerator};
+pub use block::{BeamGenerator, BracketGenerator, PlateGenerator};
+pub use clutch::{ClutchPlateGenerator, RatchetGenerator};
 pub use dislocation::{
     core_atom_mask, displace, displace_point_m, five_seven_wedge_rad, WedgeDisclination,
 };
