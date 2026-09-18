@@ -4,14 +4,21 @@
 //! shows both. The two mechanisms differ, so the scene states the difference
 //! in its data instead of in a new schema.
 //!
-//! - The housing is body 0 and it is fixed. The rotor is body 1.
+//! - The housing is body 0 and it is fixed. The rotor is body 1. The drive
+//!   shaft turns with the rotor, because a key locks the shaft to the rotor's
+//!   keyway, so the shaft atoms belong to body 1 and need no joint of their own.
 //! - Bodies 2 through 13 are the twelve ejection rods, one for each pocket.
 //!   Each rod is captive in a radial ejection bore in the rotor, so its
 //!   prismatic joint names the rotor as its first body and the rod slides along
 //!   that pocket's radius.
-//! - Body 14 is the cam ring. It is fixed to the housing and shares the rotor
-//!   axis. Its one lobe rises at the ejection angle and thrusts a rod outward
-//!   when that rod's pocket turns past it.
+//! - Body 14 is the cam plate. It is fixed to the housing and shares the rotor
+//!   axis. The plate lies below the rotor, and its face laps under the housing
+//!   ring, so the housing holds the plate from below and around its rim. One
+//!   circular groove is cut into the plate face. The groove centre is offset
+//!   from the rotor axis, so one wall of the groove pushes a rod out and the
+//!   opposite wall pulls it back, with no spring.
+//! - Each rod carries a follower pin. The pin hangs from the rod into the
+//!   groove, so the groove walls drive the rod.
 //! - The design block is zero. Its fields describe a gear set, and a rotor has
 //!   no gear set. A viewer reads a zero module as "not a gearbox".
 //! - The rotor turns about the world `z` axis through the origin, because the
@@ -24,17 +31,18 @@
 //! # Scope limit
 //!
 //! The scene does not include a binding site, a guest molecule, a solvent or
-//! an ion, so it does not show molecular selectivity. The cam lobe states where
-//! the thrust begins; it is a radial key and not a tuned motion law, so the
-//! rod acceleration is not designed. The cam pushes outward and nothing pulls a
-//! rod back, so the model states the profile and omits the return spring. The
-//! rod generator builds no follower pin and no sliding fit. The work of one
+//! an ion, so it does not show molecular selectivity. The eccentric groove
+//! gives one out stroke and one return stroke for each rotor turn. It is a
+//! radial key and not a tuned motion law, so the rod acceleration is not
+//! designed. The pin slides in the groove; a roller follower would roll. The
+//! scene omits the contact force between the pin and the groove, the torque on
+//! the drive shaft, and the machine that turns the shaft. The work of one
 //! ejection stays a measured barrier in [`nanocad_meter`], not a rod force.
 
 use nanocad_model::Part;
 use nanocad_parts::{
-    place, CamRingGenerator, EjectionRodGenerator, ParameterSet, PartError, PartGenerator,
-    RotorHousingGenerator, SortingRotorGenerator,
+    place, CamPlateGenerator, DriveShaftGenerator, EjectionRodGenerator, FollowerPinGenerator,
+    ParameterSet, PartError, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
 };
 
 use crate::scene::{
@@ -50,7 +58,7 @@ pub const ROTOR_BODY: usize = 1;
 pub const ROD_BODY_FIRST: usize = 2;
 /// The number of ejection rods, one for each pocket.
 pub const ROD_COUNT: usize = 12;
-/// The device body index of the fixed cam ring.
+/// The device body index of the fixed cam plate.
 pub const CAM_BODY: usize = ROD_BODY_FIRST + ROD_COUNT;
 /// The body role of the fixed housing.
 pub const HOUSING_ROLE: &str = "housing";
@@ -58,8 +66,12 @@ pub const HOUSING_ROLE: &str = "housing";
 pub const ROTOR_ROLE: &str = "rotor";
 /// The body role of an ejection rod.
 pub const ROD_ROLE: &str = "ejection_rod";
-/// The body role of the fixed cam ring.
-pub const CAM_ROLE: &str = "cam_ring";
+/// The body role of the fixed cam plate.
+pub const CAM_ROLE: &str = "cam_plate";
+/// The part id of the drive shaft, whose atoms ride on the rotor body.
+pub const SHAFT_PART_ID: &str = "drive_shaft";
+/// The part id of a follower pin, whose atoms ride on a rod body.
+pub const PIN_PART_ID: &str = "follower_pin";
 
 /// A written description of the rotor scene frame.
 pub const ROTOR_FRAME: &str =
@@ -137,20 +149,26 @@ fn scene_body(index: usize, role: &str, part_id: &str, fixed: bool) -> SceneBody
 
 /// Builds the sorting rotor scene.
 ///
-/// The rotor, the housing and the cam ring use their default parameters. The
-/// rotor mates to the housing through the rotor axis port and the housing
-/// chamber port. Each ejection rod is built with the shaft length that reaches
-/// from the cam base out to the inner wall of its pocket, and it is turned to
-/// lie along that pocket's radius.
+/// The rotor, the housing, the cam plate and the drive shaft use their default
+/// parameters. The rotor mates to the housing through the rotor axis port and
+/// the housing chamber port. The cam plate laps under the housing ring, so its
+/// top face is flush with the housing lower face. Each ejection rod is built
+/// with the shaft length that reaches from the cam groove out to the inner wall
+/// of its pocket. Each follower pin hangs from the inner end of its rod into the
+/// groove. The drive shaft shares the rotor body, because the key locks the two.
 ///
 /// # Errors
 ///
-/// Returns [`SceneError::Part`] when a generator rejects its defaults, and
-/// [`SceneError::MissingAtom`] when an atom has no element or position.
+/// Returns [`SceneError::Part`] when a generator rejects its defaults, when the
+/// rod is too short to reach its pocket, when the cam groove or the cam bore
+/// does not clear the rotor bore, or when a pin does not reach the groove.
+/// Returns [`SceneError::MissingAtom`] when an atom has no element or position.
 pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let rotor = SortingRotorGenerator.generate_with_defaults()?;
     let housing = RotorHousingGenerator.generate_with_defaults()?;
-    let cam = CamRingGenerator.generate_with_defaults()?;
+    let cam = CamPlateGenerator.generate_with_defaults()?;
+    let shaft = DriveShaftGenerator.generate_with_defaults()?;
+    let pin = FollowerPinGenerator.generate_with_defaults()?;
     let rotor = place(
         rotor,
         &SortingRotorGenerator.axis_port(),
@@ -163,36 +181,73 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let pocket_orbit_m = default_m(&SortingRotorGenerator, "pocket_orbit_m");
     let pocket_radius_m = default_m(&SortingRotorGenerator, "pocket_radius_m");
     let pocket_inner_m = pocket_orbit_m - pocket_radius_m;
-    let cam_base_m = CamRingGenerator.base_radius_m();
+    let rotor_bore_m = default_m(&SortingRotorGenerator, "bore_radius_m");
+    let rod_radius_m = default_m(&EjectionRodGenerator, "shaft_radius_m");
     let tip_length_m = default_m(&EjectionRodGenerator, "tip_length_m");
-    let rod_length_m = pocket_inner_m - cam_base_m;
+    let groove_radius_m = CamPlateGenerator.groove_radius_m();
+    let groove_eccentricity_m = CamPlateGenerator.groove_eccentricity_m();
+    let groove_depth_m = CamPlateGenerator.groove_depth_m();
+    let groove_width_m = CamPlateGenerator.groove_width_m();
+    let cam_retract_m = groove_radius_m - groove_eccentricity_m;
+    let cam_extend_m = groove_radius_m + groove_eccentricity_m;
+    if cam_retract_m <= rotor_bore_m + rod_radius_m {
+        return Err(SceneError::Part(format!(
+            "the cam groove retracts to {cam_retract_m} m, which reaches the rotor bore \
+             {rotor_bore_m} m plus the rod radius {rod_radius_m} m"
+        )));
+    }
+    let rod_length_m = pocket_inner_m - cam_retract_m;
     let shaft_length_m = rod_length_m - tip_length_m;
     if shaft_length_m <= 0.0 {
         return Err(SceneError::Part(
-            "the cam base reaches the pocket inner wall, so no rod fits".to_string(),
+            "the cam groove reaches the pocket inner wall, so no rod fits".to_string(),
         ));
     }
     let rod = EjectionRodGenerator
         .generate(&ParameterSet::new().with("shaft_length_m", shaft_length_m))?;
     let half_shaft_m = 0.5 * shaft_length_m;
     let rod_reach_m = half_shaft_m + tip_length_m;
-    let radial_offset_m = pocket_inner_m - rod_reach_m;
+    let radial_offset_m = cam_retract_m + half_shaft_m;
 
-    let rotor_radius_m = default_m(&SortingRotorGenerator, "disc_radius_m");
-    let housing_radius_m = default_m(&RotorHousingGenerator, "chamber_radius_m")
-        + default_m(&RotorHousingGenerator, "wall_m");
-    let rotor_half_thickness_m = default_m(&SortingRotorGenerator, "thickness_m") / 2.0;
+    let shaft_radius_m = default_m(&DriveShaftGenerator, "shaft_radius_m");
+    if shaft_radius_m >= rotor_bore_m || shaft_radius_m >= CamPlateGenerator.inner_radius_m() {
+        return Err(SceneError::Part(format!(
+            "the drive shaft radius {shaft_radius_m} m does not clear the rotor bore \
+             {rotor_bore_m} m and the cam plate bore"
+        )));
+    }
+
     let housing_half_thickness_m = default_m(&RotorHousingGenerator, "thickness_m") / 2.0;
-    let cam_half_thickness_m = CamRingGenerator.thickness_m() / 2.0;
-    let _ = (
-        rotor_radius_m,
-        housing_radius_m,
-        rotor_half_thickness_m,
-        housing_half_thickness_m,
-    );
+    let rotor_half_thickness_m = default_m(&SortingRotorGenerator, "thickness_m") / 2.0;
+    let cam_top_m = -housing_half_thickness_m;
+    let cam_offset_m = cam_top_m - 0.5 * CamPlateGenerator.thickness_m();
+    let cam_bottom_m = cam_top_m - groove_depth_m;
+    let pin_length_m = FollowerPinGenerator.length_m();
+    let pin_bottom_m = -rotor_half_thickness_m - pin_length_m;
+    if pin_bottom_m >= cam_top_m || pin_bottom_m <= cam_bottom_m {
+        return Err(SceneError::Part(format!(
+            "the follower pin ends at {pin_bottom_m} m, outside the groove between \
+             {cam_bottom_m} m and {cam_top_m} m"
+        )));
+    }
+    let pin_head_radius_m = FollowerPinGenerator.head_radius_m();
+    if 2.0 * pin_head_radius_m >= groove_width_m {
+        return Err(SceneError::Part(format!(
+            "the follower head diameter {} m does not fit the groove width {groove_width_m} m",
+            2.0 * pin_head_radius_m
+        )));
+    }
+    let _ = (rod_reach_m, cam_extend_m);
 
-    let mut atoms = scene_atoms(&housing, HOUSING_BODY, HOUSING_ROLE, "rotor_housing");
-    atoms.extend(scene_atoms(&rotor, ROTOR_BODY, ROTOR_ROLE, "sorting_rotor"));
+    let housing_atoms = scene_atoms(&housing, HOUSING_BODY, HOUSING_ROLE, "rotor_housing");
+    let mut rotor_atoms = scene_atoms(&rotor, ROTOR_BODY, ROTOR_ROLE, "sorting_rotor");
+    rotor_atoms.extend(scene_atoms(&shaft, ROTOR_BODY, ROTOR_ROLE, SHAFT_PART_ID));
+    let cam_atoms = scene_atoms_mapped(&cam, CAM_BODY, CAM_ROLE, "cam_plate", |point_m| {
+        [point_m[0], point_m[1], point_m[2] + cam_offset_m]
+    });
+
+    let mut atoms = housing_atoms;
+    atoms.extend(rotor_atoms.iter().cloned());
 
     let mut rod_bodies = Vec::with_capacity(ROD_COUNT);
     let mut rod_coarse = Vec::with_capacity(ROD_COUNT);
@@ -204,14 +259,23 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         let pocket_center_m =
             SortingRotorGenerator::pocket_center_m(index, pocket_count, pocket_orbit_m);
         let body = ROD_BODY_FIRST + index;
-        let pocket_atoms = scene_atoms_mapped(&rod, body, ROD_ROLE, "ejection_rod", |point_m| {
+        let rod_atoms = scene_atoms_mapped(&rod, body, ROD_ROLE, "ejection_rod", |point_m| {
             [
                 point_m[2] * cos_rad - point_m[1] * sin_rad + radial_offset_m * cos_rad,
                 point_m[2] * sin_rad + point_m[1] * cos_rad + radial_offset_m * sin_rad,
                 -point_m[0],
             ]
         });
-        if let Some(cylinder) = local_cylinder(&pocket_atoms, radial_m) {
+        let pin_atoms = scene_atoms_mapped(&pin, body, PIN_PART_ID, PIN_PART_ID, |point_m| {
+            [
+                cam_retract_m * cos_rad + point_m[0],
+                cam_retract_m * sin_rad + point_m[1],
+                -rotor_half_thickness_m + point_m[2],
+            ]
+        });
+        let mut rod_atom_set = rod_atoms;
+        rod_atom_set.extend(pin_atoms);
+        if let Some(cylinder) = local_cylinder(&rod_atom_set, radial_m) {
             rod_coarse.push(CoarseBody {
                 index: body,
                 name: ROD_ROLE.to_string(),
@@ -220,7 +284,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
                 bounding_cylinder: Some(cylinder),
             });
         }
-        atoms.extend(pocket_atoms);
+        atoms.extend(rod_atom_set);
         rod_bodies.push(scene_body(body, ROD_ROLE, "ejection_rod", false));
         rod_joints.push(SceneJoint {
             name: format!("ejection_rod_{index}"),
@@ -233,7 +297,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             axis_b_body: Some(radial_m),
         });
     }
-    atoms.extend(scene_atoms(&cam, CAM_BODY, CAM_ROLE, "cam_ring"));
+    atoms.extend(cam_atoms.iter().cloned());
     if atoms.is_empty() {
         return Err(SceneError::MissingAtom { index: 0 });
     }
@@ -244,7 +308,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         scene_body(ROTOR_BODY, ROTOR_ROLE, "sorting_rotor", false),
     ];
     bodies.extend(rod_bodies);
-    bodies.push(scene_body(CAM_BODY, CAM_ROLE, "cam_ring", true));
+    bodies.push(scene_body(CAM_BODY, CAM_ROLE, "cam_plate", true));
 
     let mut joints = Vec::with_capacity(1 + ROD_COUNT);
     joints.push(SceneJoint {
@@ -272,7 +336,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             name: ROTOR_ROLE.to_string(),
             role: ROTOR_ROLE.to_string(),
             pitch_circle: None,
-            bounding_cylinder: bounding_cylinder(&rotor, axis, rotor_half_thickness_m),
+            bounding_cylinder: local_cylinder(&rotor_atoms, axis),
         },
     ];
     coarse.extend(rod_coarse);
@@ -281,7 +345,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         name: CAM_ROLE.to_string(),
         role: CAM_ROLE.to_string(),
         pitch_circle: None,
-        bounding_cylinder: bounding_cylinder(&cam, axis, cam_half_thickness_m),
+        bounding_cylinder: local_cylinder(&cam_atoms, axis),
     });
 
     let body_count = bodies.len();
@@ -443,16 +507,16 @@ mod tests {
     fn the_cam_is_fixed_to_the_housing() {
         let scene = scene();
         let cam = &scene.device.bodies[CAM_BODY];
-        assert!(cam.fixed, "the cam ring does not turn");
+        assert!(cam.fixed, "the cam plate does not turn");
         assert_eq!(cam.role, CAM_ROLE);
-        assert_eq!(cam.part_id.as_deref(), Some("cam_ring"));
+        assert_eq!(cam.part_id.as_deref(), Some("cam_plate"));
         assert!(
             scene
                 .device
                 .joints
                 .iter()
                 .all(|joint| joint.body_a != CAM_BODY && joint.body_b != CAM_BODY),
-            "the cam ring has no joint of its own"
+            "the cam plate has no joint of its own"
         );
     }
 
@@ -464,6 +528,52 @@ mod tests {
         assert_eq!(bodies[ROTOR_BODY].role, ROTOR_ROLE);
         assert_eq!(bodies[HOUSING_BODY].role, HOUSING_ROLE);
         assert_eq!(bodies[ROTOR_BODY].orientation_wxyz, [1.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_drive_shaft_turns_with_the_rotor() {
+        let scene = scene();
+        let shaft_atoms = scene
+            .atomistic
+            .atoms
+            .iter()
+            .filter(|atom| atom.part_id == SHAFT_PART_ID)
+            .count();
+        assert!(shaft_atoms > 0, "the scene holds no drive shaft atom");
+        assert!(
+            scene
+                .atomistic
+                .atoms
+                .iter()
+                .filter(|atom| atom.part_id == SHAFT_PART_ID)
+                .all(|atom| atom.body == ROTOR_BODY),
+            "a drive shaft atom is not on the rotor body"
+        );
+        assert!(
+            scene
+                .device
+                .joints
+                .iter()
+                .filter(|joint| joint.body_b == ROTOR_BODY && joint.kind == "revolute")
+                .count()
+                == 1,
+            "the rotor body carries more than one rotor-axis joint"
+        );
+    }
+
+    #[test]
+    fn every_rod_carries_a_follower_pin() {
+        let scene = scene();
+        for index in 0..ROD_COUNT {
+            let body = ROD_BODY_FIRST + index;
+            let pins = scene
+                .atomistic
+                .atoms
+                .iter()
+                .filter(|atom| atom.body == body && atom.part_id == PIN_PART_ID)
+                .count();
+            assert!(pins > 0, "rod {index} carries no follower pin");
+        }
     }
 
     #[test]
@@ -480,8 +590,9 @@ mod tests {
             );
         }
         assert_eq!(counts[HOUSING_BODY], 39848);
-        assert_eq!(counts[ROTOR_BODY], 39368);
-        assert_eq!(counts[CAM_BODY], 3793);
+        assert_eq!(counts[ROTOR_BODY], 54844);
+        assert_eq!(counts[CAM_BODY], 54953);
+        assert_eq!(counts[ROD_BODY_FIRST], 666);
         for index in 0..ROD_COUNT {
             assert_eq!(
                 counts[ROD_BODY_FIRST + index],

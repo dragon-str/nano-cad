@@ -73,7 +73,9 @@
     ground: "#6e7681",
     housing: "#7d8590",
     rotor: "#d2a8ff",
-    cam_ring: "#e3b341",
+    cam_plate: "#e3b341",
+    drive_shaft: "#79c0ff",
+    follower_pin: "#ffa657",
     ejection_rod: "#ff7b72",
     sun: "#f2c14e",
     planet: "#4ec9b0",
@@ -111,19 +113,15 @@
   var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
 
   /* Each rod pushes the guest out of its pocket by this distance at full
-     stroke. It matches lobe_height_m, the cam lobe height in
-     crates/parts/src/cam.rs. The viewer extends one rod at a time, once for
-     each rotor turn. */
+     stroke. It matches twice the groove_eccentricity_m default in
+     crates/parts/src/cam_plate.rs. The eccentric groove drives one rod out and
+     pulls it back once for each rotor turn. */
   var ROTOR_ROD_STROKE_M = 2.0e-9;
 
-  /* The cam lobe centre angle in radians. It matches the lobe_angle_rad default
-     in crates/parts/src/cam.rs, which faces the housing outlet at PI. */
+  /* The groove centre angle in radians. It matches the groove_angle_rad default
+     in crates/parts/src/cam_plate.rs, which faces the housing outlet at PI. */
   var ROTOR_CAM_LOBE_RAD = Math.PI;
 
-  /* The angular half width of one stroke, in radians. It is half of the 2*PI/12
-     pocket spacing, so a rod is fully out as its pocket crosses the lobe and is
-     home between lobes. */
-  var ROTOR_ROD_PHASE_RAD = Math.PI / 12;
   var hoverAtom = -1;
   var measure = [];
   var livePositions = null;
@@ -451,10 +449,7 @@
           var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
           var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
           delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-          var ratio = 0;
-          if (Math.abs(delta) < ROTOR_ROD_PHASE_RAD) {
-            ratio = 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_ROD_PHASE_RAD));
-          }
+          var ratio = 0.5 * (1 + Math.cos(delta));
           var offset = motion.rod_stroke_m * ratio;
           ox = x * cc - y * sc + Math.cos(rodAngle) * offset;
           oy = x * sc + y * cc + Math.sin(rodAngle) * offset;
@@ -1161,12 +1156,12 @@
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: sorting rotor",
-        "bodies: " + scene.device.body_count + " (housing, rotor, cam ring, " +
-          (motion.rods || []).length + " rods)",
+        "bodies: " + scene.device.body_count + " (housing, rotor with drive shaft, cam plate, " +
+          (motion.rods || []).length + " rods with follower pins)",
         "joints: " + scene.device.joints.length + " (revolute, prismatic)",
         "atoms: " + scene.atomistic.atom_count,
         "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
-        "cam lobe at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg",
+        "cam groove centre at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1799,13 +1794,22 @@
       (Number(payload.rotor_radius_m) * 2e9).toFixed(1) + " nm chamber plus two channels"
     );
     row(
-      "cam ring " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
-      " kg, fixed, one lobe at 180 deg"
+      "cam plate " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
+      " kg, fixed below the rotor, one eccentric groove with a " +
+      (Number(payload.rod_stroke_m) * 1e9).toFixed(1) + " nm stroke"
+    );
+    row(
+      "drive shaft " + payload.shaft_atoms + " atoms, " + exponent(payload.shaft_mass_kg) +
+      " kg, keyed to the rotor"
     );
     row(
       "ejection rods " + (payload.rod_count | 0) + " x " + payload.rod_atoms +
       " atoms, " + exponent(payload.rod_mass_kg) + " kg each, " +
       (Number(payload.rod_length_m) * 1e9).toFixed(1) + " nm long, one per pocket"
+    );
+    row(
+      "follower pins " + (payload.rod_count | 0) + " x " + payload.pin_atoms +
+      " atoms, " + exponent(payload.pin_mass_kg) + " kg each, one per rod"
     );
     row(
       "assembly " + payload.total_atoms + " atoms, " +

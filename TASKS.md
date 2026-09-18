@@ -1389,3 +1389,83 @@ ADR-0063.
     passed; `python3 site/check.py` -> all checks passed;
     `node site/render_atoms.test.js` -> 11 passed; `just verify` -> all gates
     passed.
+
+---
+
+## M17 — The cam leaves the rotor plane, and the groove drives both ways
+
+The user reported that the in-plane cam ring cannot be fixed to the housing
+where it overlaps the turning rods, and asked how the rotor is powered. The
+answer is an eccentric face groove on a fixed plate. The groove turns with the
+rotor nowhere; the rotor carries the rods, and each rod's follower pin rides the
+groove. One wall of the eccentric groove pushes a rod out and the opposite wall
+pulls it back, so the return needs no spring. The rotor is turned by a keyed
+drive shaft.
+
+- [x] **M17-01** Build the follower pin.
+  - Result: `crates/parts/src/pin.rs` adds `FollowerPinGenerator` (id
+    `follower_pin`). The pin is a narrow neck and a wide head. It hangs along
+    `-z` and it names a rod port and a groove port. The library holds 24
+    generators.
+  - Verification: `cargo test -p nanocad-parts pin` -> 7 passed. Measured: the
+    pin holds 64 atoms and 74 bonds.
+
+- [x] **M17-02** Build the cam plate with one eccentric groove.
+  - Result: `crates/parts/src/cam_plate.rs` adds `CamPlateGenerator` (id
+    `cam_plate`). The plate is a stationary annulus below the rotor, and one
+    circular groove is cut into its face. The groove centre is offset from the
+    rotor axis, so the groove radius runs from 2.0e-9 m to 4.0e-9 m, a stroke
+    of 2.0e-9 m. `rod_radius_m(theta)` gives the groove centreline radius. The
+    library holds 25 generators.
+  - Verification: `cargo test -p nanocad-parts cam_plate` -> 11 passed.
+    Measured: the plate holds 37861 atoms and 57878 bonds with the smaller
+    default outer radius; the final scene radius is larger, see M17-05.
+
+- [x] **M17-03** Add the housing end plates.
+  - Result: `RotorHousingGenerator` takes `plate_thickness_m` and
+    `plate_bore_radius_m`. Two annular plates close the chamber above and below
+    the ring and carry a central bore for the drive shaft. The default is no
+    plate, because the cam plate laps under the ring in the rotor scene.
+  - Verification: `cargo test -p nanocad-parts housing` -> 10 passed. The
+    chamber and channel tests filter `Element::CARBON` and restrict z to the
+    ring, because a plate puts material at the chamber radius and hydrogen caps
+    leak into the slot.
+
+- [x] **M17-04** Add the drive shaft and the rotor keyway.
+  - Result: `crates/parts/src/shaft.rs` adds `DriveShaftGenerator` (id
+    `drive_shaft`), a shaft with a key on `+x`. `SortingRotorGenerator` takes
+    `keyway_width_m` and `keyway_depth_m`, and it cuts a keyway into the rotor
+    bore. The rotor `bore_radius_m` default fell to 1.5e-9 m, because the cam
+    left the plane. The library holds 26 generators.
+  - Verification: `cargo test -p nanocad-parts shaft` -> 8 passed;
+    `the_keyway_is_void_and_removes_material` passes in `rotor` -> 17 passed.
+
+- [x] **M17-05** Rebuild the rotor scene.
+  - Result: `crates/jigs/src/rotor_scene.rs` holds 15 bodies and 13 joints:
+    the fixed housing, the rotor on a revolute joint, the fixed cam plate
+    below it, and 12 rods. The drive shaft atoms ride the rotor body, because
+    the key locks them, so the shaft needs no joint of its own. Each rod
+    carries a follower pin that hangs into the groove. The cam plate top face
+    is flush with the housing lower face, so the plate laps under the ring and
+    the housing holds it from below and around its rim. `rotor_json` reports
+    the cam plate, the shaft, the pins and the stroke.
+  - Verification: `cargo test -p nanocad-jigs rotor_scene` -> 11 passed.
+    Measured: the rotor body holds 54844 atoms (49708 rotor plus 5136 shaft),
+    the housing 39848, the cam plate 54953 and each rod 666 (602 rod plus 64
+    pin), so the device holds 157637 atoms and 2.2431991352736912e-21 kg. The
+    rod is 3.5e-9 m long and the stroke is 2.0e-9 m.
+
+- [x] **M17-06** Animate the new mechanism and update the docs.
+  - Result: `site/viewer.js` gives the cam plate and the drive shaft their own
+    colours, and it drives every rod with the eccentric formula
+    `0.5 * (1 + cos(delta))`, so all 12 rods move smoothly and the model needs
+    no stroke window. The readout and the rotor panel name the cam plate, the
+    shaft, the pins and the stroke. ADR-0070 records the out-of-plane groove,
+    the lapped plate, the keyed shaft and the rotor-parent rod joint.
+  - Verification: the headless browser harness clicked the rotor run and
+    sampled every atom. Measured: counts 39848 / 54844 / 666 / 54953; 12 of 12
+    rods moved; the worst gain error against the eccentric model was 3.9e-12 m;
+    the cam plate did not move; zero console errors. `cargo fmt --check` clean;
+    `cargo clippy --workspace --all-targets -- -D warnings` clean;
+    `cargo test --workspace` -> 759 passed; `python3 site/check.py` -> all
+    checks passed; `node site/render_atoms.test.js` -> 11 passed.

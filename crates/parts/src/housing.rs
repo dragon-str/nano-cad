@@ -79,6 +79,24 @@ static ROTOR_HOUSING_PARAMETERS: &[ParameterSpec] = &[
         false,
         "angle of the outlet channel in radians",
     ),
+    ParameterSpec::new(
+        "plate_thickness_m",
+        Some(Unit::Metre),
+        0.0,
+        0.0,
+        1.0e-8,
+        false,
+        "thickness of each end plate in metres, or zero for no end plate",
+    ),
+    ParameterSpec::new(
+        "plate_bore_radius_m",
+        Some(Unit::Metre),
+        1.0e-9,
+        0.0,
+        1.0e-8,
+        false,
+        "radius of the central bore in each end plate, which clears the drive shaft",
+    ),
 ];
 
 /// Generates a sorting rotor housing.
@@ -87,6 +105,12 @@ static ROTOR_HOUSING_PARAMETERS: &[ParameterSpec] = &[
 /// less one rectangular channel at each of the two stated angles. A channel runs
 /// from inside the chamber wall to past the outside radius, so each one opens
 /// the chamber to the outside.
+///
+/// Two end plates close the chamber above and below. Each plate spans the
+/// outside radius and carries a central bore for the drive shaft, so the
+/// housing holds the rotor from both faces and can meet the cam plate and the
+/// shaft bearings. `plate_thickness_m` defaults to zero, so the chamber is open
+/// unless the caller asks for a closed housing.
 ///
 /// The chamber is concentric about `z`, so the chamber port lies on that axis.
 #[derive(Clone, Copy, Debug, Default)]
@@ -113,6 +137,23 @@ impl RotorHousingGenerator {
         port.dof = Dof::Fixed;
         port
     }
+
+    /// Returns the thickness of each end plate, in metres.
+    pub fn plate_thickness_m(&self) -> f64 {
+        self.default_m("plate_thickness_m")
+    }
+
+    /// Returns the radius of the central bore in each end plate, in metres.
+    pub fn plate_bore_radius_m(&self) -> f64 {
+        self.default_m("plate_bore_radius_m")
+    }
+
+    fn default_m(&self, name: &str) -> f64 {
+        self.resolve(&ParameterSet::new())
+            .ok()
+            .and_then(|resolved| resolved.get(name))
+            .unwrap_or(0.0)
+    }
 }
 
 impl PartGenerator for RotorHousingGenerator {
@@ -136,6 +177,8 @@ impl PartGenerator for RotorHousingGenerator {
         let channel_width_m = resolved.require("channel_width_m")?;
         let inlet_angle_rad = resolved.require("inlet_angle_rad")?;
         let outlet_angle_rad = resolved.require("outlet_angle_rad")?;
+        let plate_thickness_m = resolved.require("plate_thickness_m")?;
+        let plate_bore_radius_m = resolved.require("plate_bore_radius_m")?;
 
         if wall_m <= 0.0 {
             return Err(PartError::InvalidGeometry(
@@ -182,8 +225,41 @@ impl PartGenerator for RotorHousingGenerator {
             b: channel(outlet_angle_rad),
         };
 
+        let mut solid: Box<dyn Solid> = Box::new(ring);
+
+        if plate_thickness_m > 0.0 && plate_bore_radius_m >= outer_radius_m {
+            return Err(PartError::InvalidGeometry(format!(
+                "the plate bore {plate_bore_radius_m} m reaches the outside radius \
+                 {outer_radius_m} m, so a plate would have no material"
+            )));
+        }
+        if plate_thickness_m > 0.0 {
+            let plate = |z_m: f64| -> Box<dyn Solid> {
+                Box::new(Difference {
+                    outer: Box::new(Cylinder {
+                        center_m: [0.0, 0.0, z_m],
+                        radius_m: outer_radius_m,
+                        height_m: plate_thickness_m,
+                    }),
+                    inner: Box::new(Cylinder {
+                        center_m: [0.0, 0.0, z_m],
+                        radius_m: plate_bore_radius_m,
+                        height_m: plate_thickness_m,
+                    }),
+                })
+            };
+            let offset_m = 0.5 * (thickness_m + plate_thickness_m);
+            solid = Box::new(Union {
+                a: solid,
+                b: Box::new(Union {
+                    a: plate(offset_m),
+                    b: plate(-offset_m),
+                }),
+            });
+        }
+
         let solid = Difference {
-            outer: Box::new(ring),
+            outer: solid,
             inner: Box::new(channels),
         };
         fill_part(&format!("rotor-housing-{chamber_radius_m:e}"), &solid)
@@ -221,13 +297,15 @@ mod tests {
     #[test]
     fn the_housing_has_a_chamber() {
         let chamber_radius_m = 7.2e-9;
+        let half_thickness_m = 0.5 * 2.4e-9;
         let part = RotorHousingGenerator
             .generate_with_defaults()
             .expect("housing");
-        let inside = part
-            .topology
-            .atoms()
-            .filter(|atom| radial_xy_m(atom.position_m) < 0.5 * chamber_radius_m);
+        let inside = part.topology.atoms().filter(|atom| {
+            atom.element == Element::CARBON
+                && radial_xy_m(atom.position_m) < 0.5 * chamber_radius_m
+                && atom.position_m[2].abs() < half_thickness_m
+        });
         assert_eq!(inside.count(), 0, "the chamber holds a carbon");
     }
 
@@ -244,7 +322,9 @@ mod tests {
             let inside = part.topology.atoms().filter(|atom| {
                 let dx = atom.position_m[0] - center_m[0];
                 let dy = atom.position_m[1] - center_m[1];
-                (dx * dx + dy * dy).sqrt() < half_m
+                atom.element == Element::CARBON
+                    && (dx * dx + dy * dy).sqrt() < half_m
+                    && atom.position_m[2].abs() < 0.5 * 2.4e-9
             });
             assert_eq!(
                 inside.count(),
@@ -308,6 +388,46 @@ mod tests {
     #[test]
     fn a_zero_wall_is_refused() {
         let parameters = ParameterSet::new().with("wall_m", 0.0);
+        assert!(RotorHousingGenerator.generate(&parameters).is_err());
+    }
+
+    #[test]
+    fn the_housing_has_end_plates() {
+        let parameters = ParameterSet::new().with("plate_thickness_m", 1.0e-9);
+        let part = RotorHousingGenerator
+            .generate(&parameters)
+            .expect("housing");
+        let half_thickness_m = 0.5 * 2.4e-9;
+        let bore_m = RotorHousingGenerator.plate_bore_radius_m();
+        let plate_atom = part.topology.atoms().any(|atom| {
+            let radial_m = radial_xy_m(atom.position_m);
+            atom.position_m[2].abs() > half_thickness_m && radial_m > bore_m && radial_m < 7.2e-9
+        });
+        assert!(plate_atom, "no end plate covers the chamber bore");
+    }
+
+    #[test]
+    fn a_zero_plate_removes_material() {
+        let open = RotorHousingGenerator
+            .generate_with_defaults()
+            .expect("housing");
+        let parameters = ParameterSet::new().with("plate_thickness_m", 1.0e-9);
+        let closed = RotorHousingGenerator
+            .generate(&parameters)
+            .expect("housing");
+        assert!(
+            closed.atom_count() > open.atom_count(),
+            "the end plates add no atom: {} open, {} closed",
+            open.atom_count(),
+            closed.atom_count()
+        );
+    }
+
+    #[test]
+    fn a_plate_bore_at_the_outside_radius_is_refused() {
+        let parameters = ParameterSet::new()
+            .with("plate_thickness_m", 1.0e-9)
+            .with("plate_bore_radius_m", 8.7e-9);
         assert!(RotorHousingGenerator.generate(&parameters).is_err());
     }
 

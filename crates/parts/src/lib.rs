@@ -9,6 +9,7 @@ pub mod axle;
 pub mod bearing;
 pub mod block;
 pub mod cam;
+pub mod cam_plate;
 pub mod clutch;
 pub mod diamond_solid;
 pub mod dislocation;
@@ -25,6 +26,7 @@ pub mod lattice;
 pub mod lattice_fill;
 pub mod nanotube;
 pub mod parameter;
+pub mod pin;
 pub mod placement;
 pub mod planetary;
 mod pocket;
@@ -33,6 +35,7 @@ pub mod registry;
 pub mod respirocyte;
 pub mod rod;
 pub mod rotor;
+pub mod shaft;
 pub mod shape;
 pub mod spur_gear;
 pub mod validation;
@@ -41,6 +44,7 @@ pub use axle::{HexAxleGenerator, PlainShaftGenerator};
 pub use bearing::{BushingGenerator, RadialBearingGenerator};
 pub use block::{BeamGenerator, BracketGenerator, PlateGenerator};
 pub use cam::CamRingGenerator;
+pub use cam_plate::CamPlateGenerator;
 pub use clutch::{ClutchPlateGenerator, RatchetGenerator};
 pub use dislocation::{
     core_atom_mask, displace, displace_point_m, five_seven_wedge_rad, WedgeDisclination,
@@ -57,6 +61,7 @@ pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;
 pub use nanotube::NanotubeGenerator;
 pub use parameter::{ParameterSet, ParameterSpec};
+pub use pin::FollowerPinGenerator;
 pub use placement::{assembly_document, place, PlacedPart};
 pub use planetary::{
     planetary_constraint_holds, PlanetaryDesign, PlanetaryGenerator, PlanetarySet,
@@ -76,6 +81,7 @@ pub use respirocyte::{
 };
 pub use rod::EjectionRodGenerator;
 pub use rotor::SortingRotorGenerator;
+pub use shaft::DriveShaftGenerator;
 pub use shape::{
     Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, RadialCylinder,
     Solid, Union,

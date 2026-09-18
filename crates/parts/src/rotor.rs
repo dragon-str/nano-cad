@@ -26,7 +26,7 @@ use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::pocket::charge_wall;
 use crate::port::{Dof, Port};
-use crate::shape::{Cylinder, Difference, RadialCylinder, Solid, Union};
+use crate::shape::{Box3, Cylinder, Difference, RadialCylinder, Solid, Union};
 
 /// The longest bond in diamond, in metres. A probe shorter than this stays
 /// inside the cell that owns the direction.
@@ -82,11 +82,11 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "bore_radius_m",
         Some(Unit::Metre),
-        3.5e-9,
+        1.5e-9,
         0.0,
         2.0e-8,
         false,
-        "radius of the central bore in metres, which must clear the cam ring",
+        "radius of the central bore in metres, which holds the drive shaft",
     ),
     ParameterSpec::new(
         "ejection_bore_radius_m",
@@ -105,6 +105,24 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
         5.0,
         true,
         "functional group on the pocket walls, as an index into the group list",
+    ),
+    ParameterSpec::new(
+        "keyway_width_m",
+        Some(Unit::Metre),
+        3.0e-10,
+        0.0,
+        2.0e-9,
+        false,
+        "width of the keyway in the central bore in metres, or zero for no keyway",
+    ),
+    ParameterSpec::new(
+        "keyway_depth_m",
+        Some(Unit::Metre),
+        3.0e-10,
+        1.0e-11,
+        1.0e-9,
+        false,
+        "radial depth of the keyway past the bore wall in metres",
     ),
 ];
 
@@ -223,6 +241,8 @@ impl PartGenerator for SortingRotorGenerator {
         let pocket_orbit_m = resolved.require("pocket_orbit_m")?;
         let bore_radius_m = resolved.require("bore_radius_m")?;
         let ejection_bore_radius_m = resolved.require("ejection_bore_radius_m")?;
+        let keyway_width_m = resolved.require("keyway_width_m")?;
+        let keyway_depth_m = resolved.require("keyway_depth_m")?;
         let wall_index = resolved.require("wall_group")?.round();
         let Some(group) = FunctionalGroup::from_index(wall_index.max(0.0) as usize) else {
             return Err(PartError::InvalidGeometry(format!(
@@ -269,6 +289,35 @@ impl PartGenerator for SortingRotorGenerator {
             radius_m: bore_radius_m,
             height_m: thickness_m,
         });
+        if keyway_width_m > 0.0 {
+            if keyway_depth_m <= 0.0 {
+                return Err(PartError::InvalidGeometry(
+                    "the keyway has a width but no depth".to_string(),
+                ));
+            }
+            if bore_radius_m + keyway_depth_m >= disc_radius_m {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the keyway reaches {} m and leaves no disk at the bore",
+                    bore_radius_m + keyway_depth_m
+                )));
+            }
+            let keyway = Box3 {
+                min_m: [
+                    bore_radius_m - keyway_depth_m,
+                    -0.5 * keyway_width_m,
+                    -0.5 * thickness_m,
+                ],
+                max_m: [
+                    bore_radius_m + keyway_depth_m,
+                    0.5 * keyway_width_m,
+                    0.5 * thickness_m,
+                ],
+            };
+            void = Box::new(Union {
+                a: void,
+                b: Box::new(keyway),
+            });
+        }
         let mut pockets = Vec::with_capacity(pocket_count);
         for index in 0..pocket_count {
             let pocket = Cylinder {
@@ -493,6 +542,34 @@ mod tests {
             bored.atom_count(),
             solid.atom_count()
         );
+    }
+
+    #[test]
+    fn the_keyway_is_void_and_removes_material() {
+        let keyed = SortingRotorGenerator
+            .generate_with_defaults()
+            .expect("rotor");
+        let plain = rotor_with("keyway_width_m", 0.0);
+        assert!(
+            keyed.atom_count() < plain.atom_count(),
+            "the keyway removed no atom: {} against {}",
+            keyed.atom_count(),
+            plain.atom_count()
+        );
+        let bore_radius_m = 1.5e-9;
+        let keyway_depth_m = 3.0e-10;
+        let keyway_width_m = 3.0e-10;
+        let occupied = keyed
+            .topology
+            .atoms()
+            .filter(|atom| atom.element == Element::CARBON)
+            .filter(|atom| {
+                atom.position_m[0] > bore_radius_m - 0.5 * keyway_depth_m
+                    && atom.position_m[0] < bore_radius_m + keyway_depth_m
+                    && atom.position_m[1].abs() < 0.25 * keyway_width_m
+            })
+            .count();
+        assert_eq!(occupied, 0, "the keyway holds a carbon");
     }
 
     #[test]

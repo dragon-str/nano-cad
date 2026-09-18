@@ -14,6 +14,7 @@ use crate::axle::{HexAxleGenerator, PlainShaftGenerator};
 use crate::bearing::{BushingGenerator, RadialBearingGenerator};
 use crate::block::{BeamGenerator, BracketGenerator, PlateGenerator};
 use crate::cam::CamRingGenerator;
+use crate::cam_plate::CamPlateGenerator;
 use crate::clutch::{ClutchPlateGenerator, RatchetGenerator};
 use crate::error::PartError;
 use crate::gear_profile::GearProfileGenerator;
@@ -22,6 +23,7 @@ use crate::housing::RotorHousingGenerator;
 use crate::lattice::{DiamondGenerator, GraphiteGenerator};
 use crate::nanotube::NanotubeGenerator;
 use crate::parameter::ParameterSet;
+use crate::pin::FollowerPinGenerator;
 use crate::planetary::PlanetaryGenerator;
 use crate::pocket::BindingPocketGenerator;
 use crate::respirocyte::{
@@ -29,6 +31,7 @@ use crate::respirocyte::{
 };
 use crate::rod::EjectionRodGenerator;
 use crate::rotor::SortingRotorGenerator;
+use crate::shaft::DriveShaftGenerator;
 use crate::spur_gear::SpurGearGenerator;
 
 static SPUR_GEAR: SpurGearGenerator = SpurGearGenerator;
@@ -54,6 +57,9 @@ static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
 static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
 static EJECTION_ROD: EjectionRodGenerator = EjectionRodGenerator;
 static CAM_RING: CamRingGenerator = CamRingGenerator;
+static CAM_PLATE: CamPlateGenerator = CamPlateGenerator;
+static DRIVE_SHAFT: DriveShaftGenerator = DriveShaftGenerator;
+static FOLLOWER_PIN: FollowerPinGenerator = FollowerPinGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -152,6 +158,18 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &CAM_RING,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &FOLLOWER_PIN,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &CAM_PLATE,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &DRIVE_SHAFT,
         category: "device",
     },
 ];

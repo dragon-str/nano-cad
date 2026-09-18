@@ -1493,3 +1493,70 @@ joint allows and not the contact between a pin and a profile. The work of
 ejection remains the measured barrier in `crates/meter/src/ejection.rs` and
 not a force on a simulated rod. The scene still holds no guest, no solvent and
 no molecule in a pocket.
+
+## ADR-0070
+
+### The cam leaves the rotor plane, and a keyed drive shaft turns the rotor
+
+Status: accepted. This supersedes ADR-0069.
+
+ADR-0069 kept the cam in the rotor plane and opened the rotor bore to the peak
+of the lobe. The user reported that the result does not make mechanical sense:
+the cam ring cannot be fixed to the housing where it overlaps the turning rods,
+and the ring should be held from above and below. The user also asked how the
+rotor is powered and recalled an off-centre cam that pushes and pulls the rods
+from the rotation alone. That memory is correct. This decision moves the cam out
+of the rotor plane.
+
+The cam is now a plate below the rotor. The rotor carries the 12 rods, one for
+each pocket, and each rod carries a follower pin that hangs into a groove in the
+plate face. The groove is a circle whose centre is offset from the rotor axis by
+1.0e-9 m. The groove centreline radius therefore runs from 2.0e-9 m to 4.0e-9 m,
+a stroke of 2.0e-9 m, and it returns with no spring: one wall of the groove
+pushes a rod out as the offset grows and the opposite wall pulls it back as the
+offset falls. The cam plate is fixed, so it cannot be struck by a rod that
+turns; the rods turn above it, and only the pins enter the groove.
+
+The cam plate rests under the housing ring. Its top face is flush with the
+housing lower face, and its outer radius equals the housing outside radius, so
+the plate laps under the ring and the housing holds it from below and around its
+rim. The bore of the plate (1.5e-9 m) clears the drive shaft. Because the cam no
+longer enters the rotor plane, the rotor central bore returns to 1.5e-9 m from
+the 3.5e-9 m of ADR-0069, and the rotor can carry a hub again.
+
+The rotor is powered through a drive shaft on the rotor axis. A key on the shaft
+sits in a keyway that `SortingRotorGenerator` cuts into the rotor bore. The key
+locks the shaft to the rotor rigidly, so the shaft and the rotor turn as one
+body. The scene therefore puts the shaft atoms on the rotor body and gives the
+shaft no joint of its own. The scene schema has no rigid coupling, and a
+revolute joint between the shaft and the rotor would model a bearing, not a key.
+The machine that turns the shaft is out of scope, because the user set it aside
+for a later design; the panel says that the shaft is keyed to the rotor and that
+the external drive is not shown.
+
+The rod's prismatic joint still names the rotor as its first body, because the
+rod remains captive in a radial ejection bore in the rotor. The rod atoms are
+still placed by a direct atom map, because `place` rotates about z only and
+cannot tilt the rod into the radial direction. The pin atoms ride the rod body,
+so they translate with the rod and stay in the groove.
+
+The measured scene now holds 15 bodies and 13 joints and 157637 atoms. The rotor
+body holds 54844 atoms (49708 rotor and 5136 shaft), the housing 39848, the cam
+plate 54953, and each rod 666 (602 rod and 64 pin). The mass is
+2.2431991352736912e-21 kg. The rod is 3.5e-9 m long, and its tip runs from
+5.5e-9 m to 7.5e-9 m, so an extended rod sweeps its pocket to the rim.
+
+The viewer follows the same model. It drives every rod with the eccentric
+formula `0.5 * (1 + cos(delta))`, where `delta` is the rod azimuth less the
+groove centre angle. All 12 rods move smoothly; the model no longer needs a
+one-lobe window. The headless harness measured the counts above, found 12 of 12
+rods moving, and measured the worst deviation from the eccentric model as
+3.9e-12 m, with the cam plate at rest.
+
+Limits on this work. The pin slides in the groove; a roller follower would roll.
+The eccentric circle is a radial key and not a tuned motion law, so the rod
+acceleration is not designed and a profiled groove could add a dwell. The scene
+models no contact force between the pin and the groove wall, no torque on the
+drive shaft, and no external machine. The work of one ejection stays the
+measured barrier in `crates/meter/src/ejection.rs`, not a force on a simulated
+rod. The scene still holds no guest, no solvent and no molecule in a pocket.
