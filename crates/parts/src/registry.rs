@@ -17,6 +17,7 @@ use crate::clutch::{ClutchPlateGenerator, RatchetGenerator};
 use crate::error::PartError;
 use crate::gear_profile::GearProfileGenerator;
 use crate::generator::PartGenerator;
+use crate::housing::RotorHousingGenerator;
 use crate::lattice::{DiamondGenerator, GraphiteGenerator};
 use crate::nanotube::NanotubeGenerator;
 use crate::parameter::ParameterSet;
@@ -24,6 +25,7 @@ use crate::planetary::PlanetaryGenerator;
 use crate::respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotorGenerator, RespirocyteTankGenerator,
 };
+use crate::rotor::SortingRotorGenerator;
 use crate::spur_gear::SpurGearGenerator;
 
 static SPUR_GEAR: SpurGearGenerator = SpurGearGenerator;
@@ -44,6 +46,8 @@ static RATCHET: RatchetGenerator = RatchetGenerator;
 static RESPIROCYTE_ROTOR: RespirocyteRotorGenerator = RespirocyteRotorGenerator;
 static RESPIROCYTE_PUMP: RespirocytePumpGenerator = RespirocytePumpGenerator;
 static RESPIROCYTE_TANK: RespirocyteTankGenerator = RespirocyteTankGenerator;
+static SORTING_ROTOR: SortingRotorGenerator = SortingRotorGenerator;
+static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -122,6 +126,14 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &RESPIROCYTE_TANK,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &SORTING_ROTOR,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &ROTOR_HOUSING,
         category: "device",
     },
 ];

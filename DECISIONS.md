@@ -1032,3 +1032,46 @@ cursor and rebuild the scene.
 
 The document holds parameters, parts and measurements. It does not hold a
 motion, a force field, or a camera. Those belong to a later document version.
+
+## ADR-0061
+
+### The sorting rotor is built as two diamond parts that mate on the axis
+
+Status: accepted.
+
+The sorting rotor is the device in Freitas, *Nanomedicine* Volume I, Section
+3.4.2, after Drexler. A disk carries binding pockets along its rim, and each
+pocket carries a bound molecule from the outside solution to an inner chamber
+as the disk turns.
+
+Two generators build the mechanics of the device. `SortingRotorGenerator` cuts
+a disk with a `pocket_count` of cylindrical pockets on the rim and a central
+bore. A pocket opens to the rim when its centre circle plus its radius reaches
+past the outside radius, because that is the face the solution sees.
+`RotorHousingGenerator` cuts an annular slab with a chamber for the disk and
+two radial channels, one inlet and one outlet. Each channel runs from inside
+the chamber wall to past the outside radius, so it opens the chamber instead of
+forming a trapped pocket.
+
+Both parts are cut from the diamond cubic lattice, so every bond is the diamond
+first-shell length and every carbon keeps a valence of four. Both are registered
+in the part library under the `device` category.
+
+The rotor mates to the housing through the port model. The rotor `axis_port` is
+revolute on `z` and the housing `chamber_port` is fixed on `z`, so the two parts
+share one axis and the disk is free to turn.
+
+Scope limit. The generators build the mechanics and the example computes the
+geometry, the mass and the kinematics. The model does not include a binding
+site, a target molecule, a solvent or an ion. It therefore does not simulate
+selectivity: it does not show that a pocket binds one species and rejects
+another. That needs a chemistry-specific force field and it is a separate
+milestone. The drag power of 1e-16 W in the reference is likewise not
+simulated; the example reports it only as a reference figure.
+
+The measured agreement is close. At the default sizes the rotor is 53964 atoms
+and 39848 atoms of housing, so the assembly is 93812 atoms and 1.46e-21 kg,
+against the reference of about 1e5 atoms and 2e-21 kg. At a stated rate of
+86000 rev/s the rim turns at 3.78e-3 m/s, against the reference 2.7e-3 m/s, and
+twelve pockets pass 1.03e6 molecules per second, against the reference rate of
+about 1e6.

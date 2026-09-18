@@ -949,3 +949,66 @@ defect. Every later part generator uses them.
     The headless browser changes the module to 2.5e-9 m, undoes to 1.5e-9 m
     and redoes to 2.5e-9 m, with no page error. `just verify` -> all gates
     passed; 591 Rust tests. See ADR-0060.
+
+
+## M13 — Sorting rotor demo
+
+The sorting rotor is the device in Freitas, *Nanomedicine* Volume I, Section
+3.4.2, after Drexler. A disk carries binding pockets along its rim. The disk
+turns, and each pocket carries a bound molecule from the solution to an inner
+chamber. This milestone builds the mechanics of the rotor. It does not model
+molecular selectivity and it does not model a solvent. Those need a chemistry
+force field and they stay out of scope.
+
+- [x] **M13-01** Generate a sorting rotor disk.
+  - Result: `crates/parts/src/rotor.rs` adds `SortingRotorGenerator`, id
+    `sorting_rotor`. The disk is the solid between the central bore and the
+    outside radius, less one cylindrical pocket for every slot. A pocket whose
+    centre circle plus its radius passes the outside radius opens to the rim,
+    which is the binding face the solution sees. `axis_port` is revolute on
+    `z`, and `pocket_port(index, count, orbit)` sits on the pocket circle.
+    Parameters: `disc_radius_m`, `thickness_m`, `pocket_count`,
+    `pocket_radius_m`, `pocket_orbit_m`, `bore_radius_m`.
+  - Verification: `cargo test -p nanocad-parts rotor` -> 8 passed, including
+    `the_rotor_has_a_void_for_every_pocket`, `the_bore_is_open`,
+    `the_rotor_respects_its_radius` and
+    `a_pocket_that_breaches_the_bore_is_refused`. Defaults give 53964 atoms
+    and 90348 bonds. See ADR-0061.
+- [x] **M13-02** Generate the rotor housing.
+  - Result: `crates/parts/src/housing.rs` adds `RotorHousingGenerator`, id
+    `rotor_housing`. The part is the annulus between the chamber radius and the
+    outside radius, less one rectangular channel at each stated angle. A
+    channel runs from inside the chamber wall to past the outside radius, so it
+    opens the chamber to the outside. `chamber_port` is fixed on `z`, and
+    `channel_port(name, angle, radius)` sits on the chamber wall with a radial
+    axis. Parameters: `chamber_radius_m`, `wall_m`, `thickness_m`,
+    `channel_width_m`, `inlet_angle_rad`, `outlet_angle_rad`.
+  - Verification: `cargo test -p nanocad-parts housing` -> 7 passed, including
+    `the_housing_has_a_chamber`, `the_housing_has_two_channels` and
+    `a_zero_wall_is_refused`. Defaults give 39848 atoms. See ADR-0061.
+- [x] **M13-03** Add a rotor assembly example.
+  - Result: `crates/jigs/examples/rotor_json.rs` builds the rotor with its
+    defaults, builds the housing with its defaults, mates the rotor axis port
+    to the housing chamber port through `place`, and prints one line of JSON.
+    It reports the simulated atom counts, the mass from the standard atomic
+    weights, and the kinematics at a stated turn rate. It also prints the
+    Freitas figures beside the simulated ones.
+  - Verification: `cargo run --release -p nanocad-jigs --example rotor_json`
+    -> `rotor_atoms 53964`, `pocket_count 12`, `rotor_mass_kg 8.62e-22`,
+    `housing_atoms 39848`, `total_atoms 93812`, `total_mass_kg 1.46e-21`,
+    `revolutions_per_s 8.6e4`, `rim_speed_m_per_s 3.78e-3`,
+    `pocket_rate_per_s 1.03e6`. The reference is `1e5` atoms, `2e-21` kg,
+    `86000` rev/s, `2.7e-3` m/s rim and about `1e6` molecules/s, so the atom
+    count, the mass and the pocket rate agree to the stated order.
+- [x] **M13-04** Wire the rotor into the app panel.
+  - Result: `app/server.py` gains `rotor_facts` and the `GET /api/rotor`
+    route. `site/index.html` gains a **Sorting rotor** section with a build
+    button and an honest scope note. `site/viewer.js` gains `runRotor` and
+    `showRotor`, which print the atom counts, the mass, the rim speed and the
+    pocket rate next to the reference figures. `window.NanoCadDebug` gains
+    `runRotor` and `rotorResult`.
+  - Verification: `curl http://127.0.0.1:8123/api/rotor` returns the facts
+    JSON. The headless browser (`/tmp/nc-browser/rotor.js`) reads the panel
+    text `rotor 53964 atoms, 12 pockets, radius 7.0 nm` and
+    `so 1.03e+6 molecules/s`, with no page error except the favicon. `just
+    verify` -> all gates passed; 606 Rust tests. See ADR-0061.

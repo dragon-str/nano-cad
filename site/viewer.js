@@ -1475,6 +1475,8 @@
   var paramRedo = document.getElementById("param-redo");
   var optimizeRun = document.getElementById("optimize-run");
   var optimizeResult = document.getElementById("optimize-result");
+  var rotorRun = document.getElementById("rotor-run");
+  var rotorResult = document.getElementById("rotor-result");
   var chatLog = document.getElementById("chat-log");
   var chatForm = document.getElementById("chat-form");
   var chatInput = document.getElementById("chat-input");
@@ -1652,6 +1654,75 @@
       requestBuild(currentParams);
     });
     optimizeResult.appendChild(apply);
+  }
+
+  function runRotor() {
+    if (!rotorResult) {
+      return;
+    }
+    rotorResult.textContent = "Building the rotor ...";
+    if (rotorRun) {
+      rotorRun.disabled = true;
+    }
+    fetch("api/rotor")
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload && payload.error) {
+          rotorResult.textContent = "error: " + payload.error;
+          return;
+        }
+        showRotor(payload);
+      })
+      .catch(function (error) {
+        rotorResult.textContent =
+          "Start python3 app/server.py to build the rotor. (" + error.message + ")";
+      })
+      .then(function () {
+        if (rotorRun) {
+          rotorRun.disabled = false;
+        }
+      });
+  }
+
+  function showRotor(payload) {
+    rotorResult.innerHTML = "";
+    function row(text) {
+      var line = document.createElement("div");
+      line.textContent = text;
+      rotorResult.appendChild(line);
+    }
+    function exponent(value) {
+      return Number(value).toExponential(2);
+    }
+    row(
+      "rotor " + payload.rotor_atoms + " atoms, " +
+      (payload.pocket_count | 0) + " pockets, radius " +
+      (Number(payload.rotor_radius_m) * 1e9).toFixed(1) + " nm"
+    );
+    row(
+      "housing " + payload.housing_atoms + " atoms, " +
+      (Number(payload.rotor_radius_m) * 2e9).toFixed(1) + " nm chamber plus two channels"
+    );
+    row(
+      "assembly " + payload.total_atoms + " atoms, " +
+      exponent(payload.total_mass_kg) + " kg"
+    );
+    row(
+      "at " + Number(payload.revolutions_per_s).toLocaleString() +
+      " rev/s the rim turns " + exponent(payload.rim_speed_m_per_s) +
+      " m/s and the pockets pass a molecule every " +
+      exponent(payload.pocket_cycle_s) + " s, so " +
+      Number(payload.pocket_rate_per_s).toExponential(2) + " molecules/s"
+    );
+    row(
+      "Freitas 3.4.2: " + Number(payload.reference_atoms).toExponential(2) +
+      " atoms, " + exponent(payload.reference_mass_kg) + " kg, " +
+      Number(payload.reference_revolutions_per_s).toLocaleString() +
+      " rev/s, " + exponent(payload.reference_rim_speed_m_per_s) + " m/s rim"
+    );
+    row("the mass, the geometry and the kinematics are simulated or computed; the selectivity is not modelled");
   }
 
   function syncParamInputs() {
@@ -1877,6 +1948,11 @@
       return;
     }
     chatForm.addEventListener("submit", sendChat);
+    if (rotorRun) {
+      rotorRun.addEventListener("click", function () {
+        runRotor();
+      });
+    }
     if (optimizeRun) {
       optimizeRun.addEventListener("click", function () {
         runOptimize();
@@ -1931,6 +2007,12 @@
     },
     runOptimize: function (options) {
       return runOptimize(options);
+    },
+    runRotor: function () {
+      return runRotor();
+    },
+    rotorResult: function () {
+      return rotorResult;
     },
     optimizeResult: function () {
       return optimizeResult;

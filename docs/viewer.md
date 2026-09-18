@@ -156,6 +156,14 @@ design, its barrier next to the starting barrier, and the evaluation count.
 An apply button writes the best design into the parameters and rebuilds the
 scene.
 
+The panel also has a **Sorting rotor** section. The **Build the sorting rotor**
+button runs the rotor example. It shows a rotor disk with twelve pockets on its
+rim, inside a housing with an inlet and an outlet. The result lists the atom
+counts, the mass, the rim speed and the pocket rate, next to the figures from
+Freitas, *Nanomedicine* Volume I, Section 3.4.2. The example builds the
+mechanics only. It does not model molecular selectivity or a solvent, and the
+panel says so.
+
 The server binds to `127.0.0.1` only. It serves these routes:
 
 | Route | Purpose |
@@ -165,6 +173,7 @@ The server binds to `127.0.0.1` only. It serves these routes:
 | `POST /api/chat` | Parse a message, apply the change, and build. |
 | `GET /api/score` | Score the last generated scene with every metric. |
 | `GET /api/optimize?<budget>` | Search the tooth counts and return the best design. |
+| `GET /api/rotor` | Build the sorting rotor and its housing, and return the facts. |
 | `GET /api/scene` | The last generated `site/scene.json`. |
 
 When the engine rejects a value, for example a planet with too few teeth for

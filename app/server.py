@@ -140,6 +140,21 @@ def optimize_scene(args: list) -> dict:
         raise BuildError(f"the search output was not JSON: {error}") from None
 
 
+def rotor_facts() -> dict:
+    """Run the sorting-rotor example and return its facts."""
+    result = _run_example("nanocad-jigs", "rotor_json", [])
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the rotor run failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the rotor run printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the rotor output was not JSON: {error}") from None
+
+
 def _params_from_query(query: str) -> dict:
     params = {}
     for key, values in urllib.parse.parse_qs(query).items():
@@ -239,6 +254,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(error)})
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the search timed out"})
+            return
+        if route == "/api/rotor":
+            try:
+                self._send_json(200, rotor_facts())
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the rotor run timed out"})
             return
         if route == "/api/score":
             try:

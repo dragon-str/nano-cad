@@ -15,6 +15,7 @@ pub mod error;
 pub mod gear_profile;
 pub mod generator;
 pub mod geometry;
+pub mod housing;
 pub mod lattice;
 pub mod lattice_fill;
 pub mod nanotube;
@@ -24,6 +25,7 @@ pub mod planetary;
 pub mod port;
 pub mod registry;
 pub mod respirocyte;
+pub mod rotor;
 pub mod shape;
 pub mod spur_gear;
 pub mod validation;
@@ -38,6 +40,7 @@ pub use dislocation::{
 pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
 pub use generator::{PartGenerator, PartSchema};
+pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;
 pub use nanotube::NanotubeGenerator;
@@ -56,6 +59,7 @@ pub use respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
     RespirocyteTankGenerator,
 };
+pub use rotor::SortingRotorGenerator;
 pub use shape::{
     Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, Solid, Union,
 };
