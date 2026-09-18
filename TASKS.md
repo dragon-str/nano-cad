@@ -1040,7 +1040,8 @@ force field and they stay out of scope.
 The rotor sorts by binding one molecule and not another. That needs chemistry,
 not only geometry. This milestone adds the smallest honest chemistry layer: an
 element table, heteroatom lattice sites, guest molecules with stated charges,
-a binding pocket, a binding metric and an ejection rod.
+a nonbonded parameter table, a binding pocket, a binding metric and an ejection
+rod.
 
 The guest charges are stated model charges. They are not computed and they are
 not validated against experiment. Every result is therefore a model result. See
@@ -1104,3 +1105,35 @@ ADR-0063.
     element-table mass agrees with the source molar mass to better than one
     percent. `cargo test -p nanocad-parts guest` -> 13 passed;
     `cargo test --workspace` -> 643 passed. See ADR-0063.
+
+- [x] **M14-04** Add a nonbonded parameter table and a Lennard-Jones term.
+  - Result: `crates/model/src/nonbonded.rs` adds `NonbondedParams
+    { well_depth_j, vdw_distance_m }`, `nonbonded(element)`, `well_depth_j`,
+    `vdw_distance_m` and `pair_params(left, right)`. The table holds eight
+    elements: hydrogen, carbon, nitrogen, oxygen, fluorine, phosphorus,
+    sulfur and chlorine. The values are the nonbonded parameters of the
+    Universal Force Field. UFF gives every atom type of an element the same
+    pair of values, so the table reduces to one row for each element. An
+    unlisted element returns `None`, so a caller cannot use a silent default.
+    `pair_params` applies the UFF mixing rules `x_ij = sqrt(x_i x_j)` and
+    `D_ij = sqrt(D_i D_j)`, then converts to the Lennard-Jones form with
+    `epsilon = D_ij / 4` and `sigma = x_ij / 2^(1/6)`, because UFF states the
+    distance at the minimum of the well.
+    `crates/engine/src/lennard_jones.rs` adds `LjParams` and
+    `LennardJonesTerm` with the pair potential
+    `U(r) = 4 epsilon ((sigma/r)^12 - (sigma/r)^6)`. The term mirrors the
+    Buckingham term: a cutoff, a periodic box, a whole-pair scan, an explicit
+    pair list, and a per-pair entry point. The term is wired into `System`
+    through `set_lennard_jones`, so it joins the neighbor list, the cutoff
+    choice and the four-lane pair kernel.
+  - Verification: `cargo test --workspace` -> 666 passed, of which 10 are the
+    new nonbonded tests and 13 are the new Lennard-Jones tests. The
+    Lennard-Jones tests include `the_gradient_matches_a_central_difference`
+    and `a_random_configuration_matches_a_central_difference`, which the
+    finite-difference rule of `AGENTS.md` requires for an analytic force term.
+    Others are `the_well_minimum_sits_at_the_sigma_scaled_distance` (the
+    measured minimum sits at `sigma * 2^(1/6)` and the well depth is
+    `-epsilon`, both to one percent) and
+    `a_pair_beyond_the_cutoff_contributes_nothing`. The nonbonded tests check
+    the mixing rule, its symmetry, the `sigma` conversion and the refusal of
+    gold. See ADR-0064.

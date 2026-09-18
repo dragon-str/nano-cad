@@ -25,6 +25,7 @@
 use crate::electrostatic::COULOMB_CONSTANT_N_M2_PER_C2;
 use crate::error::EngineError;
 use crate::geometry::{atom_position_m, dot, sub};
+use crate::lennard_jones::lj_energy_and_slope_j;
 use crate::nonbonded::{Cutoff, PeriodicBox};
 
 /// The number of lanes in the unrolled kernel.
@@ -35,6 +36,13 @@ pub(crate) struct KernelVanDerWaals<'a> {
     pub(crate) a_j: &'a [f64],
     pub(crate) b_per_m: &'a [f64],
     pub(crate) c_j_m6: &'a [f64],
+    pub(crate) cutoff: Cutoff,
+}
+
+/// The Lennard-Jones view of a kernel.
+pub(crate) struct KernelLennardJones<'a> {
+    pub(crate) epsilon_j: &'a [f64],
+    pub(crate) sigma_m: &'a [f64],
     pub(crate) cutoff: Cutoff,
 }
 
@@ -49,6 +57,7 @@ pub(crate) struct NonbondedKernel<'a> {
     pub(crate) positions_m: &'a [f64],
     pub(crate) periodic_box: PeriodicBox,
     pub(crate) van_der_waals: Option<KernelVanDerWaals<'a>>,
+    pub(crate) lennard_jones: Option<KernelLennardJones<'a>>,
     pub(crate) electrostatic: Option<KernelElectrostatic<'a>>,
 }
 
@@ -165,10 +174,13 @@ impl NonbondedKernel<'_> {
             .van_der_waals
             .as_ref()
             .filter(|term| (i as usize) < term.a_j.len() && (j as usize) < term.a_j.len());
+        let lennard_jones = self.lennard_jones.as_ref().filter(|term| {
+            (i as usize) < term.epsilon_j.len() && (j as usize) < term.epsilon_j.len()
+        });
         let electrostatic = self.electrostatic.as_ref().filter(|term| {
             (i as usize) < term.charges_c.len() && (j as usize) < term.charges_c.len()
         });
-        if van_der_waals.is_none() && electrostatic.is_none() {
+        if van_der_waals.is_none() && lennard_jones.is_none() && electrostatic.is_none() {
             return Ok(());
         }
         if r_sq_m2 <= 0.0 {
@@ -190,6 +202,18 @@ impl NonbondedKernel<'_> {
                 let exp_term = (-b_ij * r_m).exp();
                 let value_j = a_ij * exp_term - c_ij / r6;
                 let value_prime_n = -a_ij * b_ij * exp_term + 6.0 * c_ij / r7;
+                let (switch_value, switch_derivative) = term.cutoff.switch_value(r_m);
+                switched_energy_j += switch_value * value_j;
+                du_dr_n += switch_value * value_prime_n + switch_derivative * value_j;
+            }
+        }
+        if let Some(term) = lennard_jones {
+            let cutoff_sq_m2 = term.cutoff.cutoff_m() * term.cutoff.cutoff_m();
+            if r_sq_m2 < cutoff_sq_m2 {
+                let epsilon_ij = (term.epsilon_j[i as usize] * term.epsilon_j[j as usize]).sqrt();
+                let sigma_ij = (term.sigma_m[i as usize] * term.sigma_m[j as usize]).sqrt();
+                let (value_j, value_prime_n) =
+                    lj_energy_and_slope_j(epsilon_ij, sigma_ij, r_sq_m2, r_m);
                 let (switch_value, switch_derivative) = term.cutoff.switch_value(r_m);
                 switched_energy_j += switch_value * value_j;
                 du_dr_n += switch_value * value_prime_n + switch_derivative * value_j;
@@ -278,6 +302,7 @@ mod tests {
                 c_j_m6: &c_j_m6,
                 cutoff,
             }),
+            lennard_jones: None,
             electrostatic: Some(KernelElectrostatic {
                 charges_c: &charges_c,
                 cutoff,

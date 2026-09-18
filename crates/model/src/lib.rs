@@ -12,6 +12,7 @@ mod document;
 mod element;
 mod encoding;
 mod error;
+mod nonbonded;
 mod part;
 mod selection;
 mod topology;
@@ -25,6 +26,10 @@ pub use chemistry::{
 pub use document::{Document, SCHEMA_VERSION};
 pub use element::Element;
 pub use error::ModelError;
+pub use nonbonded::{
+    nonbonded, pair_params, vdw_distance_m, well_depth_j, NonbondedParams, KILOCALORIE_PER_MOL_J,
+    LENNARD_JONES_LENGTH_FACTOR,
+};
 pub use part::Part;
 pub use selection::{parse_selection, Selection, SelectionResult};
 pub use topology::Topology;

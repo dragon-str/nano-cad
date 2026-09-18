@@ -1147,3 +1147,47 @@ later task must add that table, and it must cite its source.
 Consequence: every result that uses a charge from this layer is a model
 result. The charges are not computed for the pocket, and they are not
 validated against experiment. A report must say so.
+
+## ADR-0064
+
+### The nonbonded parameters are UFF, and the term is Lennard-Jones
+
+Status: accepted.
+
+ADR-0063 refused to invent a nonbonded parameter set. This decision supplies
+one, so that a pocket can be sized from contact distances and a binding metric
+can have a repulsion term.
+
+Source. The values are the nonbonded parameters of the Universal Force Field,
+from Rappe, Casewit, Colwell, Goddard and Skiff, *Journal of the American
+Chemical Society* 1992, 114, 10024. We transcribed them through the RDKit
+implementation, which is BSD-3 licensed. The transcription is reproducible:
+the table is at `Code/ForceField/UFF/Params.cpp` in the RDKit repository.
+
+The reduction to one row per element. UFF has one row for each atom type, and
+it has several types for one element, for example `C_3`, `C_2` and `C_R`. For
+every element in our table, all of its types share the same `x1` and `D1`, so
+the table reduces to one row for each element. We checked this claim for all
+eight elements rather than assuming it.
+
+The form. UFF states its nonbonded term as
+`U(r) = D_ij ((x_ij/r)^12 - 2 (x_ij/r)^6)` with `x_ij = sqrt(x_i x_j)` and
+`D_ij = sqrt(D_i D_j)`. That is a Lennard-Jones 12-6 curve with
+`epsilon = D_ij / 4` and `sigma = x_ij / 2^(1/6)`. We add a Lennard-Jones term
+to the engine, in `crates/engine/src/lennard_jones.rs`, rather than fitting a
+Buckingham curve to the same values. A fit would be a model of a model, and
+the engine would then disagree with the source it cites.
+
+The term carries its own finite-difference gradient test, as the ground rules
+of this repository require for every analytic force term.
+
+The limits. This table gives a size and a well depth. It does not give a
+partial charge, a torsional barrier, an angle force constant or a hydrogen
+bond. The charges remain the stated model charges of ADR-0063. The agreement
+of a computed binding energy with experiment therefore follows from the whole
+model, not from this table, and no result in this repository is validated
+against experiment.
+
+UFF is also known to be weak for metals and for inorganic compounds, and most
+of its entries were never validated. Every result that uses this table is a
+model result for that reason as well.

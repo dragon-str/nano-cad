@@ -5,10 +5,13 @@ use crate::bond_stretch::{BondInfo, BondStretchTerm};
 use crate::electrostatic::ElectrostaticTerm;
 use crate::error::EngineError;
 use crate::geometry::validate_positions;
+use crate::lennard_jones::LennardJonesTerm;
 use crate::neighbor::VerletList;
 use crate::nonbonded::PeriodicBox;
 use crate::out_of_plane::OutOfPlaneTerm;
-use crate::pair_kernel::{KernelElectrostatic, KernelVanDerWaals, NonbondedKernel};
+use crate::pair_kernel::{
+    KernelElectrostatic, KernelLennardJones, KernelVanDerWaals, NonbondedKernel,
+};
 use crate::torsion::TorsionTerm;
 use crate::van_der_waals::VanDerWaalsTerm;
 
@@ -46,6 +49,7 @@ pub struct System {
     torsion: Option<TorsionTerm>,
     out_of_plane: Option<OutOfPlaneTerm>,
     van_der_waals: Option<VanDerWaalsTerm>,
+    lennard_jones: Option<LennardJonesTerm>,
     electrostatic: Option<ElectrostaticTerm>,
     exclusions: HashSet<u64>,
     skin_m: f64,
@@ -67,6 +71,7 @@ impl System {
             torsion: None,
             out_of_plane: None,
             van_der_waals: None,
+            lennard_jones: None,
             electrostatic: None,
             exclusions: HashSet::new(),
             skin_m: DEFAULT_SKIN_M,
@@ -153,6 +158,9 @@ impl System {
         if let Some(term) = &mut self.van_der_waals {
             term.set_periodic_box(periodic_box)?;
         }
+        if let Some(term) = &mut self.lennard_jones {
+            term.set_periodic_box(periodic_box)?;
+        }
         if let Some(term) = &mut self.electrostatic {
             term.set_periodic_box(periodic_box)?;
         }
@@ -195,6 +203,15 @@ impl System {
     pub fn set_van_der_waals(&mut self, term: VanDerWaalsTerm) -> Result<(), EngineError> {
         self.check_term_atom_count("van der Waals", term.atom_count())?;
         self.van_der_waals = Some(term);
+        self.invalidate_neighbors();
+        Ok(())
+    }
+
+    /// Sets the Lennard-Jones term. The term must cover at most the system
+    /// atom count. This invalidates the neighbor list.
+    pub fn set_lennard_jones(&mut self, term: LennardJonesTerm) -> Result<(), EngineError> {
+        self.check_term_atom_count("Lennard-Jones", term.atom_count())?;
+        self.lennard_jones = Some(term);
         self.invalidate_neighbors();
         Ok(())
     }
@@ -337,6 +354,11 @@ impl System {
                 c_j_m6: term.c_j_m6(),
                 cutoff: *term.cutoff(),
             }),
+            lennard_jones: self.lennard_jones.as_ref().map(|term| KernelLennardJones {
+                epsilon_j: term.epsilon_j(),
+                sigma_m: term.sigma_m(),
+                cutoff: *term.cutoff(),
+            }),
             electrostatic: self.electrostatic.as_ref().map(|term| KernelElectrostatic {
                 charges_c: term.charges_c(),
                 cutoff: *term.cutoff(),
@@ -357,7 +379,11 @@ impl System {
         gradient: &mut [f64],
     ) -> Result<(), EngineError> {
         let pair_count = self.nonbonded_pairs.len() / 2;
-        if pair_count == 0 || (self.van_der_waals.is_none() && self.electrostatic.is_none()) {
+        if pair_count == 0
+            || (self.van_der_waals.is_none()
+                && self.lennard_jones.is_none()
+                && self.electrostatic.is_none())
+        {
             return Ok(());
         }
         let kernel = self.nonbonded_kernel(positions_m);
@@ -455,7 +481,9 @@ impl System {
 
         let atom_count = self.atom_count;
         let pair_count = self.nonbonded_pairs.len() / 2;
-        let has_nonbonded = self.van_der_waals.is_some() || self.electrostatic.is_some();
+        let has_nonbonded = self.van_der_waals.is_some()
+            || self.lennard_jones.is_some()
+            || self.electrostatic.is_some();
         if pair_count == 0 || !has_nonbonded {
             return Ok(gradient);
         }
@@ -584,6 +612,11 @@ impl System {
     fn nonbonded_cutoff_m(&self) -> Option<f64> {
         let mut cutoff_m: Option<f64> = None;
         if let Some(term) = &self.van_der_waals {
+            if term.atom_count() > 1 {
+                cutoff_m = Some(max_option(cutoff_m, term.cutoff().cutoff_m()));
+            }
+        }
+        if let Some(term) = &self.lennard_jones {
             if term.atom_count() > 1 {
                 cutoff_m = Some(max_option(cutoff_m, term.cutoff().cutoff_m()));
             }
