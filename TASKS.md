@@ -1083,3 +1083,24 @@ ADR-0063.
     `cargo test --workspace` -> 630 passed. Note: `free_directions` counts
     degrees in one pass over the bonds, because a per-atom scan is quadratic
     and a gear has more than a hundred thousand atoms.
+
+- [x] **M14-03** Add guest molecules with frozen geometry and charges.
+  - Result: `crates/parts/src/guest.rs` adds `Guest`, `GuestAtom`,
+    `GuestBond`, `guests()`, `guest(id)`, `build_guest` and
+    `build_guest_part`. A guest is one frozen molecule, so the module does
+    not implement `PartGenerator`. `Guest` reports the atom count, the heavy
+    atom count, the mass from the element table, the mass-weighted centroid,
+    the radius of gyration and the largest distance from the centroid.
+    `crates/parts/src/guest_data.rs` holds the frozen molecule table. The
+    table has methanol, ethanol, dimethyl ether, benzene and cyclohexane.
+    Ethanol and dimethyl ether are the isomer pair: the same formula
+    `C2H6O`, the same nine atoms and the same mass, and different shapes and
+    different charges. Only ethanol can donate a hydrogen bond.
+  - Verification: the geometry and the charges come from RDKit 2026.03.6,
+    which is installed in `/tmp/nc-qm-venv`. The embedding is ETKDGv3 with
+    the seed 20260917 and then MMFF94. The charges are the Gasteiger-Marsili
+    PEOE values with 12 iterations. The emitter is `/tmp/emit_guests.py`.
+    Every molecule is neutral to better than 1e-4 of a charge. The
+    element-table mass agrees with the source molar mass to better than one
+    percent. `cargo test -p nanocad-parts guest` -> 13 passed;
+    `cargo test --workspace` -> 643 passed. See ADR-0063.

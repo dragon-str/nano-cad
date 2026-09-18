@@ -16,6 +16,8 @@ pub mod gear_profile;
 pub mod generator;
 pub mod geometry;
 mod group;
+mod guest;
+mod guest_data;
 pub mod housing;
 pub mod lattice;
 pub mod lattice_fill;
@@ -42,6 +44,9 @@ pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
 pub use generator::{PartGenerator, PartSchema};
 pub use group::FunctionalGroup;
+pub use guest::{
+    build_guest, build_guest_part, guest, guests, Guest, GuestAtom, GuestBond, AVOGADRO_PER_MOL,
+};
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;

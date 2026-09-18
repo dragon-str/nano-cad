@@ -1107,3 +1107,43 @@ turns the rotor at 2.0 rad/s and the readout names it a display rate.
 The scene holds the geometry, the mass and the joint. It does not hold a
 binding site, a target molecule, a solvent or an ion, so it does not show
 molecular selectivity. That limit is unchanged from ADR-0061.
+
+## ADR-0063
+
+### The chemistry layer states its data and never invents it
+
+Status: accepted.
+
+The chemistry layer needs numbers that a real force field would supply: a
+valence, an atomic mass, a contact distance and a partial charge. This
+repository has no such table, and a fitted parameter set is only worth
+something with a citation.
+
+The rule is therefore: state the data, cite the source, and never invent a
+number.
+
+The element table in `crates/model/src/chemistry.rs` holds a valence, an
+atomic mass and a covalent radius for nine elements. The valence is the usual
+valence of the neutral element. The mass is the IUPAC standard atomic weight.
+The radius is the Cordero 2008 single-bond radius. Each value is a published
+fact and not a fitted constant. An element outside the table returns `None`
+instead of a silent default, so a caller cannot use the table by accident.
+
+The functional groups in `crates/parts/src/group.rs` take their bond lengths
+from that table, so a group and the diamond lattice share one source of radii.
+The remaining bonds take the tetrahedral angle, which is geometry and not a
+parameter.
+
+The guest molecules in `crates/parts/src/guest_data.rs` are frozen data. The
+geometry comes from RDKit ETKDGv3 embedding and MMFF94 optimization. The
+partial charges are Gasteiger-Marsili PEOE values. RDKit is BSD-3 licensed,
+so the values are free to use, and the emitter script states the seed and the
+iteration count, so anyone can reproduce the table.
+
+This repository still has no nonbonded parameter set. `VanDerWaalsTerm` takes
+raw per-atom `a`, `b` and `c` values and nothing maps an element to them. A
+later task must add that table, and it must cite its source.
+
+Consequence: every result that uses a charge from this layer is a model
+result. The charges are not computed for the pocket, and they are not
+validated against experiment. A report must say so.
