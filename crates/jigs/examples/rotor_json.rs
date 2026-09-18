@@ -8,6 +8,9 @@
 //!
 //! The example does not model molecular selectivity and it does not model a
 //! solvent. Those need a chemistry force field.
+//!
+//! With one argument, the example also writes the rotor scene to that path, in
+//! the schema of the gearbox scene, so a viewer shows the rotor.
 
 use std::f64::consts::TAU;
 
@@ -51,6 +54,7 @@ fn total_mass_kg(part: &nanocad_model::Part) -> f64 {
 }
 
 fn main() {
+    let scene_path = std::env::args().nth(1);
     let rotor = match SortingRotorGenerator.generate_with_defaults() {
         Ok(part) => part,
         Err(error) => {
@@ -86,6 +90,22 @@ fn main() {
     let housing_atoms = housing.atom_count();
     let rotor_mass_kg = total_mass_kg(&placed);
     let housing_mass_kg = total_mass_kg(&housing);
+
+    if let Some(path) = scene_path {
+        let scene = match nanocad_jigs::build_rotor_scene() {
+            Ok(scene) => scene,
+            Err(error) => {
+                eprintln!("the rotor scene failed: {error}");
+                std::process::exit(1);
+            }
+        };
+        if let Err(error) =
+            nanocad_jigs::write_scene_json(&scene, std::path::Path::new(&path), false)
+        {
+            eprintln!("the rotor scene was not written: {error}");
+            std::process::exit(1);
+        }
+    }
 
     println!(
         "{{\"rotor_atoms\":{rotor_atoms},\"rotor_bonds\":{},\"rotor_radius_m\":{rotor_radius_m:e},\

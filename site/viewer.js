@@ -71,6 +71,8 @@
 
   var ROLE_COLORS = {
     ground: "#6e7681",
+    housing: "#7d8590",
+    rotor: "#d2a8ff",
     sun: "#f2c14e",
     planet: "#4ec9b0",
     ring: "#b083f0",
@@ -100,7 +102,11 @@
     hiddenElements: {},
   };
   var atomCache = null;
-  var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0 };
+  var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0, kind: "gears" };
+
+  /* The real rotor turns at 86000 revolutions per second. No display shows
+     that, so the viewer turns the rotor at this stated rate instead. */
+  var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
   var hoverAtom = -1;
   var measure = [];
   var livePositions = null;
@@ -313,11 +319,18 @@
       colors[i * 3 + 2] = rgb[2];
     }
     var design = scene.design || {};
-    var ns = design.sun_teeth || 24;
-    var nr = design.ring_teeth || 60;
-    motion.w_sun = -0.34;
-    motion.w_carrier = (motion.w_sun * ns) / (ns + nr);
-    motion.w_planet = (-2 / 3) * motion.w_sun;
+    motion.kind = design.module_m > 0 ? "gears" : "rotor";
+    if (motion.kind === "gears") {
+      var ns = design.sun_teeth || 24;
+      var nr = design.ring_teeth || 60;
+      motion.w_sun = -0.34;
+      motion.w_carrier = (motion.w_sun * ns) / (ns + nr);
+      motion.w_planet = (-2 / 3) * motion.w_sun;
+    } else {
+      motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
+      motion.w_carrier = 0;
+      motion.w_planet = 0;
+    }
     atomCache = {
       atoms: atoms,
       base: position,
@@ -1087,16 +1100,29 @@
 
   function setReadout() {
     var d = scene.design;
-    var lines = [
-      "schema: " + scene.schema + " v" + scene.version,
-      "sun " + d.sun_teeth + "t  planet " + d.planet_teeth + "t  ring " + d.ring_teeth + "t",
-      "planets: " + d.planet_count,
-      "gear ratio (ring fixed): " + d.gear_ratio,
-      "bodies: " + scene.device.body_count,
-      "joints: " + scene.device.joints.length,
-      "atoms: " + scene.atomistic.atom_count,
-      "module: " + d.module_m.toExponential(3) + " m",
-    ];
+    var lines;
+    if (motion.kind === "rotor") {
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "mechanism: sorting rotor",
+        "bodies: " + scene.device.body_count,
+        "joints: " + scene.device.joints.length,
+        "atoms: " + scene.atomistic.atom_count,
+        "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
+        "real rate: 86000 rev/s, not shown",
+      ];
+    } else {
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "sun " + d.sun_teeth + "t  planet " + d.planet_teeth + "t  ring " + d.ring_teeth + "t",
+        "planets: " + d.planet_count,
+        "gear ratio (ring fixed): " + d.gear_ratio,
+        "bodies: " + scene.device.body_count,
+        "joints: " + scene.device.joints.length,
+        "atoms: " + scene.atomistic.atom_count,
+        "module: " + d.module_m.toExponential(3) + " m",
+      ];
+    }
     readout.textContent = lines.join("\n");
   }
 
@@ -1107,7 +1133,7 @@
       throw new Error("not a nanocad.scene document");
     }
     scene = data;
-    if (scene.design && scene.design.layers !== undefined) {
+    if (scene.design && scene.design.layers > 0) {
       currentParams = paramsFromDesign(scene.design);
       commitParams(currentParams);
       syncParamInputs();
@@ -1673,6 +1699,12 @@
           rotorResult.textContent = "error: " + payload.error;
           return;
         }
+        if (payload && payload.scene) {
+          setScene(payload.scene);
+          showRotor(payload.facts);
+          startMotion();
+          return;
+        }
         showRotor(payload);
       })
       .catch(function (error) {
@@ -1723,6 +1755,15 @@
       " rev/s, " + exponent(payload.reference_rim_speed_m_per_s) + " m/s rim"
     );
     row("the mass, the geometry and the kinematics are simulated or computed; the selectivity is not modelled");
+  }
+
+  /* Turn the drive on, so the mechanism moves as soon as it loads. */
+  function startMotion() {
+    motion.playing = true;
+    motion.time = 0;
+    if (buttons.play) {
+      buttons.play.textContent = "Pause";
+    }
   }
 
   function syncParamInputs() {
@@ -1823,6 +1864,11 @@
 
   function requestScore(params) {
     if (!live || !params) {
+      return;
+    }
+    if (motion.kind !== "gears") {
+      scoreEl.innerHTML =
+        "<div class=\"hint\">The scorecard measures the gearbox. It does not apply to the rotor.</div>";
       return;
     }
     var query = Object.keys(params)
@@ -2013,6 +2059,31 @@
     },
     rotorResult: function () {
       return rotorResult;
+    },
+    mechanism: function () {
+      return motion.kind;
+    },
+    atomPosition: function (index) {
+      if (!livePositions || index * 3 + 2 >= livePositions.length) {
+        return null;
+      }
+      return [
+        livePositions[index * 3],
+        livePositions[index * 3 + 1],
+        livePositions[index * 3 + 2],
+      ];
+    },
+    sceneAtomCount: function () {
+      return scene ? scene.atomistic.atom_count : 0;
+    },
+    bodyOf: function (index) {
+      if (!scene || index >= scene.atomistic.atoms.length) {
+        return -1;
+      }
+      return scene.atomistic.atoms[index].body;
+    },
+    playState: function () {
+      return motion.playing;
     },
     optimizeResult: function () {
       return optimizeResult;

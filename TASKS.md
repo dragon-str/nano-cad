@@ -1012,3 +1012,25 @@ force field and they stay out of scope.
     text `rotor 53964 atoms, 12 pockets, radius 7.0 nm` and
     `so 1.03e+6 molecules/s`, with no page error except the favicon. `just
     verify` -> all gates passed; 606 Rust tests. See ADR-0061.
+
+- [x] **M13-05** Show the rotor in the viewer and turn it.
+  - Result: `crates/jigs/src/rotor_scene.rs` adds `build_rotor_scene`, which
+    emits the rotor and the housing in the shared scene schema. The housing is
+    body 0 and it is fixed; the rotor is body 1. The device layer carries one
+    revolute joint on `z`, and the design block is zero, because a rotor has no
+    gear set. `rotor_json` takes an optional output path and writes the scene
+    there. `app/server.py` returns the scene and the facts from
+    `GET /api/rotor`. `site/viewer.js` reads a zero module as "not a gearbox",
+    swaps the scene, and turns the rotor about `z`. The scorecard states that
+    it measures the gearbox only.
+  - Verification: `cargo test -p nanocad-jigs rotor_scene` -> 7 passed,
+    including `every_atom_belongs_to_one_of_the_two_bodies` (53964 rotor,
+    39848 housing) and `the_coarse_bodies_wrap_the_atoms_of_their_body`. The
+    headless browser (`/tmp/nc-browser/rotor-view.js`) loads the scene, reports
+    `atoms in scene: 93812` and `playing: true`, and shows a rotor atom move in
+    `x` and `y` and hold its `z` between frames. The GL layer reports 93812
+    atoms, and the canvas is 62 percent covered at a face-on view. Zero page
+    errors. See ADR-0062.
+
+  The viewer turns the rotor at 2.0 rad/s, which is a display rate. The real
+  rate is 86000 rev/s, and the readout says so.

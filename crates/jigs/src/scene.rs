@@ -79,6 +79,8 @@ pub enum SceneError {
     NonFiniteAtom { index: usize, position_m: [f64; 3] },
     #[error("body {body} has a non-finite position {position_m:?} m")]
     NonFiniteBody { body: usize, position_m: [f64; 3] },
+    #[error("the part generator failed: {0}")]
+    Part(String),
     #[error("JSON error: {0}")]
     Json(String),
     #[error("I/O error: {0}")]

@@ -157,12 +157,21 @@ An apply button writes the best design into the parameters and rebuilds the
 scene.
 
 The panel also has a **Sorting rotor** section. The **Build the sorting rotor**
-button runs the rotor example. It shows a rotor disk with twelve pockets on its
-rim, inside a housing with an inlet and an outlet. The result lists the atom
+button runs the rotor example and replaces the scene with a rotor disk that
+carries twelve pockets on its rim, inside a housing with an inlet and an
+outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
-Freitas, *Nanomedicine* Volume I, Section 3.4.2. The example builds the
-mechanics only. It does not model molecular selectivity or a solvent, and the
-panel says so.
+Freitas, *Nanomedicine* Volume I, Section 3.4.2.
+
+The rotor scene uses the scene schema of the gearbox. The design block is zero,
+and the viewer reads a zero module as "not a gearbox". It then turns the rotor
+about `z` from the joint, instead of from the gear kinematics. The scorecard
+measures the gearbox, so the viewer clears it and states the reason. The real
+rate is 86000 revolutions per second, and no display shows that, so the viewer
+turns the rotor at 2.0 rad/s and the readout names it a display rate.
+
+The example builds the mechanics only. It does not model molecular selectivity
+or a solvent, and the panel says so.
 
 The server binds to `127.0.0.1` only. It serves these routes:
 

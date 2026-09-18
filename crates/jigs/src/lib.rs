@@ -23,6 +23,7 @@ mod jig;
 mod motor;
 mod nanomedicine;
 mod rotor;
+mod rotor_scene;
 mod scene;
 mod spring;
 mod urdf;
@@ -47,6 +48,9 @@ pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineErro
 pub use rotor::{
     LangevinCoupling, RotorConfig, RotorError, RotorMachine, RotorStep, BOLTZMANN_J_PER_K,
     CARBON_ATOM_MASS_KG,
+};
+pub use rotor_scene::{
+    build_rotor_scene, HOUSING_BODY, HOUSING_ROLE, ROTOR_BODY, ROTOR_FRAME, ROTOR_ROLE,
 };
 pub use scene::{
     build_scene, scene_from_json, scene_to_json, scene_to_json_pretty, write_scene_json,

@@ -1075,3 +1075,35 @@ against the reference of about 1e5 atoms and 2e-21 kg. At a stated rate of
 86000 rev/s the rim turns at 3.78e-3 m/s, against the reference 2.7e-3 m/s, and
 twelve pockets pass 1.03e6 molecules per second, against the reference rate of
 about 1e6.
+
+## ADR-0062
+
+### One scene schema carries both mechanisms
+
+Status: accepted.
+
+The sorting rotor needs a viewer, and the planetary gearbox already has one.
+Two schemas would double the viewer and the exporter, so the rotor scene uses
+the gearbox scene schema, and the schema states the mechanism in its data.
+
+The housing is body 0 and it is fixed. The rotor is body 1 and it is free. The
+device layer carries one revolute joint on the world `z` axis through the
+origin, because the rotor axis port and the housing chamber port share that
+axis. The gear couplings and the gear constraints are empty.
+
+The design block describes a gear set, and a rotor has none. The rotor scene
+therefore writes a zero module. A viewer reads a zero module as "not a
+gearbox", and it then drives the bodies from the joint instead of from the gear
+kinematics. This is a convention on an existing field, so the schema version
+stays at 1. The alternative, a nullable design block or a new mechanism field,
+would change the schema and every reader for one extra mechanism.
+
+Two consequences follow from the reuse. The viewer must not score a rotor,
+because the scorecard measures the gearbox, so it clears the scorecard and
+states the reason. The viewer must also not show the real turn rate. The real
+rate is 86000 revolutions per second, and no display shows that, so the viewer
+turns the rotor at 2.0 rad/s and the readout names it a display rate.
+
+The scene holds the geometry, the mass and the joint. It does not hold a
+binding site, a target molecule, a solvent or an ion, so it does not show
+molecular selectivity. That limit is unchanged from ADR-0061.
