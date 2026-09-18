@@ -1566,4 +1566,4 @@ drive shaft.
     converged, 0 clashes, bond strain 1.9e-6.
   - Measured: the scene holds 127036 atoms and 1.787369134208518e-21 kg.
 
-- [ ] **M19-05** Show the hub and the spring, and update the docs.
+- [x] **M19-05** Show the hub and the spring, and update the docs. <!-- result: the viewer draws the cam hub (gold) and the leaf spring (green) from the new roles; the facts panel lists the cam hub and the leaf spring atoms, mass and tip stiffness; the rod animation keeps the one-sided windowed ramp; `docs/viewer.md` now describes the one-sided hub, the return spring and the wide piston face. -->

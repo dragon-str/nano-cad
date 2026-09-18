@@ -164,30 +164,33 @@ counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
 The rotor scene holds 15 bodies and 13 joints: the housing, the rotor on a
-revolute joint, the fixed cam plate below the rotor, and 12 ejection rods, one
-for each pocket. Each rod lies along the radius of its pocket, sits in a radial
-bore in the rotor, and turns with the rotor, because it is captive in the rotor.
+revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for
+each pocket. Each rod lies along the radius of its pocket, sits in a radial bore
+in the rotor, and turns with the rotor, because it is captive in the rotor. Each
+rod carries a follower pin and one leaf spring.
 
-The cam is a plate below the rotor, not a ring in the rotor plane. One groove is
-cut into the plate face. The groove centreline dwells at a base radius of 2.0 nm,
-and it rises to 3.5 nm over a short ramp at the outlet azimuth. The rise is a
-raised cosine over a half-angle of 0.21 rad, about 12 degrees, and the stroke is
-1.5 nm. Each rod carries a follower pin that hangs into the groove. As the rotor
-turns, one wall of the groove pushes a rod outward and the opposite wall pulls it
-back, so the groove gives the push and the pull with no return spring. The ramp
-holds the stroke to a short arc, so a rod pushes the guest out only as its pocket
-meets the outlet, and the other eleven rods stay retracted. A fully extended rod
-stops at the rotor rim and cannot cross the housing.
+The cam is a one-sided hub below the rotor, not a ring in the rotor plane. The
+hub is a profiled disc. Its radial face dwells at a base radius of 2.0 nm, and it
+rises to 3.5 nm over a short ramp at the outlet azimuth. The rise is a raised
+cosine over a half-angle of 0.21 rad, about 12 degrees, and the stroke is 1.5 nm.
+The follower pin of each rod rides the hub surface. The hub pushes a rod outward
+on the ramp. It cannot pull the rod back, so the leaf spring holds the pin against
+the hub and returns the rod over the dwell. The ramp holds the stroke to a short
+arc, so a rod pushes the guest out only as its pocket meets the outlet, and the
+other eleven rods stay retracted. A fully extended rod stops at the rotor rim and
+cannot cross the housing.
 
-The plate top face is flush with the housing lower face, and its outer radius
-equals the housing outside radius, so the plate laps under the ring and the
-housing holds it from below and around its rim. The rotor is turned by a drive
-shaft on the rotor axis. A key on the shaft sits in a keyway in the rotor bore,
-so the shaft and the rotor turn as one body. The rotor central bore is 1.5 nm.
-The panel lists the cam plate atoms and mass, the drive shaft atoms, the pin
-atoms, the rod count and the rod length with the other facts. The **Hide rotor
-top** control removes the rotor body above its mid-plane, so the radial bores,
-the follower pins and the cam groove below the rotor become visible while the
+The hub sits in the gap below the rotor, and the housing holds it from below and
+around its rim. The rotor is turned by a drive shaft on the rotor axis. A key on
+the shaft sits in a keyway in the rotor bore, so the shaft and the rotor turn as
+one body. The rotor central bore is 1.5 nm. The rod shaft is the wide piston
+face: its radius is 0.65 nm, and the narrower tip is 0.4 nm. The radial bore is
+0.94 nm, so the shaft clears the rotor wall and still pushes a guest that lies
+against the pocket wall. The panel lists the cam hub atoms and mass, the leaf
+spring atoms, mass and stiffness, the drive shaft atoms, the pin atoms, the rod
+count and the rod length with the other facts. The **Hide rotor top** control
+removes the rotor body above its mid-plane, so the radial bores, the follower
+pins, the leaf springs and the cam hub below the rotor become visible while the
 housing stays in place.
 
 The rotor scene uses the scene schema of the gearbox. The design block is zero,
@@ -200,11 +203,12 @@ The cam stroke is 1.5 nm. The display gives every rod the profiled phase for its
 own azimuth, so a rod moves inside the ramp window and stays still outside it.
 Each pocket is swept once for each turn of the rotor.
 
-The example builds the mechanics only. It builds the follower pins and the drive
-shaft, but it models no contact force between a pin and the groove wall, no
-torque on the shaft and no external machine, so it shows the motion that the
-joints allow and not the force that drives a rod. The panel says so. The wall
-chemistry is modelled, and the Selectivity section measures it.
+The example builds the mechanics only. It builds the follower pins, the leaf
+springs and the drive shaft, but it models no contact force between a pin and the
+hub face, no spring force, no torque on the shaft and no external machine, so it
+shows the motion that the joints allow and not the force that drives a rod. The
+panel says so. The wall chemistry is modelled, and the Selectivity section
+measures it.
 
 The panel also has a **Selectivity** section. The **Measure the pocket walls**
 button runs the binding example. The example builds a binding pocket, and it

@@ -75,8 +75,10 @@
     housing: "#7d8590",
     rotor: "#d2a8ff",
     cam_plate: "#e3b341",
+    cam_hub: "#e3b341",
     drive_shaft: "#79c0ff",
     follower_pin: "#ffa657",
+    leaf_spring: "#56d364",
     ejection_rod: "#ff7b72",
     sun: "#f2c14e",
     planet: "#4ec9b0",
@@ -115,19 +117,20 @@
   var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
 
   /* Each rod pushes the guest out of its pocket by this distance at full
-     stroke. It matches the groove_rise_m default in
-     crates/parts/src/cam_plate.rs. The profiled groove holds the rod at its
-     base radius over the dwell, then drives it out and back over the ramp once
-     for each rotor turn. */
+     stroke. It matches the rise_m default in crates/parts/src/cam_hub.rs. The
+     one-sided hub holds the rod at its base radius over the dwell, then drives
+     it out and back over the ramp once for each rotor turn. */
   var ROTOR_ROD_STROKE_M = 1.5e-9;
 
-  /* The groove centre angle in radians. It matches the groove_angle_rad default
-     in crates/parts/src/cam_plate.rs, which faces the housing outlet at PI. */
+  /* The hub lobe centre angle in radians. It matches the angle_rad default
+     in crates/parts/src/cam_hub.rs, which faces the housing outlet at PI. */
   var ROTOR_CAM_LOBE_RAD = Math.PI;
 
-  /* The half-angle of the groove ramp in radians. It matches the
-     groove_ramp_half_angle_rad default in crates/parts/src/cam_plate.rs. Outside
-     this window the rod does not move. */
+  /* The half-angle of the hub ramp in radians. It matches the
+     ramp_half_angle_rad default in crates/parts/src/cam_hub.rs. Outside this
+     window the rod does not move. A leaf spring, one per rod, holds the pin
+     against the hub and returns the rod over the dwell.
+     See crates/parts/src/leaf_spring.rs. */
   var ROTOR_CAM_RAMP_RAD = 0.21;
 
   var hoverAtom = -1;
@@ -1181,14 +1184,15 @@
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: sorting rotor",
-        "bodies: " + scene.device.body_count + " (housing, rotor with drive shaft, cam plate, " +
-          (motion.rods || []).length + " rods with follower pins)",
+        "bodies: " + scene.device.body_count + " (housing, rotor with drive shaft, one-sided cam hub, " +
+          (motion.rods || []).length + " rods with follower pins and leaf springs)",
         "joints: " + scene.device.joints.length + " (revolute, prismatic)",
         "atoms: " + scene.atomistic.atom_count,
         "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
-        "cam groove centre at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg," +
+        "cam hub lobe at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg," +
           " ramp +/-" + ((ROTOR_CAM_RAMP_RAD * 180) / Math.PI).toFixed(0) + " deg",
-        "cutaway: hide the rotor top to see the groove",
+        "return: one leaf spring per rod",
+        "cutaway: hide the rotor top to see the rod and the hub",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1826,8 +1830,8 @@
       (Number(payload.rotor_radius_m) * 2e9).toFixed(1) + " nm chamber plus two channels"
     );
     row(
-      "cam plate " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
-      " kg, fixed below the rotor, one profiled groove with a dwell and a " +
+      "cam hub " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
+      " kg, fixed below the rotor, one profiled lobe with a dwell and a " +
       (Number(payload.rod_stroke_m) * 1e9).toFixed(1) + " nm stroke"
     );
     row(
@@ -1842,6 +1846,11 @@
     row(
       "follower pins " + (payload.rod_count | 0) + " x " + payload.pin_atoms +
       " atoms, " + exponent(payload.pin_mass_kg) + " kg each, one per rod"
+    );
+    row(
+      "leaf springs " + (payload.rod_count | 0) + " x " + payload.spring_atoms +
+      " atoms, " + exponent(payload.spring_mass_kg) + " kg each, " +
+      Number(payload.spring_stiffness_n_per_m).toFixed(1) + " N/m, one per rod"
     );
     row(
       "assembly " + payload.total_atoms + " atoms, " +
