@@ -14,6 +14,7 @@ use crate::axle::{HexAxleGenerator, PlainShaftGenerator};
 use crate::bearing::{BushingGenerator, RadialBearingGenerator};
 use crate::block::{BeamGenerator, BracketGenerator, PlateGenerator};
 use crate::cam::CamRingGenerator;
+use crate::cam_hub::CamHubGenerator;
 use crate::cam_plate::CamPlateGenerator;
 use crate::clutch::{ClutchPlateGenerator, RatchetGenerator};
 use crate::error::PartError;
@@ -21,6 +22,7 @@ use crate::gear_profile::GearProfileGenerator;
 use crate::generator::PartGenerator;
 use crate::housing::RotorHousingGenerator;
 use crate::lattice::{DiamondGenerator, GraphiteGenerator};
+use crate::leaf_spring::LeafSpringGenerator;
 use crate::nanotube::NanotubeGenerator;
 use crate::parameter::ParameterSet;
 use crate::pin::FollowerPinGenerator;
@@ -58,8 +60,10 @@ static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
 static EJECTION_ROD: EjectionRodGenerator = EjectionRodGenerator;
 static CAM_RING: CamRingGenerator = CamRingGenerator;
 static CAM_PLATE: CamPlateGenerator = CamPlateGenerator;
+static CAM_HUB: CamHubGenerator = CamHubGenerator;
 static DRIVE_SHAFT: DriveShaftGenerator = DriveShaftGenerator;
 static FOLLOWER_PIN: FollowerPinGenerator = FollowerPinGenerator;
+static LEAF_SPRING: LeafSpringGenerator = LeafSpringGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -169,7 +173,15 @@ static GENERATORS: &[RegisteredGenerator] = &[
         category: "device",
     },
     RegisteredGenerator {
+        generator: &CAM_HUB,
+        category: "device",
+    },
+    RegisteredGenerator {
         generator: &DRIVE_SHAFT,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &LEAF_SPRING,
         category: "device",
     },
 ];

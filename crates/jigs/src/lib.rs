@@ -50,7 +50,9 @@ pub use rotor::{
     CARBON_ATOM_MASS_KG,
 };
 pub use rotor_scene::{
-    build_rotor_scene, HOUSING_BODY, HOUSING_ROLE, ROTOR_BODY, ROTOR_FRAME, ROTOR_ROLE,
+    build_rotor_scene, CAM_BODY, HOUSING_BODY, HOUSING_ROLE, HOUSING_THICKNESS_M,
+    INTERFACE_CLEARANCE_M, ROD_BODY_FIRST, ROD_COUNT, ROTOR_BODY, ROTOR_FRAME, ROTOR_ROLE,
+    SPRING_LENGTH_M, SPRING_THICKNESS_M, SPRING_WIDTH_M,
 };
 pub use scene::{
     build_scene, scene_from_json, scene_to_json, scene_to_json_pretty, write_scene_json,

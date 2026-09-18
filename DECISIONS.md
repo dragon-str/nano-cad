@@ -1617,3 +1617,63 @@ slides in the groove; a roller follower would roll. The scene models no contact
 force between the pin and the groove wall, no torque on the drive shaft, and no
 external machine. The scene still holds no guest, no solvent and no molecule in
 a pocket.
+
+## ADR-0072
+
+### A leaf spring returns each rod, and the cam is a one-sided hub
+
+Status: accepted. This supersedes ADR-0071.
+
+ADR-0071 gave the cam a closed groove that both pushes and retracts a rod. A
+closed groove needs a groove wall on each side, so the cam is a wide plate with a
+long slot. The user asked for the part that actually pushes the rod and pulls it
+back. A one-sided cam with a return spring is smaller and shows the load path.
+
+The cam is now `CamHubGenerator`. It is a profiled disc, one-sided. Its surface
+radius is `base_radius_m` outside a ramp of half-angle `ramp_half_angle_rad`
+about `angle_rad`, and it rises by `rise_m` over the ramp with a raised cosine.
+The disc carries a central bore of `bore_radius_m`. `CamPlateGenerator` and its
+closed groove stay in the library, but the rotor scene no longer uses it.
+
+Each rod carries a `LeafSpringGenerator` beside its follower pin. The spring is a
+diamond cantilever of `SPRING_LENGTH_M` (0.6e-9 m), `SPRING_WIDTH_M` (0.4e-9 m)
+and `SPRING_THICKNESS_M` (0.2e-9 m). Its tip stiffness is `3EI/L^3` with
+`E = 1.05e12 Pa`, which is 3.89 N/m. The spring holds the pin against the hub, so
+the hub pushes the rod out and the spring pulls it back. The spring is a
+schematic of the load path. It is drawn rigid, it applies no force in the scene,
+and a 1.5e-9 m stroke is large for a 0.6e-9 m cantilever, so the stiffness is
+indicative.
+
+A first build of this scene placed the parts wrong. The hub was generated at its
+default thickness of 0.9e-9 m plus a 1.0e-9 m flange, but the code placed it as
+if it were only as thick as the gap under the rotor. The hub top rose about
+0.18e-9 m into the rotor and the hub bottom hung about 0.57e-9 m below the
+housing. The rotor-rod, rotor-hub and rod-hub interfaces also overlapped, because
+a carbon surface carries hydrogen caps that reach about 0.11e-9 m past it.
+
+The scene now uses `INTERFACE_CLEARANCE_M` (0.4e-9 m) at every moving interface.
+The housing is 4.6e-9 m thick, so the chamber is tall enough. The hub is
+generated at the true gap thickness and it has no flange. The rotor bore is
+widened by the clearance, and the follower pin top sits one clearance below the
+rotor. The gap is measured between nominal carbon surfaces, so 0.4e-9 m keeps
+every inter-part atom pair above the 0.16e-9 m clash threshold.
+
+A new metric `nanocad_meter::relax_subassembly` confirms the assembly is stable.
+It relaxes the covalent lattice only, with ideal rest lengths (C-C 1.544e-10 m,
+C-H 1.09e-10 m, H-H 7.4e-11 m), and it counts non-bonded pairs closer than
+1.6e-10 m as clashes. It does not use van der Waals: the reaction forces in a
+mechanism come from the joints, not from chemistry, and a stiff Buckingham term
+against a soft lattice has no stable equilibrium. The metric reports the energy
+drop, the peak force, the largest bond strain, the clash count and the largest
+displacement.
+
+The relaxation of the rod and the cam hub (1692 atoms, 2259 bonds) converges. The
+energy falls by 2.63e-21 J, the largest bond strain is 6.6e-6, the largest
+displacement is 2.75e-13 m, and the clash count is zero before and after. The
+scene holds 127330 atoms and 1.8243665191584498e-21 kg.
+
+Limits on this work. The relaxation covers the rod and the hub, not the whole
+scene; the rotor and the housing are large and their cut-out boundaries carry
+broken bonds that give a false collapse. The spring makes no contact and applies
+no force. The scene still models no contact force between the pin and the hub, no
+torque on the drive shaft, no guest, no solvent and no molecule in a pocket.

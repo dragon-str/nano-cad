@@ -1513,3 +1513,42 @@ drive shaft.
   - Verification: `site/viewer.js` hides body 1 above `z = 0`; the headless
     harness reports the cutaway flag, the reduced live atom count and zero
     console errors.
+
+## M19 — Show the return spring and verify the assembly
+
+- [x] **M19-01** Add the leaf-spring part.
+  - Result: `crates/parts/src/leaf_spring.rs` adds `LeafSpringGenerator`
+    (`leaf_spring`). The spring is a diamond cantilever with parameters
+    `leaf_length_m` (1.6e-9 m), `leaf_width_m` (6.0e-10 m) and
+    `leaf_thickness_m` (3.6e-10 m). It exposes `second_moment_m4`,
+    `tip_stiffness_n_per_m` (3EI/L^3) and `tip_load_n`, and the ports
+    `anchor_port` and `load_port`. `DIAMOND_YOUNG_MODULUS_PA` is 1.05e12 Pa.
+  - Verification: `cargo test -p nanocad-parts leaf_spring` -> 8 passed.
+
+- [x] **M19-02** Replace the cam plate with a one-sided hub and add the spring.
+  - Result: `crates/parts/src/cam_hub.rs` adds `CamHubGenerator` (`cam_hub`), a
+    profiled one-sided disc with a bore and an optional base flange. The scene
+    now uses the hub and gives each rod a leaf spring beside its follower pin.
+    `crates/jigs/examples/rotor_json.rs` reports `spring_atoms`,
+    `spring_mass_kg` and `spring_stiffness_n_per_m`.
+  - Verification: `cargo test -p nanocad-parts cam_hub` -> 11 passed.
+    `cargo test -p nanocad-jigs rotor_scene` -> 13 passed.
+
+- [x] **M19-03** Verify the assembly with a covalent relaxation.
+  - Result: `nanocad_meter::relax_subassembly` relaxes the covalent lattice of
+    a sub-assembly with ideal rest lengths and counts clashes. The first build
+    of the M19 scene had 428 inter-part overlaps: the hub was placed as if it
+    were 0.606e-9 m thick but generated 1.9e-9 m thick, and the nominal
+    clearances were sub-atomic. The scene now uses `INTERFACE_CLEARANCE_M`
+    (0.4e-9 m), a 4.6e-9 m housing, a hub at the true gap thickness and a pin top
+    below the rotor. `crates/jigs/examples/rotor_relax.rs` reports the relaxed
+    rod and hub. The sub-assembly of 1692 atoms and 2259 bonds converges: the
+    energy falls by 2.63e-21 J, the largest bond strain is 6.6e-6, the largest
+    displacement is 2.75e-13 m, and the clash count is zero before and after.
+  - Verification: `cargo test -p nanocad-meter relax` -> 7 passed.
+    `cargo test -p nanocad-jigs rotor_scene` -> 13 passed, including
+    `the_rod_and_the_cam_hub_relax_without_a_clash`.
+
+- [ ] **M19-04** Measure sidewall capture and widen the piston tip.
+
+- [ ] **M19-05** Show the hub and the spring, and update the docs.

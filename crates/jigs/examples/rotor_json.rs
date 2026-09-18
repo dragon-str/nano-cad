@@ -1,12 +1,13 @@
-//! Builds a sorting rotor, its housing, its cam plate and its drive shaft, and
+//! Builds a sorting rotor, its housing, its cam hub and its drive shaft, and
 //! prints the facts.
 //!
 //! The rotor follows Freitas, *Nanomedicine* Volume I, Section 3.4.2: a disk
 //! with a row of binding pockets on its rim, and rods that the cam surface
-//! thrusts outward to eject a bound guest. The example reports the simulated
-//! geometry, the mass and the kinematics at a stated turn rate. It also prints
-//! the figures from the reference next to the simulated ones, so the reader can
-//! see the agreement and the difference.
+//! thrusts outward to eject a bound guest. A leaf spring holds each rod against
+//! the one-sided cam hub, so the rod returns when the follower leaves the lobe.
+//! The example reports the simulated geometry, the mass and the kinematics at a
+//! stated turn rate. It also prints the figures from the reference next to the
+//! simulated ones, so the reader can see the agreement and the difference.
 //!
 //! The example does not model molecular selectivity and it does not model a
 //! solvent. Those need a chemistry force field.
@@ -16,10 +17,14 @@
 
 use std::f64::consts::TAU;
 
+use nanocad_jigs::{
+    HOUSING_THICKNESS_M, INTERFACE_CLEARANCE_M, SPRING_LENGTH_M, SPRING_THICKNESS_M, SPRING_WIDTH_M,
+};
 use nanocad_model::Element;
 use nanocad_parts::{
-    place, CamPlateGenerator, DriveShaftGenerator, EjectionRodGenerator, FollowerPinGenerator,
-    ParameterSet, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
+    place, CamHubGenerator, DriveShaftGenerator, EjectionRodGenerator, FollowerPinGenerator,
+    LeafSpringGenerator, ParameterSet, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
+    DIAMOND_YOUNG_MODULUS_PA,
 };
 
 /// The atomic mass unit in kilograms.
@@ -71,27 +76,37 @@ fn resolved_m(generator: &impl PartGenerator, name: &str) -> f64 {
 
 fn main() {
     let scene_path = std::env::args().nth(1);
-    let rotor = match SortingRotorGenerator.generate_with_defaults() {
+    let rod_radius_m = resolved_m(&EjectionRodGenerator, "shaft_radius_m");
+    let rotor = match SortingRotorGenerator.generate(&ParameterSet::new().with(
+        "ejection_bore_radius_m",
+        rod_radius_m + INTERFACE_CLEARANCE_M,
+    )) {
         Ok(part) => part,
         Err(error) => {
             eprintln!("the rotor failed: {error}");
             std::process::exit(1);
         }
     };
-    let housing = match RotorHousingGenerator.generate_with_defaults() {
+    let housing = match RotorHousingGenerator
+        .generate(&ParameterSet::new().with("thickness_m", HOUSING_THICKNESS_M))
+    {
         Ok(part) => part,
         Err(error) => {
             eprintln!("the housing failed: {error}");
             std::process::exit(1);
         }
     };
-    let cam = match CamPlateGenerator.generate_with_defaults() {
-        Ok(part) => part,
-        Err(error) => {
-            eprintln!("the cam plate failed: {error}");
-            std::process::exit(1);
-        }
-    };
+    let rotor_half_thickness_m = resolved_m(&SortingRotorGenerator, "thickness_m") / 2.0;
+    let hub_thickness_m = (-rotor_half_thickness_m - INTERFACE_CLEARANCE_M)
+        - (-0.5 * HOUSING_THICKNESS_M + INTERFACE_CLEARANCE_M);
+    let cam =
+        match CamHubGenerator.generate(&ParameterSet::new().with("thickness_m", hub_thickness_m)) {
+            Ok(part) => part,
+            Err(error) => {
+                eprintln!("the cam hub failed: {error}");
+                std::process::exit(1);
+            }
+        };
     let shaft = match DriveShaftGenerator.generate_with_defaults() {
         Ok(part) => part,
         Err(error) => {
@@ -103,6 +118,18 @@ fn main() {
         Ok(part) => part,
         Err(error) => {
             eprintln!("the follower pin failed: {error}");
+            std::process::exit(1);
+        }
+    };
+    let spring = match LeafSpringGenerator.generate(
+        &ParameterSet::new()
+            .with("leaf_length_m", SPRING_LENGTH_M)
+            .with("leaf_width_m", SPRING_WIDTH_M)
+            .with("leaf_thickness_m", SPRING_THICKNESS_M),
+    ) {
+        Ok(part) => part,
+        Err(error) => {
+            eprintln!("the leaf spring failed: {error}");
             std::process::exit(1);
         }
     };
@@ -127,10 +154,12 @@ fn main() {
     let pocket_radius_m = resolved_m(&SortingRotorGenerator, "pocket_radius_m");
     let pocket_inner_m = pocket_orbit_m - pocket_radius_m;
     let tip_length_m = resolved_m(&EjectionRodGenerator, "tip_length_m");
-    let cam_retract_m = CamPlateGenerator.groove_base_radius_m();
-    let stroke_m = CamPlateGenerator.groove_rise_m();
-    let ramp_rad = CamPlateGenerator.groove_ramp_half_angle_rad();
-    let rod_length_m = pocket_inner_m - cam_retract_m;
+    let cam_retract_m = CamHubGenerator.base_radius_m()
+        + FollowerPinGenerator.head_radius_m()
+        + INTERFACE_CLEARANCE_M;
+    let stroke_m = CamHubGenerator.rise_m();
+    let ramp_rad = CamHubGenerator.ramp_half_angle_rad();
+    let rod_length_m = pocket_inner_m - cam_retract_m - INTERFACE_CLEARANCE_M;
     let rod = match EjectionRodGenerator
         .generate(&ParameterSet::new().with("shaft_length_m", rod_length_m - tip_length_m))
     {
@@ -146,23 +175,28 @@ fn main() {
     let cam_atoms = cam.atom_count();
     let rod_atoms = rod.atom_count();
     let pin_atoms = pin.atom_count();
+    let spring_atoms = spring.atom_count();
     let shaft_atoms = shaft.atom_count();
     let rotor_mass_kg = total_mass_kg(&placed);
     let housing_mass_kg = total_mass_kg(&housing);
     let cam_mass_kg = total_mass_kg(&cam);
     let rod_mass_kg = total_mass_kg(&rod);
     let pin_mass_kg = total_mass_kg(&pin);
+    let spring_mass_kg = total_mass_kg(&spring);
     let shaft_mass_kg = total_mass_kg(&shaft);
     let total_atoms = rotor_atoms
         + housing_atoms
         + cam_atoms
         + shaft_atoms
-        + (ROD_COUNT as usize) * (rod_atoms + pin_atoms);
+        + (ROD_COUNT as usize) * (rod_atoms + pin_atoms + spring_atoms);
     let total_mass_kg = rotor_mass_kg
         + housing_mass_kg
         + cam_mass_kg
         + shaft_mass_kg
-        + ROD_COUNT * (rod_mass_kg + pin_mass_kg);
+        + ROD_COUNT * (rod_mass_kg + pin_mass_kg + spring_mass_kg);
+    let spring_second_moment_m4 = SPRING_WIDTH_M * SPRING_THICKNESS_M.powi(3) / 12.0;
+    let spring_stiffness_n_per_m =
+        3.0 * DIAMOND_YOUNG_MODULUS_PA * spring_second_moment_m4 / SPRING_LENGTH_M.powi(3);
 
     if let Some(path) = scene_path {
         let scene = match nanocad_jigs::build_rotor_scene() {
@@ -185,9 +219,10 @@ fn main() {
          \"pocket_count\":{pocket_count},\"rotor_mass_kg\":{rotor_mass_kg:e},\
          \"housing_atoms\":{housing_atoms},\"housing_mass_kg\":{housing_mass_kg:e},\
          \"cam_atoms\":{cam_atoms},\"cam_mass_kg\":{cam_mass_kg:e},\
-         \"cam_plate_atoms\":{cam_atoms},\"cam_plate_mass_kg\":{cam_mass_kg:e},\
          \"shaft_atoms\":{shaft_atoms},\"shaft_mass_kg\":{shaft_mass_kg:e},\
          \"pin_atoms\":{pin_atoms},\"pin_mass_kg\":{pin_mass_kg:e},\
+         \"spring_atoms\":{spring_atoms},\"spring_mass_kg\":{spring_mass_kg:e},\
+         \"spring_stiffness_n_per_m\":{spring_stiffness_n_per_m:e},\
          \"rod_count\":{ROD_COUNT},\"rod_atoms\":{rod_atoms},\"rod_mass_kg\":{rod_mass_kg:e},\
          \"rod_length_m\":{rod_length_m:e},\"rod_stroke_m\":{stroke_m:e},\"rod_ramp_rad\":{ramp_rad:e},\
          \"total_atoms\":{total_atoms},\"total_mass_kg\":{total_mass_kg:e},\

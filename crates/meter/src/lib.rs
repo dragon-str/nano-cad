@@ -14,6 +14,7 @@ pub mod ejection;
 pub mod geometry;
 pub mod harmonic;
 pub mod loaded;
+pub mod relax;
 pub mod relaxed;
 pub mod slip;
 
@@ -24,6 +25,7 @@ pub use ejection::{ejection_work_j, EjectionReport, EjectionTarget};
 pub use geometry::{atom_count, contact_ratio};
 pub use harmonic::{HarmonicMesh, HarmonicReport, HarmonicTarget};
 pub use loaded::{LoadedContact, LoadedContactReport, LoadedContactTarget};
+pub use relax::{relax_part, relax_subassembly, RelaxAtom, RelaxReport, RelaxTarget};
 pub use relaxed::{RelaxedSlipBarrier, RelaxedSlipBarrierReport, RelaxedSlipBarrierTarget};
 pub use slip::{SlipBarrier, SlipBarrierReport, SlipBarrierTarget};
 
