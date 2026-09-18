@@ -1549,6 +1549,21 @@ drive shaft.
     `cargo test -p nanocad-jigs rotor_scene` -> 13 passed, including
     `the_rod_and_the_cam_hub_relax_without_a_clash`.
 
-- [ ] **M19-04** Measure sidewall capture and widen the piston tip.
+- [x] **M19-04** Measure sidewall capture and widen the piston tip.
+  - Result: new `nanocad_meter::capture` measures how much of a pocket the
+    pushing face covers. With the old rod, a guest against the sidewall was
+    missed: the narrow tip covered 0.52-0.54 of the pocket and the shaft face
+    0.77-0.79. A face of radius 0.583e-9 (ether) or 0.563e-9 (ethanol) covers
+    every allowed offset.
+  - Fix: the rod shaft is now the wide pushing face (`shaft_radius_m` 0.65e-9,
+    `tip_radius_m` 0.4e-9). The scene rotor bore is
+    `rod_radius_m + EJECTION_BORE_CLEARANCE_M` (0.94e-9), below the 1.0e-9
+    pocket. The shaft face covers every allowed offset for both guests
+    (coverage 1.0, dead zone 0).
+  - Verification: `cargo test -p nanocad-meter capture` -> 5 passed.
+    `cargo test -p nanocad-jigs rotor_scene` -> 13 passed.
+    `cargo run --release -p nanocad-jigs --example rotor_relax` -> 2142 atoms,
+    converged, 0 clashes, bond strain 1.9e-6.
+  - Measured: the scene holds 127036 atoms and 1.787369134208518e-21 kg.
 
 - [ ] **M19-05** Show the hub and the spring, and update the docs.

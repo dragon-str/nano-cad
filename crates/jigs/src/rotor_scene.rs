@@ -82,6 +82,14 @@ pub const HOUSING_THICKNESS_M: f64 = 4.6e-9;
 /// keeps every interface clear of the clash test.
 pub const INTERFACE_CLEARANCE_M: f64 = 4.0e-10;
 
+/// The running clearance between the ejection rod and the rotor eject bore, in
+/// metres.
+///
+/// The bore must stay below the pocket radius, so it cannot use the full
+/// interface clearance. This value still leaves an atom gap above the clash
+/// threshold.
+pub const EJECTION_BORE_CLEARANCE_M: f64 = 2.9e-10;
+
 /// The free length of one leaf spring, in metres.
 pub const SPRING_LENGTH_M: f64 = 6.0e-10;
 
@@ -172,7 +180,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let rod_radius_m = default_m(&EjectionRodGenerator, "shaft_radius_m");
     let rotor = SortingRotorGenerator.generate(&ParameterSet::new().with(
         "ejection_bore_radius_m",
-        rod_radius_m + INTERFACE_CLEARANCE_M,
+        rod_radius_m + EJECTION_BORE_CLEARANCE_M,
     ))?;
     let housing = RotorHousingGenerator
         .generate(&ParameterSet::new().with("thickness_m", HOUSING_THICKNESS_M))?;
@@ -632,12 +640,12 @@ mod tests {
             assert!(atom.body < 15);
             assert!(atom.atomic_number > 0);
         }
-        assert_eq!(scene.atomistic.atom_count, 127_330);
+        assert_eq!(scene.atomistic.atom_count, 127_036);
         assert_eq!(body_atoms(scene, HOUSING_BODY), 71_624);
-        assert_eq!(body_atoms(scene, ROTOR_BODY), 48_426);
+        assert_eq!(body_atoms(scene, ROTOR_BODY), 42_732);
         assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
         for index in 0..ROD_COUNT {
-            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 508);
+            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 958);
             assert_eq!(
                 part_atoms(scene, ROD_BODY_FIRST + index, SPRING_PART_ID),
                 36

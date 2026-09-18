@@ -1677,3 +1677,34 @@ scene; the rotor and the housing are large and their cut-out boundaries carry
 broken bonds that give a false collapse. The spring makes no contact and applies
 no force. The scene still models no contact force between the pin and the hub, no
 torque on the drive shaft, no guest, no solvent and no molecule in a pocket.
+
+## ADR-0073: The rod shaft is the wide piston face
+
+Status: accepted. It refines ADR-0072.
+
+Context. A guest can bind anywhere in the pocket, not only on the pocket axis.
+The old ejection rod was a wide shaft that stepped down to a narrow tip. The
+narrow tip was the part that entered the pocket. A new geometric metric,
+`nanocad_meter::capture`, asks how much of the pocket this face can cover.
+
+Finding. The narrow tip (0.2 nm radius) covers only 0.52-0.54 of the pocket. The
+shaft face (0.4 nm radius) covers 0.77-0.79. A guest against the sidewall beyond
+the reach of the face is not pushed. A face of radius 0.583e-9 (dimethyl ether)
+or 0.563e-9 (ethanol) covers every allowed offset.
+
+Decision. The rod shaft becomes the pushing face. The default
+`shaft_radius_m` is 0.65e-9 and the default `tip_radius_m` is 0.4e-9. The step
+guard stays: the tip is narrower than the shaft. The rotor ejection bore is
+`rod_radius_m + EJECTION_BORE_CLEARANCE_M` (0.94e-9). The bore cannot use
+`INTERFACE_CLEARANCE_M`, because it must stay below the 1.0e-9 pocket radius.
+
+Consequence. The shaft face covers every allowed offset for ethanol and dimethyl
+ether (coverage 1.0, dead zone 0). The cost is a wider bore and a heavier rod.
+The scene now holds 127036 atoms and 1.787369134208518e-21 kg. The rod and hub
+relaxation still converges with 0 clashes (2142 atoms, 2993 bonds, bond strain
+1.9e-6).
+
+Limits. The metric is a rigid geometric coverage model. It uses one sphere
+radius for the guest. It does not model the guest shape, the contact force, or
+the guest motion. A face that covers the pocket can still miss a guest that
+leaves the pocket before the rod arrives.

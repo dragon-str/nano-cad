@@ -3,7 +3,7 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **783 Rust tests plus
+Status: **pre-alpha.** The core is built end to end and **788 Rust tests plus
 93 Python and app tests and 11 JavaScript tests pass** (14 Python tests skip
 without their optional dependency). The 11-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,

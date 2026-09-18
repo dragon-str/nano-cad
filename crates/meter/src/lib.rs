@@ -8,6 +8,7 @@
 
 pub mod binding;
 pub mod bonded;
+pub mod capture;
 pub mod clearance;
 pub mod drive;
 pub mod ejection;
@@ -19,6 +20,7 @@ pub mod relaxed;
 pub mod slip;
 
 pub use binding::{binding_energy_j, selectivity_ratio, BindingReport, BindingTarget};
+pub use capture::{capture_report, CaptureReport, CaptureTarget};
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
 pub use drive::{DriveReport, DriveTarget, SteeredDrive};
 pub use ejection::{ejection_work_j, EjectionReport, EjectionTarget};

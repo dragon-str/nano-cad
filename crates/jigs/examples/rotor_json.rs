@@ -18,7 +18,8 @@
 use std::f64::consts::TAU;
 
 use nanocad_jigs::{
-    HOUSING_THICKNESS_M, INTERFACE_CLEARANCE_M, SPRING_LENGTH_M, SPRING_THICKNESS_M, SPRING_WIDTH_M,
+    EJECTION_BORE_CLEARANCE_M, HOUSING_THICKNESS_M, INTERFACE_CLEARANCE_M, SPRING_LENGTH_M,
+    SPRING_THICKNESS_M, SPRING_WIDTH_M,
 };
 use nanocad_model::Element;
 use nanocad_parts::{
@@ -79,7 +80,7 @@ fn main() {
     let rod_radius_m = resolved_m(&EjectionRodGenerator, "shaft_radius_m");
     let rotor = match SortingRotorGenerator.generate(&ParameterSet::new().with(
         "ejection_bore_radius_m",
-        rod_radius_m + INTERFACE_CLEARANCE_M,
+        rod_radius_m + EJECTION_BORE_CLEARANCE_M,
     )) {
         Ok(part) => part,
         Err(error) => {

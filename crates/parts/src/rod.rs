@@ -31,7 +31,7 @@ static EJECTION_ROD_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "shaft_radius_m",
         Some(Unit::Metre),
-        4.0e-10,
+        6.5e-10,
         1.5e-10,
         2.0e-9,
         false,
@@ -49,7 +49,7 @@ static EJECTION_ROD_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "tip_radius_m",
         Some(Unit::Metre),
-        2.0e-10,
+        4.0e-10,
         1.0e-10,
         1.0e-9,
         false,
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn a_tip_as_wide_as_the_shaft_is_refused() {
         let mut parameters = ParameterSet::new();
-        parameters.set("tip_radius_m", 4.0e-10);
+        parameters.set("tip_radius_m", 6.5e-10);
         assert!(EjectionRodGenerator.generate(&parameters).is_err());
     }
 
