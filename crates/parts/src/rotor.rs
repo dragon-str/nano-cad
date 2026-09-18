@@ -21,10 +21,16 @@ use nanocad_units::Unit;
 use crate::diamond_solid;
 use crate::error::PartError;
 use crate::generator::PartGenerator;
+use crate::group::FunctionalGroup;
 use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
+use crate::pocket::charge_wall;
 use crate::port::{Dof, Port};
 use crate::shape::{Cylinder, Difference, Solid, Union};
+
+/// The longest bond in diamond, in metres. A probe shorter than this stays
+/// inside the cell that owns the direction.
+const PROBE_STEP_M: f64 = 0.6 * 1.544e-10;
 
 /// The parameter specs of [`SortingRotorGenerator`], in a stable order.
 static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
@@ -82,6 +88,15 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
         false,
         "radius of the central bore in metres",
     ),
+    ParameterSpec::new(
+        "wall_group",
+        None,
+        0.0,
+        0.0,
+        5.0,
+        true,
+        "functional group on the pocket walls, as an index into the group list",
+    ),
 ];
 
 /// Generates a sorting rotor disk.
@@ -118,11 +133,32 @@ impl SortingRotorGenerator {
         port
     }
 
+    /// Returns the functional group that the pocket walls carry.
+    ///
+    /// The parameter holds an index into
+    /// [`crate::group::FUNCTIONAL_GROUPS`], because a parameter set holds
+    /// numbers. An index outside the list falls back to the first group here,
+    /// because [`PartGenerator::generate`] refuses it.
+    pub fn wall_group(&self) -> FunctionalGroup {
+        let index = self.default_m("wall_group").round().max(0.0) as usize;
+        FunctionalGroup::from_index(index).unwrap_or(FunctionalGroup::Hydroxyl)
+    }
+
     /// Returns the centre of one pocket, in metres.
     pub fn pocket_center_m(index: usize, count: usize, pocket_orbit_m: f64) -> [f64; 3] {
         let angle_rad = 2.0 * PI * index as f64 / count.max(1) as f64;
         let (sin_rad, cos_rad) = angle_rad.sin_cos();
         [pocket_orbit_m * cos_rad, pocket_orbit_m * sin_rad, 0.0]
+    }
+}
+
+impl SortingRotorGenerator {
+    /// Resolves one declared default, so a helper can state a geometry.
+    fn default_m(&self, name: &str) -> f64 {
+        self.resolve(&ParameterSet::new())
+            .ok()
+            .and_then(|resolved| resolved.get(name))
+            .unwrap_or(0.0)
     }
 }
 
@@ -147,6 +183,12 @@ impl PartGenerator for SortingRotorGenerator {
         let pocket_radius_m = resolved.require("pocket_radius_m")?;
         let pocket_orbit_m = resolved.require("pocket_orbit_m")?;
         let bore_radius_m = resolved.require("bore_radius_m")?;
+        let wall_index = resolved.require("wall_group")?.round();
+        let Some(group) = FunctionalGroup::from_index(wall_index.max(0.0) as usize) else {
+            return Err(PartError::InvalidGeometry(format!(
+                "the wall group index {wall_index} names no functional group"
+            )));
+        };
 
         if pocket_orbit_m < bore_radius_m + pocket_radius_m {
             return Err(PartError::InvalidGeometry(format!(
@@ -172,6 +214,7 @@ impl PartGenerator for SortingRotorGenerator {
             radius_m: bore_radius_m,
             height_m: thickness_m,
         });
+        let mut pockets = Vec::with_capacity(pocket_count);
         for index in 0..pocket_count {
             let pocket = Cylinder {
                 center_m: Self::pocket_center_m(index, pocket_count, pocket_orbit_m),
@@ -182,6 +225,7 @@ impl PartGenerator for SortingRotorGenerator {
                 a: void,
                 b: Box::new(pocket),
             });
+            pockets.push(pocket);
         }
 
         let solid = Difference {
@@ -191,16 +235,30 @@ impl PartGenerator for SortingRotorGenerator {
         fill_part(
             &format!("sorting-rotor-{pocket_count}"),
             &solid,
+            &pockets,
+            group,
             "the disc is thinner than one lattice layer",
         )
     }
 }
 
-/// Fills a solid region with the diamond lattice and caps every surface atom.
+/// Fills a solid region with the diamond lattice, decorates the pocket walls,
+/// and caps every remaining free direction with hydrogen.
+///
+/// A free tetrahedral direction takes `group` when a short step along it lands
+/// inside one of `pockets`, because that direction faces the space that a guest
+/// occupies. Every other free direction takes a hydrogen.
 ///
 /// The region must have a finite bounding box. The function returns an error
-/// when the region cut no lattice site, so an empty body cannot reach a caller.
-fn fill_part(name: &str, solid: &dyn Solid, empty_note: &str) -> Result<Part, PartError> {
+/// when the region cut no lattice site, or when no free direction faces a
+/// pocket, so an undecorated rotor cannot reach a caller.
+fn fill_part(
+    name: &str,
+    solid: &dyn Solid,
+    pockets: &[Cylinder],
+    group: FunctionalGroup,
+    empty_note: &str,
+) -> Result<Part, PartError> {
     let sites_m = fill_solid(solid);
     let mut topology = Topology::new();
     let mut carbons = Vec::with_capacity(sites_m.len());
@@ -212,13 +270,60 @@ fn fill_part(name: &str, solid: &dyn Solid, empty_note: &str) -> Result<Part, Pa
             "{name} cut no atom from the diamond lattice: {empty_note}"
         )));
     }
-    diamond_solid::bond_and_cap(&mut topology, &carbons)?;
-    Ok(Part::new(name, topology).with_material("diamond"))
+    diamond_solid::bond_atoms(&mut topology, &carbons)?;
+    let free = diamond_solid::free_directions(&topology, &carbons);
+
+    let mut plan = diamond_solid::CapPlan::new();
+    for direction in &free {
+        let Some(host_m) = topology.position_m(direction.host as usize) else {
+            continue;
+        };
+        let probe_m = [
+            host_m[0] + PROBE_STEP_M * direction.direction_m[0],
+            host_m[1] + PROBE_STEP_M * direction.direction_m[1],
+            host_m[2] + PROBE_STEP_M * direction.direction_m[2],
+        ];
+        if pockets.iter().any(|pocket| pocket.contains_m(probe_m)) {
+            plan.insert((direction.host, direction.slot), group);
+        }
+    }
+    if plan.is_empty() {
+        return Err(PartError::InvalidGeometry(
+            "no free direction points into a pocket, so the pocket walls carry \
+             no group: make the pockets wider or the orbit smaller"
+                .to_string(),
+        ));
+    }
+
+    diamond_solid::cap_free(&mut topology, &free, &plan)?;
+    charge_wall(&mut topology, group);
+    Ok(Part::new(name, topology).with_material("diamond with functional groups"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Counts the atoms whose force-field type starts with the group's prefix.
+    fn group_atoms(part: &Part, group: FunctionalGroup) -> usize {
+        let prefix = group.heavy_type().trim_end_matches('_');
+        (0..part.atom_count())
+            .filter(|&index| {
+                part.topology
+                    .atom_type(index)
+                    .is_some_and(|name| name.starts_with(prefix))
+            })
+            .count()
+    }
+
+    /// Generates the rotor with one parameter changed.
+    fn rotor_with(name: &str, value: f64) -> Part {
+        let mut parameters = ParameterSet::new();
+        parameters.set(name, value);
+        SortingRotorGenerator
+            .generate(&parameters)
+            .expect("the rotor builds")
+    }
 
     fn radial_xy_m(position_m: [f64; 3]) -> f64 {
         (position_m[0] * position_m[0] + position_m[1] * position_m[1]).sqrt()
@@ -342,5 +447,77 @@ mod tests {
                 );
             }
         }
+    }
+
+    use crate::FUNCTIONAL_GROUPS;
+
+    #[test]
+    fn the_pocket_walls_carry_the_chosen_group() {
+        let rotor = SortingRotorGenerator.generate_with_defaults().unwrap();
+        assert_eq!(
+            SortingRotorGenerator.wall_group(),
+            FunctionalGroup::Hydroxyl
+        );
+        assert!(group_atoms(&rotor, FunctionalGroup::Hydroxyl) > 0);
+        assert!(
+            group_atoms(&rotor, FunctionalGroup::Hydroxyl) < rotor.atom_count() / 4,
+            "only the pocket walls are decorated"
+        );
+    }
+
+    #[test]
+    fn a_different_wall_group_changes_the_wall() {
+        let hydroxyl = rotor_with("wall_group", FunctionalGroup::Hydroxyl.index() as f64);
+        let fluoro = rotor_with("wall_group", FunctionalGroup::Fluoro.index() as f64);
+        assert!(group_atoms(&fluoro, FunctionalGroup::Fluoro) > 0);
+        assert_eq!(group_atoms(&fluoro, FunctionalGroup::Hydroxyl), 0);
+        assert_ne!(hydroxyl.atom_count(), fluoro.atom_count());
+    }
+
+    #[test]
+    fn every_wall_group_builds_a_rotor() {
+        for group in FUNCTIONAL_GROUPS {
+            let rotor = rotor_with("wall_group", group.index() as f64);
+            assert!(
+                group_atoms(&rotor, group) > 0,
+                "{} decorates",
+                group.label()
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_wall_group_is_refused() {
+        let mut parameters = ParameterSet::new();
+        parameters.set("wall_group", FUNCTIONAL_GROUPS.len() as f64);
+        let error = SortingRotorGenerator
+            .generate(&parameters)
+            .expect_err("the index names no group");
+        assert!(
+            matches!(
+                error,
+                PartError::InvalidGeometry(_) | PartError::ParameterOutOfRange { .. }
+            ),
+            "the refusal names the group index"
+        );
+    }
+
+    #[test]
+    fn the_pocket_wall_carries_the_model_charges() {
+        let rotor = SortingRotorGenerator.generate_with_defaults().unwrap();
+        let mut charged = 0;
+        let mut neutral = 0;
+        for index in 0..rotor.atom_count() {
+            let Some(charge_c) = rotor.topology.charge_c(index) else {
+                continue;
+            };
+            if charge_c == 0.0 {
+                neutral += 1;
+            } else {
+                charged += 1;
+            }
+        }
+        assert!(charged > 0, "the wall groups carry a charge");
+        assert!(charged < neutral, "the lattice carbons stay neutral");
     }
 }

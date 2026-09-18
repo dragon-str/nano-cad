@@ -4,23 +4,27 @@
 //! shows both. The two mechanisms differ, so the scene states the difference
 //! in its data instead of in a new schema.
 //!
-//! - The housing is body 0 and it is fixed. The rotor is body 1.
+//! - The housing is body 0 and it is fixed. The rotor is body 1. The
+//!   ejection rod is body 2.
 //! - The design block is zero. Its fields describe a gear set, and a rotor has
 //!   no gear set. A viewer reads a zero module as "not a gearbox".
 //! - The rotor turns about the world `z` axis through the origin, because the
 //!   housing chamber port and the rotor axis port share that axis.
 //!
-//! The device layer carries the joint that a viewer needs to animate the
-//! rotor. It carries no gear coupling and no gear constraint.
+//! The device layer carries the joints that a viewer needs to animate the
+//! device: the rotor turns about `z`, and the ejection rod slides along the
+//! radius of one pocket. It carries no gear coupling and no gear constraint.
 //!
 //! # Scope limit
 //!
-//! The scene does not include a binding site, a target molecule, a solvent or
-//! an ion. It therefore does not show molecular selectivity.
+//! The scene does not include a binding site, a guest molecule, a solvent or
+//! an ion, so it does not show molecular selectivity. The rod is drawn where a
+//! guide bore would hold it, and the housing has no such bore.
 
 use nanocad_model::Part;
 use nanocad_parts::{
-    place, ParameterSet, PartError, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
+    place, Dof, EjectionRodGenerator, ParameterSet, PartError, PartGenerator, Port,
+    RotorHousingGenerator, SortingRotorGenerator,
 };
 
 use crate::scene::{
@@ -36,6 +40,10 @@ pub const ROTOR_BODY: usize = 1;
 pub const HOUSING_ROLE: &str = "housing";
 /// The body role of the rotating rotor.
 pub const ROTOR_ROLE: &str = "rotor";
+/// The device body index of the ejection rod.
+pub const ROD_BODY: usize = 2;
+/// The body role of the ejection rod.
+pub const ROD_ROLE: &str = "ejection_rod";
 
 /// A written description of the rotor scene frame.
 pub const ROTOR_FRAME: &str =
@@ -103,10 +111,26 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     )
     .transformed_part();
 
+    let rod = EjectionRodGenerator.generate_with_defaults()?;
+    let pocket_count = default_m(&SortingRotorGenerator, "pocket_count").round() as usize;
+    let pocket_orbit_m = default_m(&SortingRotorGenerator, "pocket_orbit_m");
+    let pocket_center_m = SortingRotorGenerator::pocket_center_m(0, pocket_count, pocket_orbit_m);
+    let radial_m = [
+        pocket_center_m[0] / pocket_orbit_m,
+        pocket_center_m[1] / pocket_orbit_m,
+        0.0,
+    ];
+    let mut socket = Port::named("pocket_ejection");
+    socket.origin_m = pocket_center_m;
+    socket.axis_m = radial_m;
+    socket.dof = Dof::Prismatic;
+    let rod = place(rod, &EjectionRodGenerator.tip_port(), &socket, 0.0).transformed_part();
+
     let rotor_radius_m = default_m(&SortingRotorGenerator, "disc_radius_m");
     let housing_radius_m = default_m(&RotorHousingGenerator, "chamber_radius_m")
         + default_m(&RotorHousingGenerator, "wall_m");
     let rotor_half_thickness_m = default_m(&SortingRotorGenerator, "thickness_m") / 2.0;
+    let rod_half_thickness_m = EjectionRodGenerator.length_m() / 2.0;
     let housing_half_thickness_m = default_m(&RotorHousingGenerator, "thickness_m") / 2.0;
     let _ = (
         rotor_radius_m,
@@ -117,6 +141,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
 
     let mut atoms = scene_atoms(&housing, HOUSING_BODY, HOUSING_ROLE, "rotor_housing");
     atoms.extend(scene_atoms(&rotor, ROTOR_BODY, ROTOR_ROLE, "sorting_rotor"));
+    atoms.extend(scene_atoms(&rod, ROD_BODY, ROD_ROLE, "ejection_rod"));
     if atoms.is_empty() {
         return Err(SceneError::MissingAtom { index: 0 });
     }
@@ -150,6 +175,20 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         angular_velocity_rad_per_s: [0.0, 0.0, 0.0],
     };
 
+    let rod_body = SceneBody {
+        index: ROD_BODY,
+        name: ROD_ROLE.to_string(),
+        role: ROD_ROLE.to_string(),
+        part_id: Some("ejection_rod".to_string()),
+        position_m: [0.0, 0.0, 0.0],
+        orientation_wxyz: identity,
+        mass_kg: 0.0,
+        inertia_diagonal_kg_m2: [0.0, 0.0, 0.0],
+        fixed: false,
+        linear_velocity_m_per_s: [0.0, 0.0, 0.0],
+        angular_velocity_rad_per_s: [0.0, 0.0, 0.0],
+    };
+
     let joint = SceneJoint {
         name: "rotor_axis".to_string(),
         kind: "revolute".to_string(),
@@ -159,6 +198,16 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         axis_world: axis,
         axis_a_body: axis,
         axis_b_body: Some(axis),
+    };
+    let ejection = SceneJoint {
+        name: "ejection_rod".to_string(),
+        kind: "prismatic".to_string(),
+        body_a: HOUSING_BODY,
+        body_b: ROD_BODY,
+        anchor_world_m: Some(pocket_center_m),
+        axis_world: radial_m,
+        axis_a_body: radial_m,
+        axis_b_body: Some(radial_m),
     };
 
     let coarse = vec![
@@ -176,6 +225,13 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             pitch_circle: None,
             bounding_cylinder: bounding_cylinder(&rotor, axis, rotor_half_thickness_m),
         },
+        CoarseBody {
+            index: ROD_BODY,
+            name: ROD_ROLE.to_string(),
+            role: ROD_ROLE.to_string(),
+            pitch_circle: None,
+            bounding_cylinder: bounding_cylinder(&rod, radial_m, rod_half_thickness_m),
+        },
     ];
 
     Ok(Scene {
@@ -190,9 +246,9 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             atoms,
         },
         device: DeviceLayer {
-            body_count: 2,
-            bodies: vec![ground, body],
-            joints: vec![joint],
+            body_count: 3,
+            bodies: vec![ground, body, rod_body],
+            joints: vec![joint, ejection],
             gear_couplings: Vec::new(),
             gear_constraints: Vec::new(),
         },
@@ -264,17 +320,36 @@ mod tests {
     }
 
     #[test]
-    fn the_rotor_scene_has_two_bodies_and_one_revolute_joint() {
-        assert_eq!(scene().device.body_count, 2);
-        assert_eq!(scene().coarse.body_count, 2);
-        assert_eq!(scene().device.joints.len(), 1);
+    fn the_rotor_scene_has_three_bodies_and_two_joints() {
+        assert_eq!(scene().device.body_count, 3);
+        assert_eq!(scene().coarse.body_count, 3);
+        assert_eq!(scene().device.joints.len(), 2);
         let joint = &scene().device.joints[0];
         assert_eq!(joint.kind, "revolute");
         assert_eq!(joint.body_a, HOUSING_BODY);
         assert_eq!(joint.body_b, ROTOR_BODY);
         assert_eq!(joint.axis_world, [0.0, 0.0, 1.0]);
+        let ejection = &scene().device.joints[1];
+        assert_eq!(ejection.kind, "prismatic");
+        assert_eq!(ejection.body_a, HOUSING_BODY);
+        assert_eq!(ejection.body_b, ROD_BODY);
+        assert_eq!(ejection.axis_world[2], 0.0);
+        let radius = (ejection.axis_world[0].powi(2) + ejection.axis_world[1].powi(2)).sqrt();
+        assert!((radius - 1.0).abs() < 1.0e-9, "the axis is radial");
+        assert!(ejection.anchor_world_m.is_some());
         assert!(scene().device.gear_couplings.is_empty());
         assert!(scene().device.gear_constraints.is_empty());
+    }
+
+    #[test]
+    fn the_rod_is_free_and_its_joint_is_prismatic() {
+        let bodies = &scene().device.bodies;
+        assert!(!bodies[ROD_BODY].fixed);
+        assert_eq!(bodies[ROD_BODY].role, ROD_ROLE);
+        assert_eq!(bodies[ROD_BODY].part_id.as_deref(), Some("ejection_rod"));
+        assert_eq!(bodies[HOUSING_BODY].index, HOUSING_BODY);
+        assert_eq!(bodies[ROTOR_BODY].index, ROTOR_BODY);
+        assert_eq!(bodies[ROD_BODY].index, ROD_BODY);
     }
 
     #[test]
@@ -288,24 +363,28 @@ mod tests {
     }
 
     #[test]
-    fn every_atom_belongs_to_one_of_the_two_bodies() {
+    fn every_atom_belongs_to_one_of_the_three_bodies() {
         let scene = scene();
         assert_eq!(scene.atomistic.atom_count, scene.atomistic.atoms.len());
         let mut housing = 0;
         let mut rotor = 0;
+        let mut rod = 0;
         for atom in &scene.atomistic.atoms {
             match atom.body {
                 HOUSING_BODY => housing += 1,
                 ROTOR_BODY => rotor += 1,
+                ROD_BODY => rod += 1,
                 other => panic!("atom on unexpected body {other}"),
             }
             assert!(
-                atom.atomic_number == 6 || atom.atomic_number == 1,
-                "the default parts are carbon with hydrogen caps"
+                matches!(atom.atomic_number, 1 | 6 | 7 | 8 | 9 | 16 | 17),
+                "a part atom is a lattice carbon, a cap, or a wall group atom"
             );
         }
-        assert_eq!(rotor, 53964);
+        assert_eq!(rotor, 55268);
         assert_eq!(housing, 39848);
+        assert_eq!(rod, 328);
+        assert_eq!(housing + rotor + rod, scene.atomistic.atom_count);
     }
 
     #[test]

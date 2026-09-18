@@ -15,7 +15,9 @@
 use std::f64::consts::TAU;
 
 use nanocad_model::Element;
-use nanocad_parts::{place, PartGenerator, RotorHousingGenerator, SortingRotorGenerator};
+use nanocad_parts::{
+    place, EjectionRodGenerator, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
+};
 
 /// The atomic mass unit in kilograms.
 const ATOMIC_MASS_UNIT_KG: f64 = 1.660_539_066_60e-27;
@@ -86,10 +88,20 @@ fn main() {
     let pocket_rate_per_s = revolutions_per_s * pocket_count;
     let pocket_cycle_s = 1.0 / revolutions_per_s;
 
+    let rod = match EjectionRodGenerator.generate_with_defaults() {
+        Ok(rod) => rod,
+        Err(error) => {
+            eprintln!("the rod failed: {error}");
+            std::process::exit(1);
+        }
+    };
+
     let rotor_atoms = placed.atom_count();
     let housing_atoms = housing.atom_count();
+    let rod_atoms = rod.atom_count();
     let rotor_mass_kg = total_mass_kg(&placed);
     let housing_mass_kg = total_mass_kg(&housing);
+    let rod_mass_kg = total_mass_kg(&rod);
 
     if let Some(path) = scene_path {
         let scene = match nanocad_jigs::build_rotor_scene() {
@@ -111,6 +123,7 @@ fn main() {
         "{{\"rotor_atoms\":{rotor_atoms},\"rotor_bonds\":{},\"rotor_radius_m\":{rotor_radius_m:e},\
          \"pocket_count\":{pocket_count},\"rotor_mass_kg\":{rotor_mass_kg:e},\
          \"housing_atoms\":{housing_atoms},\"housing_mass_kg\":{housing_mass_kg:e},\
+         \"rod_atoms\":{rod_atoms},\"rod_mass_kg\":{rod_mass_kg:e},\
          \"total_atoms\":{},\"total_mass_kg\":{:e},\
          \"rate_rad_per_s\":{rate_rad_per_s:e},\"revolutions_per_s\":{revolutions_per_s:e},\
          \"rim_speed_m_per_s\":{rim_speed_m_per_s:e},\"pocket_cycle_s\":{pocket_cycle_s:e},\
@@ -119,7 +132,7 @@ fn main() {
          \"reference_rim_speed_m_per_s\":{REFERENCE_RIM_SPEED_M_PER_S:e},\
          \"reference_atoms\":{REFERENCE_ATOMS:e},\"reference_mass_kg\":{REFERENCE_MASS_KG:e}}}",
         placed.bond_count(),
-        rotor_atoms + housing_atoms,
-        rotor_mass_kg + housing_mass_kg,
+        rotor_atoms + housing_atoms + rod_atoms,
+        rotor_mass_kg + housing_mass_kg + rod_mass_kg,
     );
 }
