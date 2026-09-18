@@ -1034,3 +1034,30 @@ force field and they stay out of scope.
 
   The viewer turns the rotor at 2.0 rad/s, which is a display rate. The real
   rate is 86000 rev/s, and the readout says so.
+
+## M14 — Chemistry layer
+
+The rotor sorts by binding one molecule and not another. That needs chemistry,
+not only geometry. This milestone adds the smallest honest chemistry layer: an
+element table, heteroatom lattice sites, guest molecules with stated charges,
+a binding pocket, a binding metric and an ejection rod.
+
+The guest charges are stated model charges. They are not computed and they are
+not validated against experiment. Every result is therefore a model result. See
+ADR-0063.
+
+- [x] **M14-01** Add an element chemistry table.
+  - Result: `crates/model/src/chemistry.rs` adds `ElementChemistry { valence,
+    atomic_mass_kg, covalent_radius_m }` and the accessors `chemistry`,
+    `valence`, `atomic_mass_kg`, `covalent_radius_m` and `bond_length_m`. The
+    table holds hydrogen, carbon, nitrogen, oxygen, fluorine, phosphorus,
+    sulfur, chlorine and bromine. An element outside the table returns `None`,
+    so a caller cannot use a silent default. The valence is the usual valence
+    of the neutral element, the mass is the IUPAC standard atomic weight, and
+    the covalent radius is the Cordero single-bond radius. `ATOMIC_MASS_UNIT_KG`
+    is exported for callers that work in unified units.
+  - Verification: `cargo test -p nanocad-model chemistry` -> 9 passed,
+    including `the_valences_match_the_usual_chemistry`,
+    `an_unlisted_element_has_no_chemistry`,
+    `a_hydrogen_carbon_bond_is_near_the_known_length` and
+    `no_element_appears_twice`.

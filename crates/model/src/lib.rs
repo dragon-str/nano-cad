@@ -7,6 +7,7 @@
 
 mod atom;
 mod bond;
+mod chemistry;
 mod document;
 mod element;
 mod encoding;
@@ -17,6 +18,10 @@ mod topology;
 
 pub use atom::Atom;
 pub use bond::{Bond, BondType};
+pub use chemistry::{
+    atomic_mass_kg, bond_length_m, chemistry, covalent_radius_m, valence, ElementChemistry,
+    ATOMIC_MASS_UNIT_KG,
+};
 pub use document::{Document, SCHEMA_VERSION};
 pub use element::Element;
 pub use error::ModelError;
