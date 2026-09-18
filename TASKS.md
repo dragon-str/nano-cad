@@ -1211,3 +1211,42 @@ ADR-0063.
     charge in elementary charges, and `Atom::charge_c` holds coulombs. The
     emitters now multiply by `ELEMENTARY_CHARGE_C`, and the selective
     result above holds only after that fix. See ADR-0066.
+
+- [x] **M14-07** Add an ejection rod and measure the ejection work.
+  - Result: `crates/parts/src/rod.rs` adds `EjectionRodGenerator`, id
+    `ejection_rod`. The rod is a stepped diamond column: a shaft with a
+    narrower tip. `cam_port` is a prismatic joint at the shaft root, so the
+    rod slides along its own axis. `tip_port` is fixed at the tip.
+    Parameters: `shaft_radius_m`, `shaft_length_m`, `tip_radius_m`,
+    `tip_length_m`. A tip as wide as the shaft is refused, because a step is
+    the point of the part. The generator joins the registry under `device`,
+    so the library holds 22 generators. The generator builds the rod only.
+    It does not build the cam, the sliding fit or the shaft friction.
+    `crates/meter/src/ejection.rs` adds `EjectionTarget` and
+    `EjectionReport`, with `ejection_work_j`. The guest starts at the bound
+    position that `crates/meter/src/binding.rs` found. The rod pushes it
+    along the pocket axis, and the energy rises while the guest passes the
+    wall and falls when it leaves. The work is the height of that barrier
+    above the bound state. `crates/meter/src/binding.rs` gained
+    `pocket_wall` and made `interaction_energy_j` crate-visible, so both
+    metrics share one kernel.
+    `crates/meter/examples/ejection_json.rs` prints the work for every guest
+    and every wall group, next to the reference figure.
+  - Verification: `cargo test -p nanocad-parts rod` -> 7 passed;
+    `cargo test -p nanocad-meter ejection` -> 7 passed;
+    `cargo test --workspace` -> 706 passed; `just verify` -> all gates
+    passed.
+    Measured at well radius 7.0e-10 m, with zero blocked positions: the
+    hydroxyl wall gives ethanol 1.55e-19 J (37.5 kT) and dimethyl ether
+    1.50e-19 J (36.3 kT). The thiol wall gives ethanol 1.46e-19 J (35.3 kT)
+    and dimethyl ether 3.70e-20 J (8.9 kT). The chloro wall gives dimethyl
+    ether 1.94e-20 J (4.7 kT), which is the smallest work of the whole set.
+    Honest comparison: the reference states 10 to 40 zJ per molecule at
+    310 K, and that figure is the reversible work at a stated concentration
+    ratio. It is a lower bound, because a reversible process returns the
+    binding energy. The model work for the best case is 19 zJ, and the worst
+    case is 283 zJ. The model does not recover energy, so a model work above
+    the reference bound is expected and is not a contradiction. The wall
+    chemistry changes the work by a factor of 14 across the set, and it
+    changes which isomer is easier to eject, so the rod sees the same
+    selectivity that the binding metric sees. See ADR-0067.

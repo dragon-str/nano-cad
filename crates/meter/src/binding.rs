@@ -124,28 +124,7 @@ pub fn binding_energy_j(
     target: &BindingTarget,
 ) -> BindingReport {
     let centroid_m = guest.centroid_m();
-    let reach_m = guest.extent_m() + target.cutoff_m;
-
-    let mut wall: Vec<([f64; 3], f64, Element)> = Vec::new();
-    for index in 0..pocket.atom_count() {
-        let (Some(position_m), Some(element)) = (
-            pocket.topology.position_m(index),
-            pocket.topology.element(index),
-        ) else {
-            continue;
-        };
-        let dx = position_m[0] - centre_m[0];
-        let dy = position_m[1] - centre_m[1];
-        let dz = position_m[2] - centre_m[2];
-        if dx * dx + dy * dy + dz * dz > reach_m * reach_m {
-            continue;
-        }
-        wall.push((
-            position_m,
-            pocket.topology.charge_c(index).unwrap_or(0.0),
-            element,
-        ));
-    }
+    let wall = pocket_wall(pocket, centre_m, guest.extent_m() + target.cutoff_m);
 
     let mut report = BindingReport {
         guest: guest.id.to_string(),
@@ -207,7 +186,41 @@ pub fn selectivity_ratio(strong_j: f64, weak_j: f64) -> f64 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn interaction_energy_j(
+/// Returns the pocket atoms within `reach_m` of `centre_m`.
+///
+/// Each entry holds the position in metres, the charge in coulombs, and the
+/// element. This is the wall that faces a guest at `centre_m`.
+pub(crate) fn pocket_wall(
+    pocket: &Part,
+    centre_m: [f64; 3],
+    reach_m: f64,
+) -> Vec<([f64; 3], f64, Element)> {
+    let mut wall: Vec<([f64; 3], f64, Element)> = Vec::new();
+    for index in 0..pocket.atom_count() {
+        let (Some(position_m), Some(element)) = (
+            pocket.topology.position_m(index),
+            pocket.topology.element(index),
+        ) else {
+            continue;
+        };
+        let dx = position_m[0] - centre_m[0];
+        let dy = position_m[1] - centre_m[1];
+        let dz = position_m[2] - centre_m[2];
+        if dx * dx + dy * dy + dz * dz > reach_m * reach_m {
+            continue;
+        }
+        wall.push((
+            position_m,
+            pocket.topology.charge_c(index).unwrap_or(0.0),
+            element,
+        ));
+    }
+    wall
+}
+
+// Eight plain arguments stay cheaper than a wrapper struct for the pair kernel.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn interaction_energy_j(
     wall: &[([f64; 3], f64, Element)],
     guest: &Guest,
     centroid_m: [f64; 3],

@@ -1313,3 +1313,58 @@ charge. `Atom::charge_c`, by contract, holds coulombs. The first data file
 stored the raw Gasteiger number, which made every charge 1.6e19 times too
 large and every Coulomb energy about 1e17 J. The emitters now multiply by
 `ELEMENTARY_CHARGE_C`. The table above holds only after that fix.
+
+## ADR-0067
+
+### The ejection rod is a stepped column, and its work is a barrier
+
+Status: accepted.
+
+The reference states that the bound molecules "are forcibly ejected by rods
+thrust outward by the cam surface". `EjectionRodGenerator` in
+`crates/parts/src/rod.rs` builds the rod. The part is a stepped diamond
+column: a shaft that runs in a bore, and a narrower tip that enters the pocket
+and touches the guest. The step is the point of the shape, because the tip must
+pass the pocket mouth while the shaft stays in its bore.
+
+The rod carries two ports. `cam_port` is prismatic and it sits at the shaft
+root, pointing back along the shaft. A prismatic joint is the honest model of a
+rod in a bore: the rod has one freedom and no more. `tip_port` is fixed at the
+tip, so a pocket or a guest can be attached to it.
+
+The scope limit is the cam. The generator does not build a cam surface, and it
+does not model the sliding fit, the shaft friction, or the force that the cam
+applies. It builds the rod and states the direction in which the rod moves.
+
+The work metric is in `crates/meter/src/ejection.rs`. The guest starts at the
+bound position and the bound orientation that the binding metric found. The
+rod then pushes the guest along the pocket axis in fixed steps. The interaction
+energy rises while the guest passes the wall and falls when the guest leaves
+the well. The work that the rod must supply is the height of the barrier above
+the bound state. The peak sample and the last sample are both reported, so a
+reader can see whether the guest really left.
+
+Both metrics now share one kernel. `pocket_wall` returns the wall atoms that
+face a guest, and `interaction_energy_j` is crate-visible. A second copy of the
+pair loop would drift from the first.
+
+The honest comparison. The reference gives 10 to 40 zJ per molecule at 310 K.
+That figure is the reversible work at a stated concentration ratio. A
+reversible process returns the binding energy, so the reference figure is a
+lower bound and it is not the raw binding energy. The model does not recover
+any energy, so a model work above the bound is expected and it is not a
+contradiction. At a well radius of 7.0e-10 m the model work runs from 1.9e-20 J
+(19 zJ, chloro wall, dimethyl ether) to 2.8e-19 J (283 zJ, hydroxyl wall,
+methanol), and the best case is 1.9 times the reference bound.
+
+The selectivity survives the change of metric. The wall group changes the work
+by a factor of 14. The thiol wall takes 1.46e-19 J to eject ethanol and only
+3.70e-20 J to eject dimethyl ether, while the chloro wall takes 1.94e-20 J to
+eject dimethyl ether. The rod therefore sees the same preference that the
+binding metric sees, which is the point of measuring both.
+
+Limits on this metric. The pocket and the guest stay rigid. The search is
+coarse, so the work is an upper bound for a given target. There is no solvent,
+no ion and no explicit hydrogen bond. The rod is not simulated, so the metric
+does not include the work that the rod itself returns, the work against the
+bore, or any elastic energy in the rod. Every value is a model value.

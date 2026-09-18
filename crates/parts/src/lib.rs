@@ -30,6 +30,7 @@ mod pocket;
 pub mod port;
 pub mod registry;
 pub mod respirocyte;
+pub mod rod;
 pub mod rotor;
 pub mod shape;
 pub mod spur_gear;
@@ -71,6 +72,7 @@ pub use respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
     RespirocyteTankGenerator,
 };
+pub use rod::EjectionRodGenerator;
 pub use rotor::SortingRotorGenerator;
 pub use shape::{
     Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, Solid, Union,

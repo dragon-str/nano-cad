@@ -26,6 +26,7 @@ use crate::pocket::BindingPocketGenerator;
 use crate::respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotorGenerator, RespirocyteTankGenerator,
 };
+use crate::rod::EjectionRodGenerator;
 use crate::rotor::SortingRotorGenerator;
 use crate::spur_gear::SpurGearGenerator;
 
@@ -50,6 +51,7 @@ static RESPIROCYTE_TANK: RespirocyteTankGenerator = RespirocyteTankGenerator;
 static SORTING_ROTOR: SortingRotorGenerator = SortingRotorGenerator;
 static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
 static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
+static EJECTION_ROD: EjectionRodGenerator = EjectionRodGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -140,6 +142,10 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &BINDING_POCKET,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &EJECTION_ROD,
         category: "device",
     },
 ];
