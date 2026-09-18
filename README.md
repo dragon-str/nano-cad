@@ -3,7 +3,7 @@
 An open, multiscale, atomically precise CAD and simulation platform for
 molecular nanotechnology and nanomedicine.
 
-Status: **pre-alpha.** The core is built end to end and **789 Rust tests plus
+Status: **pre-alpha.** The core is built end to end and **793 Rust tests plus
 93 Python and app tests and 11 JavaScript tests pass** (14 Python tests skip
 without their optional dependency). The 11-crate workspace has: units, the model and
 the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane,
@@ -76,5 +76,6 @@ what each step proves, and what is not reproduced.
 
 ## License
 
-Apache-2.0. See `LICENSE`. The upstream NanoEngineer code is GPLv2. Do not copy
-it. Read it for algorithms only, then reimplement.
+Apache-2.0. See `LICENSE`. This project is inspired by NanoEngineer, which is
+GPLv2. No NanoEngineer code was copied. We read it for algorithms only and
+reimplemented from scratch.

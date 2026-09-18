@@ -422,7 +422,7 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
 }
 
 /// Returns the design block of a non-gearbox scene.
-fn zero_design() -> crate::scene::SceneDesign {
+pub(crate) fn zero_design() -> crate::scene::SceneDesign {
     crate::scene::SceneDesign {
         module_m: 0.0,
         sun_teeth: 0,

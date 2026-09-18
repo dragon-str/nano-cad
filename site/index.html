@@ -3,12 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Nano-CAD three-scale viewer (simulated / schematic)</title>
+    <title>Nano-CAD viewer (simulated / schematic)</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="viewer-body">
     <header class="viewer-header">
-      <h1>Nano-CAD planetary gearbox</h1>
+      <h1>Nano-CAD</h1>
+      <span id="scene-title" class="scene-title">Loading ...</span>
       <span class="badge">simulated / schematic</span>
       <nav>
         <a href="docs/index.html">Docs</a>
@@ -31,9 +33,15 @@
         <text id="triad-z-label" x="16" y="54">z</text>
       </svg>
 
+      <nav id="library" aria-label="Scenes and parts">
+        <div class="library-head">Library</div>
+        <ul id="library-list"></ul>
+        <div class="library-hint">Select a machine or a single part.</div>
+      </nav>
+
       <aside id="panel">
         <div class="panel-head">
-          <h2>Layers</h2>
+          <h2>Assistant</h2>
           <button
             type="button"
             id="panel-toggle"
@@ -43,151 +51,159 @@
             Hide
           </button>
         </div>
-        <div class="layer-row">
-          <input type="checkbox" id="toggle-atomistic" checked />
-          <label for="toggle-atomistic"
-            ><span class="swatch" style="background: #4ec9b0"></span>Atoms
-            (L1)</label
-          >
-        </div>
-        <div class="layer-row">
-          <input type="checkbox" id="toggle-device" />
-          <label for="toggle-device"
-            ><span class="swatch" style="background: #58a6ff"></span>Device
-            markers (L2)</label
-          >
-        </div>
-        <div class="layer-row">
-          <input type="checkbox" id="toggle-coarse" />
-          <label for="toggle-coarse"
-            ><span class="swatch" style="background: #f0b429"></span>Coarse
-            (handoff)</label
-          >
-        </div>
-        <div class="hint">
-          The atom view is the default. Show the device markers or the coarse
-          handoff only when you want them. The atom view switches to the exact
-          involute schematic when the atoms are closer than six pixels, so the
-          two always agree.
-        </div>
 
-        <h2>View</h2>
-        <div class="button-row">
-          <button id="view-reset" type="button">Reset</button>
-          <button id="view-iso" type="button">Iso</button>
-          <button id="view-top" type="button">Top</button>
-          <button id="view-front" type="button">Front</button>
-        </div>
-        <div class="button-row">
-          <button id="view-play" type="button">Play</button>
-          <button id="view-turntable" type="button">Turntable</button>
-          <button id="view-full" type="button">Fullscreen</button>
-          <button id="view-save" type="button">Save PNG</button>
-        </div>
-        <label class="param-row"
-          ><span>Motion speed</span
-          ><input id="speed" type="range" min="0.1" max="4" step="0.1" value="1"
-        /></label>
-        <div class="hint">
-          Drag to rotate &middot; Shift-drag or middle-drag to move &middot; wheel
-          to zoom &middot; double-click to reset.
-        </div>
-
-        <h2>Display</h2>
-        <div class="layer-row">
-          <input type="checkbox" id="toggle-ao" checked />
-          <label for="toggle-ao">Ambient occlusion</label>
-        </div>
-        <label class="param-row"
-          ><span>Atom size</span
-          ><input id="atom-size" type="range" min="0.25" max="1" step="0.05" value="1"
-        /></label>
-        <label class="param-row"
-          ><span>Section z</span
-          ><input id="clip" type="range" min="0" max="1" step="0.01" value="1"
-        /></label>
-        <div class="layer-row">
-          <input type="checkbox" id="toggle-rotor-top" />
-          <label for="toggle-rotor-top">Hide rotor top</label>
-        </div>
-
-        <h2>Elements</h2>
-        <div id="legend"></div>
-
-        <h2>Readout</h2>
-        <div id="readout">Waiting for scene.json ...</div>
-        <div id="pick"></div>
-        <div id="measure"></div>
-        <div id="message"></div>
-
-        <h2>Parameters (live)</h2>
-        <div id="params"></div>
-        <div class="button-row">
-          <button id="param-undo" type="button" disabled>Undo</button>
-          <button id="param-redo" type="button" disabled>Redo</button>
-          <button id="param-reset" type="button">Reset to defaults</button>
-        </div>
-
-        <h2>Score</h2>
-        <div id="scorecard">
-          <div class="hint">The scorecard appears after a build.</div>
-        </div>
-
-        <h2>Optimize</h2>
-        <div id="optimize">
-          <button id="optimize-run" type="button">
-            Search the tooth geometry
-          </button>
-          <div class="hint">
-            The search runs the real generator and the real metrics for every
-            candidate, so it takes about a minute.
-          </div>
-          <div id="optimize-result"></div>
-        </div>
-
-        <h2>Sorting rotor</h2>
-        <div id="rotor">
-          <button id="rotor-run" type="button">Build the sorting rotor</button>
-          <div class="hint">
-            A disk with twelve pockets on its rim, inside a housing with an inlet
-            and an outlet, and an ejection rod on a prismatic joint. The example
-            reports the simulated geometry and mass next to the figures from
-            Freitas, Nanomedicine 3.4.2. The wall chemistry is modelled in the
-            Selectivity panel below. The model has no solvent.
-          </div>
-          <div id="rotor-result"></div>
-        </div>
-
-        <h2>Selectivity</h2>
-        <div id="selectivity">
-          <button id="selectivity-run" type="button">Measure the pocket walls</button>
-          <div class="hint">
-            A binding pocket whose wall carries one functional group. The metric
-            puts each guest molecule in the pocket and moves it through a grid of
-            positions and orientations. The table gives the binding energy as a
-            multiple of the thermal energy kT, for the ethanol and dimethyl-ether
-            isomer pair. The charges and the nonbonded parameters come from
-            stated sources. The model has no solvent and no explicit hydrogen
-            bond, so the ratios are model results, not a prediction of separation
-            in water.
-          </div>
-          <div id="selectivity-result"></div>
-        </div>
-
-        <h2>Chat</h2>
         <div id="chat-log"></div>
         <form id="chat-form" autocomplete="off">
           <input
             id="chat-input"
             type="text"
-            placeholder="one atomic layer thicker"
+            placeholder="make the gear one atomic layer thicker"
           />
           <button type="submit">Send</button>
         </form>
         <div class="hint" id="chat-hint"></div>
 
+        <div id="readout">Waiting for a scene ...</div>
+        <div id="pick"></div>
+        <div id="measure"></div>
+        <div id="message"></div>
+
+        <details class="group">
+          <summary>Layers</summary>
+          <div class="layer-row">
+            <input type="checkbox" id="toggle-atomistic" checked />
+            <label for="toggle-atomistic"
+              ><span class="swatch" style="background: #4ec9b0"></span>Atoms
+              (L1)</label
+            >
+          </div>
+          <div class="layer-row">
+            <input type="checkbox" id="toggle-device" />
+            <label for="toggle-device"
+              ><span class="swatch" style="background: #58a6ff"></span>Device
+              markers (L2)</label
+            >
+          </div>
+          <div class="layer-row">
+            <input type="checkbox" id="toggle-coarse" />
+            <label for="toggle-coarse"
+              ><span class="swatch" style="background: #f0b429"></span>Coarse
+              (handoff)</label
+            >
+          </div>
+          <div class="hint">
+            The atom view is the default. Show the device markers or the coarse
+            handoff only when you want them.
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>View</summary>
+          <div class="button-row">
+            <button id="view-reset" type="button">Reset</button>
+            <button id="view-iso" type="button">Iso</button>
+            <button id="view-top" type="button">Top</button>
+            <button id="view-front" type="button">Front</button>
+          </div>
+          <div class="button-row">
+            <button id="view-play" type="button">Play</button>
+            <button id="view-turntable" type="button">Turntable</button>
+            <button id="view-full" type="button">Fullscreen</button>
+            <button id="view-save" type="button">Save PNG</button>
+          </div>
+          <label class="param-row"
+            ><span>Motion speed</span
+            ><input id="speed" type="range" min="0.1" max="4" step="0.1" value="1"
+          /></label>
+          <div class="hint">
+            Drag to rotate &middot; Shift-drag or middle-drag to move &middot;
+            wheel to zoom &middot; double-click to reset.
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>Display</summary>
+          <div class="layer-row">
+            <input type="checkbox" id="toggle-ao" checked />
+            <label for="toggle-ao">Ambient occlusion</label>
+          </div>
+          <label class="param-row"
+            ><span>Atom size</span
+            ><input id="atom-size" type="range" min="0.25" max="1" step="0.05" value="1"
+          /></label>
+          <label class="param-row"
+            ><span>Section z</span
+            ><input id="clip" type="range" min="0" max="1" step="0.01" value="1"
+          /></label>
+          <div class="layer-row">
+            <input type="checkbox" id="toggle-rotor-top" />
+            <label for="toggle-rotor-top">Hide rotor top</label>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>Elements</summary>
+          <div id="legend"></div>
+        </details>
+
+        <details class="group">
+          <summary>Parameters (live)</summary>
+          <div id="params"></div>
+          <div class="button-row">
+            <button id="param-undo" type="button" disabled>Undo</button>
+            <button id="param-redo" type="button" disabled>Redo</button>
+            <button id="param-reset" type="button">Reset to defaults</button>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>Score</summary>
+          <div id="scorecard">
+            <div class="hint">The scorecard appears after a build.</div>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>Optimize</summary>
+          <div id="optimize">
+            <button id="optimize-run" type="button">
+              Search the tooth geometry
+            </button>
+            <div class="hint">
+              The search runs the real generator and the real metrics for every
+              candidate, so it takes about a minute.
+            </div>
+            <div id="optimize-result"></div>
+          </div>
+        </details>
+
+        <details class="group">
+          <summary>Machines</summary>
+          <div id="rotor">
+            <button id="rotor-run" type="button">Build the sorting rotor</button>
+            <div class="hint">
+              A disk with twelve pockets on its rim, inside a housing with an
+              inlet and an outlet, and an ejection rod on a prismatic joint. The
+              wall chemistry is modelled in the selectivity panel. The model has
+              no solvent.
+            </div>
+            <div id="rotor-result"></div>
+          </div>
+          <div id="selectivity">
+            <button id="selectivity-run" type="button">
+              Measure the pocket walls
+            </button>
+            <div class="hint">
+              The binding energy of the ethanol and dimethyl-ether isomer pair in
+              the pocket, as a multiple of the thermal energy kT. The model has no
+              solvent, so the ratios are model results.
+            </div>
+            <div id="selectivity-result"></div>
+          </div>
+        </details>
+
         <div id="load-fallback" hidden>
-          <strong>Could not load scene.json automatically.</strong>
+          <strong>Could not load the scene automatically.</strong>
           <p id="fallback-note">
             A browser blocks <code>fetch</code> from <code>file://</code>. Pick
             the file below, or serve the folder:<br />

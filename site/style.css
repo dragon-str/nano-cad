@@ -620,3 +620,98 @@ input[type="range"] {
 .metric-note.metric-fail {
   color: #f85149;
 }
+
+/* Library rail and the AI-first panel (M20). */
+#library {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  width: 13rem;
+  max-height: calc(100% - 1.5rem);
+  overflow: auto;
+  background: #161b22;
+  border: 1px solid var(--panel-border);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.45);
+  z-index: 4;
+  font-size: 0.85rem;
+}
+.library-head {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #8b949e);
+  margin-bottom: 0.4rem;
+}
+#library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#library-list li {
+  margin-bottom: 0.15rem;
+}
+#library-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.3rem;
+  color: inherit;
+  padding: 0.25rem 0.4rem;
+  cursor: pointer;
+  font: inherit;
+}
+#library-list button:hover {
+  background: rgba(88, 166, 255, 0.12);
+}
+#library-list button.active {
+  background: rgba(88, 166, 255, 0.2);
+  border-color: rgba(88, 166, 255, 0.5);
+}
+#library-list .group-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted, #8b949e);
+  margin: 0.5rem 0 0.2rem 0.4rem;
+}
+.library-hint {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted, #8b949e);
+}
+.scene-title {
+  font-size: 0.85rem;
+  color: var(--muted, #8b949e);
+}
+details.group {
+  border-top: 1px solid var(--panel-border);
+  padding: 0.35rem 0;
+  margin: 0;
+}
+details.group > summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #c9d1d9;
+  list-style: none;
+}
+details.group > summary::-webkit-details-marker {
+  display: none;
+}
+details.group > summary::before {
+  content: "\25B8 ";
+  color: var(--muted, #8b949e);
+}
+details.group[open] > summary::before {
+  content: "\25BE ";
+}
+#chat-log {
+  max-height: 12rem;
+  overflow: auto;
+  margin-bottom: 0.4rem;
+}

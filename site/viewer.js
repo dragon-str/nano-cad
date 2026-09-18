@@ -1267,22 +1267,167 @@
     });
   }
 
+  function setSceneTitle(title) {
+    if (sceneTitle) {
+      sceneTitle.textContent = title || "";
+    }
+  }
+
+  function startLoadedScene(data, title) {
+    setScene(data);
+    setSceneTitle(title);
+    startMotion();
+  }
+
+  function loadRotor() {
+    return fetch("api/rotor", { cache: "no-store" })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload && payload.error) {
+          throw new Error(payload.error);
+        }
+        if (!payload || !payload.scene) {
+          throw new Error("the rotor payload has no scene");
+        }
+        startLoadedScene(payload.scene, "Sorting rotor");
+        showRotor(payload.facts);
+        markActive("rotor");
+        return payload;
+      });
+  }
+
+  function loadGearbox() {
+    return fetch("api/scene", { cache: "no-store" })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (!payload || !payload.scene) {
+          throw new Error("the gearbox payload has no scene");
+        }
+        startLoadedScene(payload.scene, "Planetary gearbox");
+        markActive("gearbox");
+        return payload;
+      });
+  }
+
+  function loadPart(id, title) {
+    return fetch("api/part?id=" + encodeURIComponent(id), { cache: "no-store" })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (!payload || !payload.scene) {
+          throw new Error("the part payload has no scene");
+        }
+        startLoadedScene(payload.scene, title || id);
+        markActive(id);
+        return payload;
+      });
+  }
+
+  function markActive(id) {
+    if (!libraryList) {
+      return;
+    }
+    var buttons = libraryList.querySelectorAll("button[data-id]");
+    for (var index = 0; index < buttons.length; index += 1) {
+      buttons[index].classList.toggle(
+        "active",
+        buttons[index].getAttribute("data-id") === id
+      );
+    }
+  }
+
+  function loadLibraryEntry(entry) {
+    var request;
+    if (entry.id === "rotor") {
+      request = loadRotor();
+    } else if (entry.id === "gearbox") {
+      request = loadGearbox();
+    } else {
+      request = loadPart(entry.id, entry.name);
+    }
+    request.catch(function (error) {
+      showFallback(error.message);
+    });
+  }
+
+  function buildLibrary() {
+    if (!libraryList || !window.fetch || location.protocol === "file:") {
+      return;
+    }
+    fetch("api/scenes", { cache: "no-store" })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        var entries = (payload && payload.scenes) || [];
+        libraryList.innerHTML = "";
+        var lastGroup = null;
+        entries.forEach(function (entry) {
+          var group =
+            entry.kind === "machine" ? "Machines" : entry.category || "Parts";
+          if (group !== lastGroup) {
+            var label = document.createElement("li");
+            label.className = "group-label";
+            label.textContent = group;
+            libraryList.appendChild(label);
+            lastGroup = group;
+          }
+          var item = document.createElement("li");
+          var button = document.createElement("button");
+          button.type = "button";
+          button.textContent = entry.name || entry.id;
+          button.setAttribute("data-id", entry.id);
+          button.addEventListener("click", function () {
+            loadLibraryEntry(entry);
+          });
+          item.appendChild(button);
+          libraryList.appendChild(item);
+        });
+      })
+      .catch(function () {
+        /* The rail stays empty when the server is absent. */
+      });
+  }
+
+  function fromSceneJson() {
+    return fetch("scene.json", { cache: "no-store" }).then(function (response) {
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      return response.json().then(function (data) {
+        setScene(data);
+        setSceneTitle(scene && scene.frame === "rotor" ? "Sorting rotor" : "Scene");
+      });
+    });
+  }
+
   function load() {
+    var served = location.protocol !== "file:";
+    if (served && window.fetch) {
+      return loadRotor()
+        .catch(function () {
+          return fromSceneJson();
+        })
+        .catch(function (error) {
+          showFallback(error.message);
+        });
+    }
     loadFromCompanion()
       .then(function (fromCompanion) {
         if (fromCompanion) {
           setScene(window.NANOCAD_SCENE);
+          setSceneTitle(scene && scene.frame === "rotor" ? "Sorting rotor" : "Scene");
           return null;
         }
         if (!window.fetch) {
           throw new Error("fetch is unavailable");
         }
-        return fetch("scene.json", { cache: "no-store" }).then(function (response) {
-          if (!response.ok) {
-            throw new Error("HTTP " + response.status);
-          }
-          return response.json().then(setScene);
-        });
+        return fromSceneJson();
       })
       .catch(function (error) {
         showFallback(error.message);
@@ -1593,6 +1738,8 @@
   var optimizeResult = document.getElementById("optimize-result");
   var rotorRun = document.getElementById("rotor-run");
   var rotorResult = document.getElementById("rotor-result");
+  var sceneTitle = document.getElementById("scene-title");
+  var libraryList = document.getElementById("library-list");
   var selectivityRun = document.getElementById("selectivity-run");
   var selectivityResult = document.getElementById("selectivity-result");
   var chatLog = document.getElementById("chat-log");
@@ -1782,23 +1929,7 @@
     if (rotorRun) {
       rotorRun.disabled = true;
     }
-    fetch("api/rotor")
-      .then(function (response) {
-        return response.json();
-      })
-      .then(function (payload) {
-        if (payload && payload.error) {
-          rotorResult.textContent = "error: " + payload.error;
-          return;
-        }
-        if (payload && payload.scene) {
-          setScene(payload.scene);
-          showRotor(payload.facts);
-          startMotion();
-          return;
-        }
-        showRotor(payload);
-      })
+    loadRotor()
       .catch(function (error) {
         rotorResult.textContent =
           "Start python3 app/server.py to build the rotor. (" + error.message + ")";
@@ -2382,4 +2513,5 @@
 
   load();
   initApp();
+  buildLibrary();
 })();

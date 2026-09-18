@@ -163,6 +163,36 @@ def rotor_result() -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def scenes_result() -> dict:
+    """List the machines and the library parts that the viewer can show."""
+    result = _run_example("nanocad-jigs", "scenes_json", [])
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the scene list failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the scene list printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the scene list was not JSON: {error}") from None
+
+
+def part_result(part_id: str) -> dict:
+    """Run one library part through the part-scene example and return its scene."""
+    result = _run_example("nanocad-jigs", "part_scene_json", [part_id])
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the part scene failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the part scene printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the part scene was not JSON: {error}") from None
+
+
 def selectivity_result(radius_m: float | None = None) -> dict:
     """Run the binding example and return the wall-group selectivity table."""
     args = [] if radius_m is None else [repr(radius_m)]
@@ -286,6 +316,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(error)})
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the rotor run timed out"})
+            return
+        if route == "/api/scenes":
+            try:
+                self._send_json(200, scenes_result())
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the scene list timed out"})
+            return
+        if route == "/api/part":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                values = query.get("id")
+                part_id = values[0] if values and values[0] else ""
+                if not part_id:
+                    raise BuildError("the part id is missing")
+                self._send_json(200, part_result(part_id))
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the part scene timed out"})
             return
         if route == "/api/selectivity":
             try:

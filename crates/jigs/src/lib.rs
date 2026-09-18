@@ -22,6 +22,7 @@ mod error;
 mod jig;
 mod motor;
 mod nanomedicine;
+mod part_scene;
 mod rotor;
 mod rotor_scene;
 mod scene;
@@ -45,6 +46,10 @@ pub use error::JigError;
 pub use jig::{Jig, JigKind};
 pub use motor::MotorJig;
 pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineError, SliceResult};
+pub use part_scene::{
+    build_part_scene, scene_catalog, SceneCatalogEntry, GEARBOX_SCENE_ID, PART_FRAME, PART_ROLE,
+    ROTOR_SCENE_ID,
+};
 pub use rotor::{
     LangevinCoupling, RotorConfig, RotorError, RotorMachine, RotorStep, BOLTZMANN_J_PER_K,
     CARBON_ATOM_MASS_KG,

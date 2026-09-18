@@ -1584,3 +1584,19 @@ drive shaft.
     `cargo run --release -p nanocad-jigs --example rotor_relax` -> 1962 atoms,
     converged, 0 clashes, bond strain 4.4e-6.
   - Measured: the scene holds 120884 atoms and 1.715827677935783e-21 kg.
+
+## M20 — App shell: rotor first, a library, and an AI-first panel
+
+- [x] **M20-01** Load the sorting rotor on refresh, and list the scenes and parts. <!-- result: the page boots the sorting rotor in served mode instead of the gearbox; a left library rail lists the two machines and every part from `nanocad_parts::library()`, grouped by category. -->
+  - Added `crates/jigs/src/part_scene.rs`: `scene_catalog()` and
+    `build_part_scene(id)`, plus the examples `scenes_json` and
+    `part_scene_json`.
+  - Added the server routes `/api/scenes` and `/api/part?id=`.
+  - `site/viewer.js` loads the rotor first in served mode, falls back to
+    `scene.json`, and builds the library from `/api/scenes`.
+  - Verification: `cargo test -p nanocad-jigs part_scene` -> 4 passed.
+- [x] **M20-02** Rebuild the right panel with the assistant first. <!-- result: the assistant chat is the first block; every other control group is a collapsed `<details>`; the readout stays visible. All existing element ids are kept, so the viewer code is unchanged. -->
+- [x] **M20-03** Verify the app shell in a headless browser. <!-- result: on refresh the title is "Sorting rotor"; the library lists 30 entries under Machines and the part categories; a click on the leaf spring loads that part; 0 console errors. -->
+  - Verification: `node site/render_atoms.test.js` -> 11 passed,
+    `python3 site/check.py` -> all checks passed,
+    `cargo test --workspace` -> 793 passed.
