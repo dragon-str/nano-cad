@@ -146,11 +146,28 @@
           <button id="rotor-run" type="button">Build the sorting rotor</button>
           <div class="hint">
             A disk with twelve pockets on its rim, inside a housing with an inlet
-            and an outlet. The example reports the simulated geometry and mass
-            next to the figures from Freitas, Nanomedicine 3.4.2. It does not
-            model molecular selectivity or a solvent.
+            and an outlet, and an ejection rod on a prismatic joint. The example
+            reports the simulated geometry and mass next to the figures from
+            Freitas, Nanomedicine 3.4.2. The wall chemistry is modelled in the
+            Selectivity panel below. The model has no solvent.
           </div>
           <div id="rotor-result"></div>
+        </div>
+
+        <h2>Selectivity</h2>
+        <div id="selectivity">
+          <button id="selectivity-run" type="button">Measure the pocket walls</button>
+          <div class="hint">
+            A binding pocket whose wall carries one functional group. The metric
+            puts each guest molecule in the pocket and moves it through a grid of
+            positions and orientations. The table gives the binding energy as a
+            multiple of the thermal energy kT, for the ethanol and dimethyl-ether
+            isomer pair. The charges and the nonbonded parameters come from
+            stated sources. The model has no solvent and no explicit hydrogen
+            bond, so the ratios are model results, not a prediction of separation
+            in water.
+          </div>
+          <div id="selectivity-result"></div>
         </div>
 
         <h2>Chat</h2>

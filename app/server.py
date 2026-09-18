@@ -163,6 +163,22 @@ def rotor_result() -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def selectivity_result(radius_m: float | None = None) -> dict:
+    """Run the binding example and return the wall-group selectivity table."""
+    args = [] if radius_m is None else [repr(radius_m)]
+    result = _run_example("nanocad-meter", "binding_json", args)
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BuildError(detail[-1] if detail else "the selectivity run failed")
+    lines = result.stdout.strip().splitlines()
+    if not lines:
+        raise BuildError("the selectivity run printed nothing")
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError as error:
+        raise BuildError(f"the selectivity output was not JSON: {error}") from None
+
+
 def _params_from_query(query: str) -> dict:
     params = {}
     for key, values in urllib.parse.parse_qs(query).items():
@@ -270,6 +286,19 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": str(error)})
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the rotor run timed out"})
+            return
+        if route == "/api/selectivity":
+            try:
+                query = urllib.parse.parse_qs(parsed.query)
+                values = query.get("radius_m")
+                radius_m = float(values[0]) if values and values[0] else None
+                self._send_json(200, selectivity_result(radius_m))
+            except ValueError:
+                self._send_json(400, {"error": "the well radius must be a number"})
+            except BuildError as error:
+                self._send_json(400, {"error": str(error)})
+            except subprocess.TimeoutExpired:
+                self._send_json(504, {"error": "the selectivity run timed out"})
             return
         if route == "/api/score":
             try:

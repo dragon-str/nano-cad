@@ -549,6 +549,27 @@ input[type="range"] {
 }
 
 /* Scorecard (M9-15) */
+.selectivity-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.72rem;
+  margin-bottom: 0.3rem;
+}
+.selectivity-table th,
+.selectivity-table td {
+  border: 1px solid #21262d;
+  padding: 0.15rem 0.3rem;
+  text-align: right;
+}
+.selectivity-table th:first-child,
+.selectivity-table td:first-child {
+  text-align: left;
+}
+.selectivity-table th {
+  color: #8b949e;
+  font-weight: 500;
+}
+
 #scorecard {
   display: flex;
   flex-direction: column;

@@ -73,6 +73,7 @@
     ground: "#6e7681",
     housing: "#7d8590",
     rotor: "#d2a8ff",
+    ejection_rod: "#ff7b72",
     sun: "#f2c14e",
     planet: "#4ec9b0",
     ring: "#b083f0",
@@ -107,6 +108,11 @@
   /* The real rotor turns at 86000 revolutions per second. No display shows
      that, so the viewer turns the rotor at this stated rate instead. */
   var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
+
+  /* The rod pushes the guest out of the pocket by this distance at full stroke.
+     It matches EjectionTarget::travel_m in crates/meter/src/ejection.rs. The
+     viewer shows one stroke for each rotor turn. */
+  var ROTOR_ROD_STROKE_M = 1.5e-9;
   var hoverAtom = -1;
   var measure = [];
   var livePositions = null;
@@ -330,6 +336,20 @@
       motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
       motion.w_carrier = 0;
       motion.w_planet = 0;
+      motion.rod_axis = [1, 0];
+      motion.rod_stroke_m = ROTOR_ROD_STROKE_M;
+      motion.rod_period_s = (2 * Math.PI) / ROTOR_DISPLAY_RATE_RAD_PER_S;
+      var rotorJoints = scene.device.joints || [];
+      for (var rj = 0; rj < rotorJoints.length; rj += 1) {
+        var axis = rotorJoints[rj].axis_world;
+        if (rotorJoints[rj].kind !== "prismatic" || !axis) {
+          continue;
+        }
+        var axisLength = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1]);
+        if (axisLength > 0) {
+          motion.rod_axis = [axis[0] / axisLength, axis[1] / axisLength];
+        }
+      }
     }
     atomCache = {
       atoms: atoms,
@@ -390,6 +410,10 @@
     }
     motion.time += dt;
     var t = motion.time;
+    if (motion.kind === "rotor") {
+      motion.rod_offset_m =
+        motion.rod_stroke_m * 0.5 * (1 - Math.cos((2 * Math.PI * t) / motion.rod_period_s));
+    }
     var ca = Math.cos(motion.w_carrier * t);
     var sa = Math.sin(motion.w_carrier * t);
     var cb = Math.cos(motion.w_planet * t);
@@ -406,7 +430,18 @@
       var y = base[i * 3 + 1];
       var ox;
       var oy;
-      if (body === 1) {
+      if (motion.kind === "rotor") {
+        if (body === 1) {
+          ox = x * cc - y * sc;
+          oy = x * sc + y * cc;
+        } else if (body === 2) {
+          ox = x + motion.rod_axis[0] * motion.rod_offset_m;
+          oy = y + motion.rod_axis[1] * motion.rod_offset_m;
+        } else {
+          ox = x;
+          oy = y;
+        }
+      } else if (body === 1) {
         ox = x * cc - y * sc;
         oy = x * sc + y * cc;
       } else if (body >= 2 && body <= 4) {
@@ -1105,9 +1140,10 @@
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: sorting rotor",
-        "bodies: " + scene.device.body_count,
-        "joints: " + scene.device.joints.length,
+        "bodies: " + scene.device.body_count + " (housing, rotor, ejection rod)",
+        "joints: " + scene.device.joints.length + " (revolute, prismatic)",
         "atoms: " + scene.atomistic.atom_count,
+        "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1503,6 +1539,8 @@
   var optimizeResult = document.getElementById("optimize-result");
   var rotorRun = document.getElementById("rotor-run");
   var rotorResult = document.getElementById("rotor-result");
+  var selectivityRun = document.getElementById("selectivity-run");
+  var selectivityResult = document.getElementById("selectivity-result");
   var chatLog = document.getElementById("chat-log");
   var chatForm = document.getElementById("chat-form");
   var chatInput = document.getElementById("chat-input");
@@ -1738,6 +1776,10 @@
       (Number(payload.rotor_radius_m) * 2e9).toFixed(1) + " nm chamber plus two channels"
     );
     row(
+      "ejection rod " + payload.rod_atoms + " atoms, " +
+      exponent(payload.rod_mass_kg) + " kg, on a prismatic joint"
+    );
+    row(
       "assembly " + payload.total_atoms + " atoms, " +
       exponent(payload.total_mass_kg) + " kg"
     );
@@ -1754,7 +1796,86 @@
       Number(payload.reference_revolutions_per_s).toLocaleString() +
       " rev/s, " + exponent(payload.reference_rim_speed_m_per_s) + " m/s rim"
     );
-    row("the mass, the geometry and the kinematics are simulated or computed; the selectivity is not modelled");
+    row("the mass, the geometry and the kinematics are simulated or computed; the wall chemistry is modelled, see the Selectivity panel");
+  }
+
+  function runSelectivity() {
+    if (!selectivityResult) {
+      return;
+    }
+    selectivityResult.textContent = "Measuring the pocket walls ...";
+    if (selectivityRun) {
+      selectivityRun.disabled = true;
+    }
+    fetch("api/selectivity")
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (payload) {
+        if (payload && payload.error) {
+          selectivityResult.textContent = "error: " + payload.error;
+          return;
+        }
+        showSelectivity(payload);
+      })
+      .catch(function (error) {
+        selectivityResult.textContent =
+          "Start python3 app/server.py to measure the walls. (" + error.message + ")";
+      })
+      .then(function () {
+        if (selectivityRun) {
+          selectivityRun.disabled = false;
+        }
+      });
+  }
+
+  function showSelectivity(payload) {
+    selectivityResult.innerHTML = "";
+    var groups = (payload && payload.groups) || [];
+    if (!groups.length) {
+      selectivityResult.textContent = "the measurement returned no wall groups";
+      return;
+    }
+    function kt(group, index) {
+      var guests = group.guests || [];
+      if (index >= guests.length) {
+        return null;
+      }
+      return Number(guests[index].over_kt);
+    }
+    var table = document.createElement("table");
+    table.className = "selectivity-table";
+    var head = document.createElement("tr");
+    ["wall group", "ethanol / kT", "dimethyl ether / kT", "ethanol : ether"]
+      .forEach(function (label) {
+        var cell = document.createElement("th");
+        cell.textContent = label;
+        head.appendChild(cell);
+      });
+    table.appendChild(head);
+    groups.forEach(function (group) {
+      var row = document.createElement("tr");
+      function add(text) {
+        var cell = document.createElement("td");
+        cell.textContent = text;
+        row.appendChild(cell);
+      }
+      add(String(group.wall_group));
+      var ethanol = kt(group, 1);
+      var ether = kt(group, 2);
+      add(ethanol === null ? "n/a" : ethanol.toFixed(2));
+      add(ether === null ? "n/a" : ether.toFixed(2));
+      add(Number(group.isomer_ratio).toFixed(3));
+      table.appendChild(row);
+    });
+    selectivityResult.appendChild(table);
+    var note = document.createElement("div");
+    note.className = "hint";
+    note.textContent =
+      "well radius " + (Number(payload.pocket_radius_m) * 1e9).toFixed(2) + " nm; " +
+      "the search holds the pocket rigid and ignores the solvent, so the last " +
+      "column is a model ratio and not a measured separation";
+    selectivityResult.appendChild(note);
   }
 
   /* Turn the drive on, so the mechanism moves as soon as it loads. */
@@ -1999,6 +2120,11 @@
         runRotor();
       });
     }
+    if (selectivityRun) {
+      selectivityRun.addEventListener("click", function () {
+        runSelectivity();
+      });
+    }
     if (optimizeRun) {
       optimizeRun.addEventListener("click", function () {
         runOptimize();
@@ -2059,6 +2185,12 @@
     },
     rotorResult: function () {
       return rotorResult;
+    },
+    runSelectivity: function () {
+      return runSelectivity();
+    },
+    selectivityResult: function () {
+      return selectivityResult;
     },
     mechanism: function () {
       return motion.kind;
