@@ -1708,3 +1708,37 @@ Limits. The metric is a rigid geometric coverage model. It uses one sphere
 radius for the guest. It does not model the guest shape, the contact force, or
 the guest motion. A face that covers the pocket can still miss a guest that
 leaves the pocket before the rod arrives.
+
+## ADR-0074: Capped surfaces need a wider clearance than the atom radius
+
+Status: accepted. Refines ADR-0073.
+
+Context. A user reported that the rod parts below the rotor bottom plate
+overlapped the rotor during the in-and-out motion. A swept check measured the
+least distance between each rod and the rotor over the full 1.5e-9 stroke. At
+every stroke fraction the least distance was 0.107-0.130e-9, and 68 to 100 atom
+pairs were closer than the 0.16e-9 clash threshold.
+
+Finding. The closest pairs were rod-shaft hydrogen atoms against rotor-bore-wall
+hydrogen atoms. The bore clearance was `EJECTION_BORE_CLEARANCE_M` = 0.29e-9.
+The rod surface and the bore wall are both capped with hydrogen. Each cap
+reaches about 0.11e-9 past the carbon surface, so the cap-to-cap gap was only
+`0.29 - 0.22` = 0.07e-9. `INTERFACE_CLEARANCE_M` is 0.40e-9 for the same
+reason on planar faces. The bore used less because it must stay below the
+1.0e-9 pocket.
+
+Decision. The bore clearance `EJECTION_BORE_CLEARANCE_M` is 0.39e-9. The
+default `shaft_radius_m` is 0.60e-9. The bore is then 0.99e-9, strictly below
+the pocket. The tip radius stays 0.4e-9.
+
+Consequence. The least rod-to-rotor distance is 2.5e-10 to 2.6e-10 at every
+stroke fraction, and no pair is closer than the clash threshold. The shaft face
+still covers every allowed offset for ethanol and dimethyl ether (coverage 1.0
+for both, though the dimethyl ether margin is only 0.017e-9). The scene now
+holds 120884 atoms and 1.715827677935783e-21 kg. The rod and hub relaxation
+converges with 0 clashes (1962 atoms, 2709 bonds, bond strain 4.4e-6). A
+permanent test, `the_rods_clear_the_rotor_through_the_stroke`, holds the limit.
+
+Limits. The check covers the rod and the rotor only. It does not cover the
+guard, the leaf spring bond to the rotor, or a guest in the pocket. The capture
+margin for dimethyl ether is small.

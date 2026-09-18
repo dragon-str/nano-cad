@@ -88,7 +88,7 @@ pub const INTERFACE_CLEARANCE_M: f64 = 4.0e-10;
 /// The bore must stay below the pocket radius, so it cannot use the full
 /// interface clearance. This value still leaves an atom gap above the clash
 /// threshold.
-pub const EJECTION_BORE_CLEARANCE_M: f64 = 2.9e-10;
+pub const EJECTION_BORE_CLEARANCE_M: f64 = 3.9e-10;
 
 /// The free length of one leaf spring, in metres.
 pub const SPRING_LENGTH_M: f64 = 6.0e-10;
@@ -314,7 +314,8 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             [
                 spring_center_m * cos_rad - point_m[1] * cos_rad - point_m[0] * sin_rad,
                 spring_center_m * sin_rad - point_m[1] * sin_rad + point_m[0] * cos_rad,
-                -rotor_half_thickness_m - 0.5 * SPRING_LENGTH_M + point_m[2],
+                -rotor_half_thickness_m - INTERFACE_CLEARANCE_M - 0.5 * SPRING_LENGTH_M
+                    + point_m[2],
             ]
         });
 
@@ -640,12 +641,12 @@ mod tests {
             assert!(atom.body < 15);
             assert!(atom.atomic_number > 0);
         }
-        assert_eq!(scene.atomistic.atom_count, 127_036);
+        assert_eq!(scene.atomistic.atom_count, 120_884);
         assert_eq!(body_atoms(scene, HOUSING_BODY), 71_624);
-        assert_eq!(body_atoms(scene, ROTOR_BODY), 42_732);
+        assert_eq!(body_atoms(scene, ROTOR_BODY), 38_740);
         assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
         for index in 0..ROD_COUNT {
-            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 958);
+            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 778);
             assert_eq!(
                 part_atoms(scene, ROD_BODY_FIRST + index, SPRING_PART_ID),
                 36
@@ -724,5 +725,103 @@ mod tests {
         assert_eq!(report.clash_count, 0);
         assert!(report.max_bond_strain < 1.0e-3);
         assert!(report.max_displacement_m < 1.0e-11);
+    }
+
+    /// Returns the least distance from any `rod` atom to any atom in `grid`.
+    ///
+    /// `grid` holds the fixed atoms keyed by a cell of `CELL_M`. The search
+    /// looks one cell each way, so it finds every pair closer than `CELL_M`.
+    const CELL_M: f64 = 8.0e-10;
+
+    fn nearest_grid_m(
+        rod: &[[f64; 3]],
+        grid: &std::collections::HashMap<(i64, i64, i64), Vec<[f64; 3]>>,
+    ) -> f64 {
+        let cell_of = |point: &[f64; 3]| {
+            (
+                (point[0] / CELL_M).floor() as i64,
+                (point[1] / CELL_M).floor() as i64,
+                (point[2] / CELL_M).floor() as i64,
+            )
+        };
+        let mut best = f64::INFINITY;
+        for point in rod {
+            let (ix, iy, iz) = cell_of(point);
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        if let Some(atoms) = grid.get(&(ix + dx, iy + dy, iz + dz)) {
+                            for other in atoms {
+                                let distance_m = ((point[0] - other[0]).powi(2)
+                                    + (point[1] - other[1]).powi(2)
+                                    + (point[2] - other[2]).powi(2))
+                                .sqrt();
+                                if distance_m < best {
+                                    best = distance_m;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    #[test]
+    fn the_rods_clear_the_rotor_through_the_stroke() {
+        const CLASH_M: f64 = 1.7e-10;
+        let scene = scene();
+        let mut grid: std::collections::HashMap<(i64, i64, i64), Vec<[f64; 3]>> =
+            std::collections::HashMap::new();
+        for atom in scene
+            .atomistic
+            .atoms
+            .iter()
+            .filter(|atom| atom.body == ROTOR_BODY)
+        {
+            let cell = (
+                (atom.position_m[0] / CELL_M).floor() as i64,
+                (atom.position_m[1] / CELL_M).floor() as i64,
+                (atom.position_m[2] / CELL_M).floor() as i64,
+            );
+            grid.entry(cell).or_default().push(atom.position_m);
+        }
+        let stroke_m = CamHubGenerator.rise_m();
+        for index in 0..ROD_COUNT {
+            let body = ROD_BODY_FIRST + index;
+            let axis_world = scene
+                .device
+                .joints
+                .iter()
+                .find(|joint| joint.body_b == body)
+                .expect("every rod has a joint")
+                .axis_world;
+            let rod: Vec<[f64; 3]> = scene
+                .atomistic
+                .atoms
+                .iter()
+                .filter(|atom| atom.body == body)
+                .map(|atom| atom.position_m)
+                .collect();
+            for step in 0..=4 {
+                let travel_m = stroke_m * step as f64 / 4.0;
+                let moved: Vec<[f64; 3]> = rod
+                    .iter()
+                    .map(|point| {
+                        [
+                            point[0] + axis_world[0] * travel_m,
+                            point[1] + axis_world[1] * travel_m,
+                            point[2] + axis_world[2] * travel_m,
+                        ]
+                    })
+                    .collect();
+                let distance_m = nearest_grid_m(&moved, &grid);
+                assert!(
+                    distance_m > CLASH_M,
+                    "rod {index} at travel {travel_m} is {distance_m} m from the rotor"
+                );
+            }
+        }
     }
 }

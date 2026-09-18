@@ -184,8 +184,8 @@ The hub sits in the gap below the rotor, and the housing holds it from below and
 around its rim. The rotor is turned by a drive shaft on the rotor axis. A key on
 the shaft sits in a keyway in the rotor bore, so the shaft and the rotor turn as
 one body. The rotor central bore is 1.5 nm. The rod shaft is the wide piston
-face: its radius is 0.65 nm, and the narrower tip is 0.4 nm. The radial bore is
-0.94 nm, so the shaft clears the rotor wall and still pushes a guest that lies
+face: its radius is 0.60 nm, and the narrower tip is 0.4 nm. The radial bore is
+0.99 nm, so the shaft clears the rotor wall and still pushes a guest that lies
 against the pocket wall. The panel lists the cam hub atoms and mass, the leaf
 spring atoms, mass and stiffness, the drive shaft atoms, the pin atoms, the rod
 count and the rod length with the other facts. The **Hide rotor top** control

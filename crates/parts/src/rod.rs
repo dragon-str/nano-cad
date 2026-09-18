@@ -31,7 +31,7 @@ static EJECTION_ROD_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "shaft_radius_m",
         Some(Unit::Metre),
-        6.5e-10,
+        6.0e-10,
         1.5e-10,
         2.0e-9,
         false,

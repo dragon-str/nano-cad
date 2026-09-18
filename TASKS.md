@@ -1567,3 +1567,20 @@ drive shaft.
   - Measured: the scene holds 127036 atoms and 1.787369134208518e-21 kg.
 
 - [x] **M19-05** Show the hub and the spring, and update the docs. <!-- result: the viewer draws the cam hub (gold) and the leaf spring (green) from the new roles; the facts panel lists the cam hub and the leaf spring atoms, mass and tip stiffness; the rod animation keeps the one-sided windowed ramp; `docs/viewer.md` now describes the one-sided hub, the return spring and the wide piston face. -->
+
+- [x] **M19-06** Clear the rod through the whole stroke. <!-- result: the rod bore used a 0.29e-9 clearance, but the rod and the bore wall are both hydrogen-capped, so their caps overlapped. The bore clearance is now 0.39e-9 and the shaft radius is 0.60e-9, so the least rod-to-rotor distance is 2.5e-10 m at every stroke fraction and no atom pair is closer than the clash threshold; capture stays complete. -->
+  - Result: the rod shaft and the rotor bore wall are both capped with
+    hydrogen. Each cap reaches about 0.11e-9 m past the carbon surface, so the
+    old 0.29e-9 m bore clearance left a cap gap of only 0.07e-9 m. The rods
+    overlapped the rotor by 0.11-0.13e-9 m at every stroke fraction.
+  - Fix: `EJECTION_BORE_CLEARANCE_M` is now 0.39e-9 m and the rod
+    `shaft_radius_m` is 0.60e-9 m, so the bore is 0.99e-9 m, below the pocket.
+    The shaft face still covers every allowed offset for both guests.
+  - Verification: a permanent regression test,
+    `the_rods_clear_the_rotor_through_the_stroke`, translates each rod along
+    its joint axis over the full 1.5e-9 m stroke and asserts the least
+    rod-to-rotor distance stays above the clash threshold.
+    `cargo test -p nanocad-jigs rotor_scene` -> 14 passed.
+    `cargo run --release -p nanocad-jigs --example rotor_relax` -> 1962 atoms,
+    converged, 0 clashes, bond strain 4.4e-6.
+  - Measured: the scene holds 120884 atoms and 1.715827677935783e-21 kg.
