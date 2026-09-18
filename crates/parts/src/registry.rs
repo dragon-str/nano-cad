@@ -13,6 +13,7 @@ use nanocad_model::Part;
 use crate::axle::{HexAxleGenerator, PlainShaftGenerator};
 use crate::bearing::{BushingGenerator, RadialBearingGenerator};
 use crate::block::{BeamGenerator, BracketGenerator, PlateGenerator};
+use crate::cam::CamRingGenerator;
 use crate::clutch::{ClutchPlateGenerator, RatchetGenerator};
 use crate::error::PartError;
 use crate::gear_profile::GearProfileGenerator;
@@ -52,6 +53,7 @@ static SORTING_ROTOR: SortingRotorGenerator = SortingRotorGenerator;
 static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
 static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
 static EJECTION_ROD: EjectionRodGenerator = EjectionRodGenerator;
+static CAM_RING: CamRingGenerator = CamRingGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -146,6 +148,10 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &EJECTION_ROD,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &CAM_RING,
         category: "device",
     },
 ];

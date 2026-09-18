@@ -73,6 +73,7 @@
     ground: "#6e7681",
     housing: "#7d8590",
     rotor: "#d2a8ff",
+    cam_ring: "#e3b341",
     ejection_rod: "#ff7b72",
     sun: "#f2c14e",
     planet: "#4ec9b0",
@@ -109,10 +110,20 @@
      that, so the viewer turns the rotor at this stated rate instead. */
   var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
 
-  /* The rod pushes the guest out of the pocket by this distance at full stroke.
-     It matches EjectionTarget::travel_m in crates/meter/src/ejection.rs. The
-     viewer shows one stroke for each rotor turn. */
-  var ROTOR_ROD_STROKE_M = 1.5e-9;
+  /* Each rod pushes the guest out of its pocket by this distance at full
+     stroke. It matches lobe_height_m, the cam lobe height in
+     crates/parts/src/cam.rs. The viewer extends one rod at a time, once for
+     each rotor turn. */
+  var ROTOR_ROD_STROKE_M = 2.0e-9;
+
+  /* The cam lobe centre angle in radians. It matches the lobe_angle_rad default
+     in crates/parts/src/cam.rs, which faces the housing outlet at PI. */
+  var ROTOR_CAM_LOBE_RAD = Math.PI;
+
+  /* The angular half width of one stroke, in radians. It is half of the 2*PI/12
+     pocket spacing, so a rod is fully out as its pocket crosses the lobe and is
+     home between lobes. */
+  var ROTOR_ROD_PHASE_RAD = Math.PI / 12;
   var hoverAtom = -1;
   var measure = [];
   var livePositions = null;
@@ -336,9 +347,8 @@
       motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
       motion.w_carrier = 0;
       motion.w_planet = 0;
-      motion.rod_axis = [1, 0];
       motion.rod_stroke_m = ROTOR_ROD_STROKE_M;
-      motion.rod_period_s = (2 * Math.PI) / ROTOR_DISPLAY_RATE_RAD_PER_S;
+      motion.rods = [];
       var rotorJoints = scene.device.joints || [];
       for (var rj = 0; rj < rotorJoints.length; rj += 1) {
         var axis = rotorJoints[rj].axis_world;
@@ -347,7 +357,10 @@
         }
         var axisLength = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1]);
         if (axisLength > 0) {
-          motion.rod_axis = [axis[0] / axisLength, axis[1] / axisLength];
+          motion.rods.push({
+            body: rotorJoints[rj].body_b,
+            angle_rad: Math.atan2(axis[1], axis[0]),
+          });
         }
       }
     }
@@ -411,8 +424,7 @@
     motion.time += dt;
     var t = motion.time;
     if (motion.kind === "rotor") {
-      motion.rod_offset_m =
-        motion.rod_stroke_m * 0.5 * (1 - Math.cos((2 * Math.PI * t) / motion.rod_period_s));
+      motion.rotor_angle_rad = motion.w_sun * t;
     }
     var ca = Math.cos(motion.w_carrier * t);
     var sa = Math.sin(motion.w_carrier * t);
@@ -434,9 +446,18 @@
         if (body === 1) {
           ox = x * cc - y * sc;
           oy = x * sc + y * cc;
-        } else if (body === 2) {
-          ox = x + motion.rod_axis[0] * motion.rod_offset_m;
-          oy = y + motion.rod_axis[1] * motion.rod_offset_m;
+        } else if (body >= 2 && body - 2 < motion.rods.length) {
+          var rod = motion.rods[body - 2];
+          var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
+          var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
+          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+          var ratio = 0;
+          if (Math.abs(delta) < ROTOR_ROD_PHASE_RAD) {
+            ratio = 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_ROD_PHASE_RAD));
+          }
+          var offset = motion.rod_stroke_m * ratio;
+          ox = x * cc - y * sc + Math.cos(rodAngle) * offset;
+          oy = x * sc + y * cc + Math.sin(rodAngle) * offset;
         } else {
           ox = x;
           oy = y;
@@ -1140,10 +1161,12 @@
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: sorting rotor",
-        "bodies: " + scene.device.body_count + " (housing, rotor, ejection rod)",
+        "bodies: " + scene.device.body_count + " (housing, rotor, cam ring, " +
+          (motion.rods || []).length + " rods)",
         "joints: " + scene.device.joints.length + " (revolute, prismatic)",
         "atoms: " + scene.atomistic.atom_count,
         "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
+        "cam lobe at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1776,8 +1799,13 @@
       (Number(payload.rotor_radius_m) * 2e9).toFixed(1) + " nm chamber plus two channels"
     );
     row(
-      "ejection rod " + payload.rod_atoms + " atoms, " +
-      exponent(payload.rod_mass_kg) + " kg, on a prismatic joint"
+      "cam ring " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
+      " kg, fixed, one lobe at 180 deg"
+    );
+    row(
+      "ejection rods " + (payload.rod_count | 0) + " x " + payload.rod_atoms +
+      " atoms, " + exponent(payload.rod_mass_kg) + " kg each, " +
+      (Number(payload.rod_length_m) * 1e9).toFixed(1) + " nm long, one per pocket"
     );
     row(
       "assembly " + payload.total_atoms + " atoms, " +

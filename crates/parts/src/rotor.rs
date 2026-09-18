@@ -26,7 +26,7 @@ use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::pocket::charge_wall;
 use crate::port::{Dof, Port};
-use crate::shape::{Cylinder, Difference, Solid, Union};
+use crate::shape::{Cylinder, Difference, RadialCylinder, Solid, Union};
 
 /// The longest bond in diamond, in metres. A probe shorter than this stays
 /// inside the cell that owns the direction.
@@ -82,11 +82,20 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "bore_radius_m",
         Some(Unit::Metre),
-        1.5e-9,
+        3.5e-9,
         0.0,
         2.0e-8,
         false,
-        "radius of the central bore in metres",
+        "radius of the central bore in metres, which must clear the cam ring",
+    ),
+    ParameterSpec::new(
+        "ejection_bore_radius_m",
+        Some(Unit::Metre),
+        6.0e-10,
+        0.0,
+        5.0e-9,
+        false,
+        "radius of each radial ejection bore in metres, or zero for no bore",
     ),
     ParameterSpec::new(
         "wall_group",
@@ -105,6 +114,10 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
 /// one cylindrical pocket for every slot. A pocket whose centre circle plus its
 /// radius reaches past the outside radius opens to the rim, which is the
 /// binding face the solution sees.
+///
+/// Each pocket also has a radial ejection bore, unless the bore radius is zero.
+/// The bore runs from the central bore out to the inner wall of the pocket, so a
+/// rod inside it can thrust a bound guest out of the pocket.
 ///
 /// The disk turns about `z`, so the axis port lies on that axis.
 #[derive(Clone, Copy, Debug, Default)]
@@ -150,6 +163,32 @@ impl SortingRotorGenerator {
         let (sin_rad, cos_rad) = angle_rad.sin_cos();
         [pocket_orbit_m * cos_rad, pocket_orbit_m * sin_rad, 0.0]
     }
+
+    /// Returns the radial ejection bore of one pocket, in the rotor frame.
+    ///
+    /// The bore runs from the central bore out to the inner wall of the pocket,
+    /// so a rod inside it can thrust a guest out of the pocket. Each end is
+    /// extended by the bore radius, so the bore opens into both the central
+    /// bore and the pocket at every lattice layer.
+    pub fn ejection_bore(
+        index: usize,
+        count: usize,
+        bore_radius_m: f64,
+        pocket_orbit_m: f64,
+        pocket_radius_m: f64,
+        ejection_bore_radius_m: f64,
+    ) -> RadialCylinder {
+        let angle_rad = 2.0 * PI * index as f64 / count.max(1) as f64;
+        let inner_radius_m = bore_radius_m;
+        let outer_radius_m = pocket_orbit_m - pocket_radius_m;
+        RadialCylinder {
+            azimuth_rad: angle_rad,
+            center_radius_m: 0.5 * (inner_radius_m + outer_radius_m),
+            radius_m: ejection_bore_radius_m,
+            half_length_m: 0.5 * (outer_radius_m - inner_radius_m) + ejection_bore_radius_m,
+            center_z_m: 0.0,
+        }
+    }
 }
 
 impl SortingRotorGenerator {
@@ -183,6 +222,7 @@ impl PartGenerator for SortingRotorGenerator {
         let pocket_radius_m = resolved.require("pocket_radius_m")?;
         let pocket_orbit_m = resolved.require("pocket_orbit_m")?;
         let bore_radius_m = resolved.require("bore_radius_m")?;
+        let ejection_bore_radius_m = resolved.require("ejection_bore_radius_m")?;
         let wall_index = resolved.require("wall_group")?.round();
         let Some(group) = FunctionalGroup::from_index(wall_index.max(0.0) as usize) else {
             return Err(PartError::InvalidGeometry(format!(
@@ -201,6 +241,21 @@ impl PartGenerator for SortingRotorGenerator {
                 "the pocket orbit {pocket_orbit_m} m minus the pocket radius {pocket_radius_m} m \
                  is at or outside the disc radius {disc_radius_m} m, so the pockets would not bite"
             )));
+        }
+        if ejection_bore_radius_m > 0.0 {
+            if ejection_bore_radius_m >= pocket_radius_m {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the ejection bore radius {ejection_bore_radius_m} m is not smaller than the \
+                     pocket radius {pocket_radius_m} m, so a bore would eat the whole pocket"
+                )));
+            }
+            if pocket_orbit_m - pocket_radius_m <= bore_radius_m {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the inner pocket wall {} m is not outside the central bore {bore_radius_m} m, \
+                     so an ejection bore has no length",
+                    pocket_orbit_m - pocket_radius_m
+                )));
+            }
         }
 
         let center_m = [0.0, 0.0, 0.0];
@@ -226,6 +281,22 @@ impl PartGenerator for SortingRotorGenerator {
                 b: Box::new(pocket),
             });
             pockets.push(pocket);
+        }
+        if ejection_bore_radius_m > 0.0 {
+            for index in 0..pocket_count {
+                let bore = Self::ejection_bore(
+                    index,
+                    pocket_count,
+                    bore_radius_m,
+                    pocket_orbit_m,
+                    pocket_radius_m,
+                    ejection_bore_radius_m,
+                );
+                void = Box::new(Union {
+                    a: void,
+                    b: Box::new(bore),
+                });
+            }
         }
 
         let solid = Difference {
@@ -382,6 +453,46 @@ mod tests {
             .atoms()
             .filter(|atom| radial_xy_m(atom.position_m) < 0.5 * bore_radius_m);
         assert_eq!(inside.count(), 0, "the bore holds a carbon");
+    }
+
+    #[test]
+    fn every_ejection_bore_is_open() {
+        let pocket_count = 12;
+        let part = SortingRotorGenerator
+            .generate_with_defaults()
+            .expect("rotor");
+        let mut occupied = 0;
+        for index in 0..pocket_count {
+            let bore = SortingRotorGenerator::ejection_bore(
+                index,
+                pocket_count,
+                1.5e-9,
+                6.5e-9,
+                1.0e-9,
+                5.0e-10,
+            );
+            occupied += part
+                .topology
+                .atoms()
+                .filter(|atom| atom.element == Element::CARBON)
+                .filter(|atom| bore.contains_m(atom.position_m))
+                .count();
+        }
+        assert_eq!(occupied, 0, "an ejection bore holds a carbon");
+    }
+
+    #[test]
+    fn a_zero_ejection_bore_removes_nothing() {
+        let bored = SortingRotorGenerator
+            .generate_with_defaults()
+            .expect("rotor");
+        let solid = rotor_with("ejection_bore_radius_m", 0.0);
+        assert!(
+            bored.atom_count() < solid.atom_count(),
+            "the bores removed no atom: {} against {}",
+            bored.atom_count(),
+            solid.atom_count()
+        );
     }
 
     #[test]

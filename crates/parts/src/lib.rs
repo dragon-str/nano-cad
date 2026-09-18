@@ -8,6 +8,7 @@
 pub mod axle;
 pub mod bearing;
 pub mod block;
+pub mod cam;
 pub mod clutch;
 pub mod diamond_solid;
 pub mod dislocation;
@@ -39,6 +40,7 @@ pub mod validation;
 pub use axle::{HexAxleGenerator, PlainShaftGenerator};
 pub use bearing::{BushingGenerator, RadialBearingGenerator};
 pub use block::{BeamGenerator, BracketGenerator, PlateGenerator};
+pub use cam::CamRingGenerator;
 pub use clutch::{ClutchPlateGenerator, RatchetGenerator};
 pub use dislocation::{
     core_atom_mask, displace, displace_point_m, five_seven_wedge_rad, WedgeDisclination,
@@ -75,7 +77,8 @@ pub use respirocyte::{
 pub use rod::EjectionRodGenerator;
 pub use rotor::SortingRotorGenerator;
 pub use shape::{
-    Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, Solid, Union,
+    Bounds, Box3, Cylinder, Difference, HexPrism, Intersection, Placed, Profile, RadialCylinder,
+    Solid, Union,
 };
 pub use spur_gear::SpurGearGenerator;
 pub use validation::{

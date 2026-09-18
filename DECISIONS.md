@@ -1429,3 +1429,67 @@ and not the force that drives it. The rod is one of twelve, because the scene
 places one rod at pocket 0 and the other eleven pockets have no rod. The
 panel shows one more device than M14 did and it still does not show a guest, a
 solvent or a molecule in a pocket.
+
+## ADR-0069
+
+### The cam ring stays in the rotor plane, and the rotor bore clears it
+
+Status: accepted.
+
+M15 placed one ejection rod in the scene, and the picture was wrong. The rod
+stood vertically, in free space below the disk, because `place` rotates about
+z only and the rod axis has no xy part. M16 houses the rods where they belong
+and drives them, which is what the reference describes: "the bound molecules
+are forcibly ejected by rods thrust outward by the cam surface."
+
+A rod is a long thin column, so it must lie along the radius of its pocket and
+slide along that radius. That poses a problem, because the rod axis is local
+`+z`, and a `Placed` solid and the `place` mate can rotate about z only. The
+scene therefore does not use `place` for the rod. It maps the rod atoms
+directly. The map sends local `+z` to the radial direction at the pocket
+azimuth, and it sends local `x` to world `-z`. The rod is symmetric about
+local `x`, so the picture is the same either way. The tip lands on the inner
+wall of the pocket and the inboard end lands on the base of the cam, so the
+geometry states the stroke and the mount together.
+
+The cam ring is a fixed flat ring, and its lobe is a radial key that rises
+once around the ring. It must thrust a rod outward, so the lobe is taller than
+the ring base and it must move into the region that the rods occupy. A rotating
+slot cannot always hold a fixed key. The rotor therefore has a central bore of
+3.5e-9 m, which is exactly the peak radius of the lobe. The whole region inside
+that radius is open, so the fixed lobe never touches rotor material, and the
+whole mechanism stays in the z plane. No follower pin leaves the plane, and no
+face groove is needed. This is the reason for the change of the `bore_radius_m`
+default, and it is why the rotor is now an annulus.
+
+Each rod sits in a bore of its own, and each bore runs from the central bore
+out to the inner wall of its pocket. The rod is captive in the rotor, so its
+prismatic joint parent is the rotor and not the housing. This supersedes the
+one-rod decision of ADR-0068, which made the housing the parent. The rotor
+carries the rods around, and the fixed lobe pushes one rod at a time as that
+pocket crosses the lobe.
+
+The rod is 4.0e-9 m long and the cam stroke is 2.0e-9 m, which is the full
+diameter of a pocket, so an extended rod sweeps the pocket and reaches the rim.
+The rod count is 12, one for each pocket. The measured device holds 91553
+atoms: the rotor 39368, the housing 39848, the cam 3793, and 712 atoms for
+each of the 12 rods. The mass is 1.290735679733618e-21 kg, against the
+reference 2e-21 kg for a rotor with its housing and a share of the drive.
+
+The viewer follows the same model as one Rust program. It reads the prismatic
+joints from the scene and gives each rod a smooth phase ratio against the
+fixed lobe, so one rod extends as its pocket crosses the lobe and the others
+stay home. The readout states the body count and the joint count. The
+headless harness measured the radius gain of the extended rod as 1.747299e-9 m
+against a model gain of 1.751806e-9 m, and it found exactly one extended rod
+of twelve.
+
+Limits on this work. The cam pushes outward and nothing pulls a rod back, so
+the model omits the return spring; the panel says that the profile is stated
+and the spring is not built. The lobe is a radial key and not a tuned motion
+law, so the rod acceleration is not designed. The rod generator still builds
+no follower pin and no sliding fit, so the model shows the motion that the
+joint allows and not the contact between a pin and a profile. The work of
+ejection remains the measured barrier in `crates/meter/src/ejection.rs` and
+not a force on a simulated rod. The scene still holds no guest, no solvent and
+no molecule in a pocket.

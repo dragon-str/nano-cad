@@ -1,7 +1,8 @@
-//! Builds a sorting rotor and its housing, mates them, and prints the facts.
+//! Builds a sorting rotor, its housing and its cam ring, and prints the facts.
 //!
 //! The rotor follows Freitas, *Nanomedicine* Volume I, Section 3.4.2: a disk
-//! with a row of binding pockets on its rim. The example reports the simulated
+//! with a row of binding pockets on its rim, and rods that the cam surface
+//! thrusts outward to eject a bound guest. The example reports the simulated
 //! geometry, the mass and the kinematics at a stated turn rate. It also prints
 //! the figures from the reference next to the simulated ones, so the reader can
 //! see the agreement and the difference.
@@ -16,7 +17,8 @@ use std::f64::consts::TAU;
 
 use nanocad_model::Element;
 use nanocad_parts::{
-    place, EjectionRodGenerator, PartGenerator, RotorHousingGenerator, SortingRotorGenerator,
+    place, CamRingGenerator, EjectionRodGenerator, ParameterSet, PartGenerator,
+    RotorHousingGenerator, SortingRotorGenerator,
 };
 
 /// The atomic mass unit in kilograms.
@@ -39,6 +41,9 @@ const REFERENCE_ATOMS: f64 = 1.0e5;
 
 /// The reference mass from Freitas, in kilograms.
 const REFERENCE_MASS_KG: f64 = 2.0e-21;
+
+/// The number of ejection rods, one for each pocket.
+const ROD_COUNT: f64 = 12.0;
 
 fn mass_kg(element: Element) -> f64 {
     if element == Element::CARBON {
@@ -71,6 +76,13 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let cam = match CamRingGenerator.generate_with_defaults() {
+        Ok(part) => part,
+        Err(error) => {
+            eprintln!("the cam ring failed: {error}");
+            std::process::exit(1);
+        }
+    };
 
     let frame = place(
         rotor,
@@ -88,7 +100,17 @@ fn main() {
     let pocket_rate_per_s = revolutions_per_s * pocket_count;
     let pocket_cycle_s = 1.0 / revolutions_per_s;
 
-    let rod = match EjectionRodGenerator.generate_with_defaults() {
+    let pocket_inner_m = 6.5e-9 - 1.0e-9;
+    let cam_base_m = CamRingGenerator.base_radius_m();
+    let tip_length_m = EjectionRodGenerator
+        .resolve(&ParameterSet::new())
+        .ok()
+        .and_then(|values| values.get("tip_length_m"))
+        .unwrap_or(4.0e-10);
+    let rod_length_m = pocket_inner_m - cam_base_m;
+    let rod = match EjectionRodGenerator
+        .generate(&ParameterSet::new().with("shaft_length_m", rod_length_m - tip_length_m))
+    {
         Ok(rod) => rod,
         Err(error) => {
             eprintln!("the rod failed: {error}");
@@ -98,10 +120,14 @@ fn main() {
 
     let rotor_atoms = placed.atom_count();
     let housing_atoms = housing.atom_count();
+    let cam_atoms = cam.atom_count();
     let rod_atoms = rod.atom_count();
     let rotor_mass_kg = total_mass_kg(&placed);
     let housing_mass_kg = total_mass_kg(&housing);
+    let cam_mass_kg = total_mass_kg(&cam);
     let rod_mass_kg = total_mass_kg(&rod);
+    let total_atoms = rotor_atoms + housing_atoms + cam_atoms + (ROD_COUNT as usize) * rod_atoms;
+    let total_mass_kg = rotor_mass_kg + housing_mass_kg + cam_mass_kg + ROD_COUNT * rod_mass_kg;
 
     if let Some(path) = scene_path {
         let scene = match nanocad_jigs::build_rotor_scene() {
@@ -123,8 +149,10 @@ fn main() {
         "{{\"rotor_atoms\":{rotor_atoms},\"rotor_bonds\":{},\"rotor_radius_m\":{rotor_radius_m:e},\
          \"pocket_count\":{pocket_count},\"rotor_mass_kg\":{rotor_mass_kg:e},\
          \"housing_atoms\":{housing_atoms},\"housing_mass_kg\":{housing_mass_kg:e},\
-         \"rod_atoms\":{rod_atoms},\"rod_mass_kg\":{rod_mass_kg:e},\
-         \"total_atoms\":{},\"total_mass_kg\":{:e},\
+         \"cam_atoms\":{cam_atoms},\"cam_mass_kg\":{cam_mass_kg:e},\
+         \"rod_count\":{ROD_COUNT},\"rod_atoms\":{rod_atoms},\"rod_mass_kg\":{rod_mass_kg:e},\
+         \"rod_length_m\":{rod_length_m:e},\
+         \"total_atoms\":{total_atoms},\"total_mass_kg\":{total_mass_kg:e},\
          \"rate_rad_per_s\":{rate_rad_per_s:e},\"revolutions_per_s\":{revolutions_per_s:e},\
          \"rim_speed_m_per_s\":{rim_speed_m_per_s:e},\"pocket_cycle_s\":{pocket_cycle_s:e},\
          \"pocket_rate_per_s\":{pocket_rate_per_s:e},\
@@ -132,7 +160,5 @@ fn main() {
          \"reference_rim_speed_m_per_s\":{REFERENCE_RIM_SPEED_M_PER_S:e},\
          \"reference_atoms\":{REFERENCE_ATOMS:e},\"reference_mass_kg\":{REFERENCE_MASS_KG:e}}}",
         placed.bond_count(),
-        rotor_atoms + housing_atoms + rod_atoms,
-        rotor_mass_kg + housing_mass_kg + rod_mass_kg,
     );
 }

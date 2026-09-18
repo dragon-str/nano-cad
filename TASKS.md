@@ -1315,3 +1315,77 @@ ADR-0063.
     --all-targets -- -D warnings` clean; `cargo test --workspace` -> 712
     passed; `python3 site/check.py` -> all checks passed; `just verify` ->
     all gates passed.
+
+## M16 — House the rods in the rotor and drive them with a cam
+
+- [x] **M16-01** Add a `RadialCylinder` primitive to `shape.rs`.
+  - Result: `crates/parts/src/shape.rs` gains `RadialCylinder`, a circular
+    cylinder whose axis lies in the xy plane at a stated azimuth. The old
+    `Cylinder` has a fixed z axis and `Placed` rotates about z only, so no
+    primitive could make a radial bore. `crates/parts/src/lib.rs` re-exports
+    the new type.
+  - Verification: `cargo test -p nanocad-parts shape` -> 12 passed;
+    `cargo clippy -p nanocad-parts --all-targets -- -D warnings` clean.
+    The bounds tests use a small tolerance, because exact equality fails on a
+    computed floating-point bound.
+
+- [x] **M16-02** Cut 12 radial ejection bores into the rotor.
+  - Result: `crates/parts/src/rotor.rs` gains the `ejection_bore_radius_m`
+    parameter and the `SortingRotorGenerator::ejection_bore` associated
+    function. Each pocket gets one radial bore that runs from the central bore
+    out to the inner wall of the pocket. The generator refuses a bore that
+    would eat a pocket, and a bore that has no length.
+  - Verification: `cargo test -p nanocad-parts rotor` -> 17 passed.
+    Measured: the default rotor holds 49732 atoms and 74692 bonds with a
+    1.5e-9 m central bore.
+    A bore test must count carbons only, because a hydrogen cap sits inside
+    the bore volume.
+
+- [x] **M16-03** Add a `CamRingGenerator` with one lobe.
+  - Result: `crates/parts/src/cam.rs` gains `CamRingGenerator`, a fixed flat
+    ring with one radial lobe. The lobe is a key that thrusts a rod outward
+    once for each turn, which is the cam surface of the reference. The
+    generator is registered in the `device` category, so the library holds 23
+    generators in 4 categories.
+  - Verification: `cargo test -p nanocad-parts cam` -> 10 passed.
+    Measured: the default ring holds 2457 carbons and 3793 atoms.
+    A fix was needed: `solid_m` read a default instead of the resolved value,
+    so a requested zero lobe was ignored. A geometry helper must take the
+    resolved values.
+
+- [x] **M16-04** Build the 12 rods and the cam in the rotor scene.
+  - Result: `crates/jigs/src/rotor_scene.rs` is rebuilt. The scene now holds
+    15 bodies and 13 joints: the housing, the rotor on a revolute joint, the
+    fixed cam ring, and 12 rods, one for each pocket. Each rod is captive in
+    the rotor, so its prismatic joint parent is the rotor and it corotates.
+    The rod is oriented radially by a direct atom map, because `place` is
+    planar and cannot tilt a z-axis part. The rotor bore grew to 3.5e-9 m, so
+    the fixed lobe never enters rotor material.
+    `crates/jigs/examples/rotor_json.rs` reports the cam and the rods with the
+    device totals.
+  - Verification: `cargo test -p nanocad-jigs rotor_scene` -> 9 passed.
+    Measured: the rotor holds 39368 atoms, the housing 39848, the cam 3793 and
+    each rod 712, so the device holds 91553 atoms and 1.290735679733618e-21 kg.
+    The rod is 4.0e-9 m long and the cam stroke is 2.0e-9 m.
+
+- [x] **M16-05** Animate the 12 rods and the cam in the viewer.
+  - Result: `site/viewer.js` gives the cam ring its own colour, builds a rod
+    list from the prismatic joints, and extends each rod by a smooth phase
+    ratio as its pocket crosses the fixed lobe. A rod corotates with the rotor
+    and slides along its own radial axis. The readout names the 15 bodies and
+    the 13 joints, and the rotor panel shows the cam and rod facts.
+  - Verification: the headless browser harness clicked the rotor run and
+    sampled every atom. Measured: rod 0 gained 1.747299e-9 m of radius against
+    a model gain of 1.751806e-9 m, an agreement of 0.26 percent; exactly 1 rod
+    of 12 was extended at that phase; the cam did not move; zero console
+    errors. `python3 site/check.py` -> all checks passed.
+
+- [x] **M16-06** Run the gates, record the decision and update the docs.
+  - Result: ADR-0069 records the planar cam, the enlarged rotor bore, the
+    radial atom map and the rotor-parent joint. The README test count is
+    current. `docs/viewer.md` describes the cam and the 12 rods.
+  - Verification: `cargo fmt --check` clean; `cargo clippy --workspace
+    --all-targets -- -D warnings` clean; `cargo test --workspace` -> 727
+    passed; `python3 site/check.py` -> all checks passed;
+    `node site/render_atoms.test.js` -> 11 passed; `just verify` -> all gates
+    passed.

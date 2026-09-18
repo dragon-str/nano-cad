@@ -163,11 +163,16 @@ outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
-The rotor scene holds three bodies and two joints: the housing, the rotor on a
-revolute joint, and one ejection rod on a prismatic joint. The rod sits at the
-first pocket, its tip points outward, and it slides along the radial axis of
-that pocket. It does not turn with the rotor, because a prismatic joint has no
-rotation. The panel lists the rod atoms and the rod mass with the other facts.
+The rotor scene holds 15 bodies and 13 joints: the housing, the rotor on a
+revolute joint, the fixed cam ring, and 12 ejection rods, one for each pocket.
+Each rod lies along the radius of its pocket, sits in a radial bore in the
+rotor, and turns with the rotor, because it is captive in the rotor. The cam
+ring carries one lobe at 180 degrees, which faces the housing outlet. The lobe
+thrusts one rod outward as its pocket crosses it, so one rod of the twelve
+extends at a time. The rotor has a central bore of 3.5 nm, which is the peak
+of the lobe, so the fixed lobe stays inside the open bore and it never touches
+rotor material. The panel lists the cam atoms and mass and the rod count, the
+rod atoms, the rod mass and the rod length with the other facts.
 
 The rotor scene uses the scene schema of the gearbox. The design block is zero,
 and the viewer reads a zero module as "not a gearbox". It then turns the rotor
@@ -175,12 +180,13 @@ about `z` from the joint, instead of from the gear kinematics. The scorecard
 measures the gearbox, so the viewer clears it and states the reason. The real
 rate is 86000 revolutions per second, and no display shows that, so the viewer
 turns the rotor at 2.0 rad/s and the readout names it a display rate.
-The rod stroke is 1.5 nm, which is the travel of the ejection metric. The
-display shows one stroke for each turn of the rotor.
+The cam stroke is 2.0 nm, which is the full diameter of a pocket. The display
+extends one rod for each turn of the rotor.
 
-The example builds the mechanics only. It does not build the cam, the bore or
-the shaft friction, and the panel says so. The wall chemistry is modelled, and
-the Selectivity section measures it.
+The example builds the mechanics only. It does not build the return spring,
+the follower pin or the shaft friction, so it shows the motion that the joints
+allow and not the force that drives a rod. The panel says so. The wall
+chemistry is modelled, and the Selectivity section measures it.
 
 The panel also has a **Selectivity** section. The **Measure the pocket walls**
 button runs the binding example. The example builds a binding pocket, and it

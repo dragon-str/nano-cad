@@ -258,6 +258,62 @@ impl Solid for Cylinder {
     }
 }
 
+/// A circular cylinder whose axis lies in the xy plane.
+///
+/// [`Cylinder`] always points along z. This primitive points along the azimuth
+/// in the xy plane, so it carves a radial bore or builds a radial pin. The axis
+/// passes through the point at `center_radius_m` on `azimuth_rad`, and the
+/// cross-section is a disc in the plane that holds the axis and z.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RadialCylinder {
+    /// The azimuth of the axis, in radians. The axis points along
+    /// `(cos, sin, 0)`.
+    pub azimuth_rad: f64,
+    /// The distance from the z axis to the centre of the cylinder, in metres.
+    pub center_radius_m: f64,
+    /// The radius of the circular cross-section, in metres.
+    pub radius_m: f64,
+    /// Half the length along the axis, in metres.
+    pub half_length_m: f64,
+    /// The centre of the cylinder along z, in metres.
+    pub center_z_m: f64,
+}
+
+impl Solid for RadialCylinder {
+    fn contains_m(&self, point_m: [f64; 3]) -> bool {
+        let (sin_rad, cos_rad) = self.azimuth_rad.sin_cos();
+        let along_m = point_m[0] * cos_rad + point_m[1] * sin_rad - self.center_radius_m;
+        let across_m = -point_m[0] * sin_rad + point_m[1] * cos_rad;
+        let dz_m = point_m[2] - self.center_z_m;
+        along_m.abs() <= self.half_length_m
+            && across_m * across_m + dz_m * dz_m <= self.radius_m * self.radius_m
+    }
+
+    fn bounds_m(&self) -> Bounds {
+        let (sin_rad, cos_rad) = self.azimuth_rad.sin_cos();
+        let center_x_m = self.center_radius_m * cos_rad;
+        let center_y_m = self.center_radius_m * sin_rad;
+        let half_x_m = self.half_length_m * cos_rad.abs() + self.radius_m * sin_rad.abs();
+        let half_y_m = self.half_length_m * sin_rad.abs() + self.radius_m * cos_rad.abs();
+        Bounds {
+            min_m: [
+                center_x_m - half_x_m,
+                center_y_m - half_y_m,
+                self.center_z_m - self.radius_m,
+            ],
+            max_m: [
+                center_x_m + half_x_m,
+                center_y_m + half_y_m,
+                self.center_z_m + self.radius_m,
+            ],
+        }
+    }
+
+    fn clone_box(&self) -> Box<dyn Solid> {
+        Box::new(*self)
+    }
+}
+
 /// A solid rotated about the z axis and then offset.
 pub struct Placed {
     /// The solid before the transform.
@@ -672,6 +728,71 @@ mod tests {
         };
         assert!(!profile.contains_m([0.0, 0.0, 0.0]));
         assert!(profile.contains_m([0.8e-9, 0.0, 0.0]));
+    }
+
+    fn bounds_close(left: &Bounds, right: &Bounds) -> bool {
+        let mut components = Vec::new();
+        for axis in 0..3 {
+            components.push((left.min_m[axis], right.min_m[axis]));
+            components.push((left.max_m[axis], right.max_m[axis]));
+        }
+        components
+            .iter()
+            .all(|(left, right)| (left - right).abs() <= 1.0e-24)
+    }
+
+    #[test]
+    fn a_radial_cylinder_lies_along_its_azimuth() {
+        let bore = RadialCylinder {
+            azimuth_rad: 0.0,
+            center_radius_m: 2.0e-9,
+            radius_m: 1.0e-10,
+            half_length_m: 1.0e-9,
+            center_z_m: 0.0,
+        };
+        assert!(bore.contains_m([2.0e-9, 0.0, 0.0]));
+        assert!(bore.contains_m([1.0e-9, 0.0, 0.0]));
+        assert!(!bore.contains_m([3.5e-9, 0.0, 0.0]));
+        assert!(!bore.contains_m([1.5e-9, 3.0e-10, 0.0]));
+        assert!(!bore.contains_m([2.0e-9, 0.0, 2.0e-10]));
+    }
+
+    #[test]
+    fn the_bounds_of_a_radial_cylinder_hold_it() {
+        let bore = RadialCylinder {
+            azimuth_rad: 0.0,
+            center_radius_m: 2.0e-9,
+            radius_m: 1.0e-10,
+            half_length_m: 1.0e-9,
+            center_z_m: 0.0,
+        };
+        assert!(bounds_close(
+            &bore.bounds_m(),
+            &Bounds {
+                min_m: [1.0e-9, -1.0e-10, -1.0e-10],
+                max_m: [3.0e-9, 1.0e-10, 1.0e-10],
+            }
+        ));
+    }
+
+    #[test]
+    fn a_radial_cylinder_rotates_with_its_azimuth() {
+        let bore = RadialCylinder {
+            azimuth_rad: PI / 2.0,
+            center_radius_m: 2.0e-9,
+            radius_m: 1.0e-10,
+            half_length_m: 1.0e-9,
+            center_z_m: 0.0,
+        };
+        assert!(bore.contains_m([0.0, 2.0e-9, 0.0]));
+        assert!(!bore.contains_m([2.0e-9, 0.0, 0.0]));
+        assert!(bounds_close(
+            &bore.bounds_m(),
+            &Bounds {
+                min_m: [-1.0e-10, 1.0e-9, -1.0e-10],
+                max_m: [1.0e-10, 3.0e-9, 1.0e-10],
+            }
+        ));
     }
 
     #[test]
