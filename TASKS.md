@@ -1250,3 +1250,68 @@ ADR-0063.
     chemistry changes the work by a factor of 14 across the set, and it
     changes which isomer is easier to eject, so the rod sees the same
     selectivity that the binding metric sees. See ADR-0067.
+
+## M15 — Wire the device and show it
+
+- [x] **M15-01** Decorate the rotor rim pockets.
+  - Result: `crates/parts/src/rotor.rs` gains a seventh parameter, `wall_group`,
+    as an index into `FUNCTIONAL_GROUPS`. `fill_part` now runs the same three
+    steps as the pocket generator: bond the lattice, collect the free
+    directions, probe each direction against the pocket cylinders, plan the
+    wall group inside the pockets and hydrogen outside, cap the plan and put
+    the model charges on the wall. A probe step of `PROBE_STEP_M` decides
+    whether a direction opens into a pocket. An unknown group index is
+    refused, and an empty plan is an error. `wall_group()` reports the choice.
+    The decoration adds 1304 atoms and 1304 bonds, because a decorated
+    direction takes a group heavy atom and its hydrogens in place of one
+    hydrogen. The default rotor becomes 55268 atoms and 91652 bonds. The
+    wall chemistry does not change the geometry or the kinematics.
+  - Verification: `cargo test -p nanocad-parts rotor` -> 15 passed;
+    `cargo test -p nanocad-jigs rotor_scene` -> 8 passed;
+    `cargo test --workspace` -> 712 passed; `just verify` -> all gates passed.
+
+- [x] **M15-02** Add the ejection rod as a third body in the rotor scene.
+  - Result: `crates/jigs/src/rotor_scene.rs` gains `ROD_BODY`, `ROD_ROLE`,
+    a rod built from `EjectionRodGenerator`, a socket at pocket 0 on a radial
+    axis, and a mate that puts the rod tip at the pocket centre and points the
+    rod inward. The scene now holds three bodies and two joints: the housing,
+    the rotor on a revolute joint, and the rod on a prismatic joint. The rod
+    is free and it does not turn. `crates/jigs/examples/rotor_json.rs` and the
+    `/api/rotor` route report the rod atom count, the rod mass and the device
+    totals, so the facts cover the whole device. `site/viewer.js` gives the rod
+    its own colour, slides it along the prismatic axis of the scene, and does
+    not orbit it with the planets. The display shows one stroke for each turn
+    of the rotor.
+  - Verification: `cargo test -p nanocad-jigs rotor_scene` -> 8 passed;
+    `cargo test --workspace` -> 712 passed.
+    Measured: the rod holds 328 atoms and 3.6185271751219556e-24 kg, and the
+    device holds 95444 atoms and 1.4668573965626264e-21 kg.
+    The headless browser harness measured the rod travel as 1.4947e-9 m along
+    the radial axis, with zero motion on the other two axes, against the
+    display stroke of 1.5e-9 m.
+
+- [x] **M15-03** Add `/api/selectivity` and the selectivity table to the panel.
+  - Result: `app/server.py` gains `selectivity_result`, which runs the binding
+    example and returns its JSON, and the `GET /api/selectivity` route, which
+    takes an optional `radius_m`. `site/index.html` gains a Selectivity section
+    with one button and one result block. `site/viewer.js` gains
+    `runSelectivity` and `showSelectivity`, which build a table of wall group,
+    ethanol energy, dimethyl ether energy and the ratio. `site/style.css`
+    gains the table style.
+  - Verification: `curl /api/selectivity` returns the ADR-0066 figures:
+    well radius 7.0e-10 m, hydroxyl `isomer_ratio` 1.1877, ethanol 26.37 kT.
+    The headless browser harness clicked the button and read the table:
+    hydroxyl 26.37 / 22.21 / 1.188, amino 19.23 / 19.39 / 0.992, methyl
+    9.50 / 10.93 / 0.869, fluoro 6.44 / 10.77 / 0.598, chloro 6.05 / 6.26 /
+    0.967, thiol 18.47 / 9.34 / 1.978, with zero console errors.
+    `python3 site/check.py` -> all checks passed.
+
+- [x] **M15-04** Run the gates, record the decision and update the docs.
+  - Result: `crates/jigs/src/rotor_scene.rs` lost a needless struct update
+    that repeated every field of the body literal. ADR-0068 records how the
+    rod joins the device and what the panel shows. The README test count is
+    current. `docs/viewer.md` describes the rod and the Selectivity section.
+  - Verification: `cargo fmt --check` clean; `cargo clippy --workspace
+    --all-targets -- -D warnings` clean; `cargo test --workspace` -> 712
+    passed; `python3 site/check.py` -> all checks passed; `just verify` ->
+    all gates passed.

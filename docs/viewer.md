@@ -163,15 +163,32 @@ outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
+The rotor scene holds three bodies and two joints: the housing, the rotor on a
+revolute joint, and one ejection rod on a prismatic joint. The rod sits at the
+first pocket, its tip points outward, and it slides along the radial axis of
+that pocket. It does not turn with the rotor, because a prismatic joint has no
+rotation. The panel lists the rod atoms and the rod mass with the other facts.
+
 The rotor scene uses the scene schema of the gearbox. The design block is zero,
 and the viewer reads a zero module as "not a gearbox". It then turns the rotor
 about `z` from the joint, instead of from the gear kinematics. The scorecard
 measures the gearbox, so the viewer clears it and states the reason. The real
 rate is 86000 revolutions per second, and no display shows that, so the viewer
 turns the rotor at 2.0 rad/s and the readout names it a display rate.
+The rod stroke is 1.5 nm, which is the travel of the ejection metric. The
+display shows one stroke for each turn of the rotor.
 
-The example builds the mechanics only. It does not model molecular selectivity
-or a solvent, and the panel says so.
+The example builds the mechanics only. It does not build the cam, the bore or
+the shaft friction, and the panel says so. The wall chemistry is modelled, and
+the Selectivity section measures it.
+
+The panel also has a **Selectivity** section. The **Measure the pocket walls**
+button runs the binding example. The example builds a binding pocket, and it
+puts one functional group on the wall. It then measures the binding energy of
+every frozen guest over a grid of positions and orientations. The result is a
+table of the wall group, the ethanol energy, the dimethyl-ether energy and the
+ratio, all as a multiple of kT at 300 K. The panel states the well radius and
+the limits of the model under the table.
 
 The server binds to `127.0.0.1` only. It serves these routes:
 
@@ -183,6 +200,7 @@ The server binds to `127.0.0.1` only. It serves these routes:
 | `GET /api/score` | Score the last generated scene with every metric. |
 | `GET /api/optimize?<budget>` | Search the tooth counts and return the best design. |
 | `GET /api/rotor` | Build the sorting rotor and its housing, and return the facts. |
+| `GET /api/selectivity?radius_m=<m>` | Measure every wall group in a binding pocket and return the table. |
 | `GET /api/scene` | The last generated `site/scene.json`. |
 
 When the engine rejects a value, for example a planet with too few teeth for

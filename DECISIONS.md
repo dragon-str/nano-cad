@@ -1368,3 +1368,64 @@ coarse, so the work is an upper bound for a given target. There is no solvent,
 no ion and no explicit hydrogen bond. The rod is not simulated, so the metric
 does not include the work that the rod itself returns, the work against the
 bore, or any elastic energy in the rod. Every value is a model value.
+
+## ADR-0068
+
+### The rotor scene holds the whole device, and the panel measures the wall
+
+Status: accepted.
+
+M14 built a binding pocket, a rod and two metrics, but no scene joined them
+to the rotor. A reader could see the rotor turn and could read a selectivity
+table, and nothing tied the two together. M15 joins them.
+
+The rod is body 2 of the rotor scene. `build_rotor_scene` in
+`crates/jigs/src/rotor_scene.rs` builds the rod with `EjectionRodGenerator`,
+places its tip at the centre of pocket 0 with `place` on the `tip_port`, and
+declares a prismatic joint whose parent is the housing and whose axis is
+radial. The choice of parent matters. The rod presses on the pocket wall, so
+the housing must carry the reaction and not the rotor. The axis is radial,
+because that is the direction that pushes a bound guest out of a pocket.
+
+A prismatic joint is a translation without rotation. The rod therefore slides
+along one line and it does not turn with the rotor. This is the behaviour that
+the reference describes: rods thrust outward by a cam surface. The scene does
+not build the cam. It builds the joint that a cam would drive, and the viewer
+shows the travel that the joint permits.
+
+The example and the panel report the whole device. `rotor_json` prints the
+rod atom count, the rod mass and the totals of all three parts, so the facts
+that the panel shows cover the housing, the rotor and the rod. Measured: the
+rod holds 328 atoms and 3.6185271751219556e-24 kg, and the device holds 95444
+atoms and 1.4668573965626264e-21 kg. The rotor holds 55268 atoms after the
+pocket decoration, and the housing holds 39848.
+
+The viewer stroke is a display convention. `ROTOR_ROD_STROKE_M` in
+`site/viewer.js` is 1.5e-9 m, and it matches `EjectionTarget::travel_m` in
+`crates/meter/src/ejection.rs`, so the picture and the metric agree on the
+same distance. The rotor rate in the viewer is 2.0 rad/s and the real rate is
+86000 rev/s, so the viewer shows one stroke for each turn and hides the rate.
+The panel says so.
+
+The panel reads the selectivity table from the metric and not from a copy.
+`GET /api/selectivity` runs `crates/meter/examples/binding_json.rs` through
+`_run_example` and returns its JSON, so one Rust program is the only source of
+the numbers. A Python table would drift from the model. The route takes an
+optional `radius_m`, so a caller can ask for another well radius.
+
+The table is a model result. It states binding energy as a multiple of kT for
+the ethanol and dimethyl-ether isomer pair, and it gives the ratio. The search
+holds the pocket and the guest rigid, the model has no solvent and no ion, and
+there is no explicit hydrogen bond. The panel prints that limit under the
+table. The measured ratios at a well radius of 7.0e-10 m are hydroxyl 1.188,
+amino 0.992, methyl 0.869, fluoro 0.598, chloro 0.967 and thiol 1.978. The
+wall chemistry changes which isomer binds more strongly and it changes the
+sign, so the ratio is a real output of the force model. It is still not a
+prediction of separation in water.
+
+Limits on this work. The scene has no cam surface, no bore, no shaft friction
+and no elastic energy in the rod, so it shows the motion that the joint allows
+and not the force that drives it. The rod is one of twelve, because the scene
+places one rod at pocket 0 and the other eleven pockets have no rod. The
+panel shows one more device than M14 did and it still does not show a guest, a
+solvent or a molecule in a pocket.
