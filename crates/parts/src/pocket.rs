@@ -239,8 +239,58 @@ impl PartGenerator for BindingPocketGenerator {
         }
 
         diamond_solid::cap_free(&mut topology, &free, &plan)?;
+        charge_wall(&mut topology, group);
         Ok(Part::new("binding_pocket", topology).with_material("diamond with functional groups"))
     }
+}
+
+/// Give the wall groups their stated model charges.
+///
+/// Each group is modelled as that group on a methyl carbon, so one charge set
+/// serves every group of that kind. The group heavy atom and its hydrogens
+/// take the charges of the model, and the lattice carbon that carries the
+/// group takes the host charge. Every other atom keeps zero charge.
+///
+/// The function returns the number of atoms that it charged. The charges are a
+/// model and they are not validated against experiment. See ADR-0063.
+pub fn charge_wall(topology: &mut Topology, group: FunctionalGroup) -> usize {
+    let host_charge_c = crate::group_data::GROUP_CHARGES[group.index()].host_charge_c;
+    let heavy_charge_c = crate::group_data::GROUP_CHARGES[group.index()].heavy_charge_c;
+    let hydrogen_charge_c = crate::group_data::GROUP_CHARGES[group.index()].hydrogen_charge_c;
+    let heavy_type = group.heavy_type();
+
+    let mut heavy_atoms = Vec::new();
+    for index in 0..topology.atom_count() {
+        if topology.atom_type(index) == Some(heavy_type) {
+            heavy_atoms.push(index);
+        }
+    }
+
+    let mut updates: Vec<(usize, f64)> = Vec::new();
+    for &heavy in &heavy_atoms {
+        updates.push((heavy, heavy_charge_c));
+        for bond in topology.bonds() {
+            let other = if bond.u as usize == heavy {
+                bond.v as usize
+            } else if bond.v as usize == heavy {
+                bond.u as usize
+            } else {
+                continue;
+            };
+            match topology.element(other) {
+                Some(Element::HYDROGEN) => updates.push((other, hydrogen_charge_c)),
+                Some(Element::CARBON) if topology.atom_type(other) == Some("C") => {
+                    updates.push((other, host_charge_c));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    for (index, charge_c) in &updates {
+        let _ = topology.set_charge_c(*index, *charge_c);
+    }
+    updates.len()
 }
 
 #[cfg(test)]

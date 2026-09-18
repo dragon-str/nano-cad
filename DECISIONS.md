@@ -1244,3 +1244,72 @@ Three limits follow from the lattice and must be read with every result.
    tenth of an Angstrom. The well that admits one admits the other, so only
    the wall chemistry can separate them. That is the measurement of M14-06,
    and it is the measurement that gives this layer its meaning.
+
+## ADR-0066
+
+### The binding metric is a rigid search in a frozen pocket
+
+Status: accepted.
+
+The pocket generator of ADR-0065 builds a cavity with a stated wall
+chemistry. This decision adds the measurement that gives the wall chemistry a
+meaning.
+
+`crates/meter/src/binding.rs` states one model. The pocket is rigid. The guest
+is rigid. The interaction is the Lennard-Jones sum from ADR-0064 plus the
+Coulomb sum, over every atom pair inside a cutoff. The charges come from the
+Gasteiger-Marsili model, stored as data by ADR-0063, and they are written onto
+the wall by `charge_wall`, because a built part starts neutral.
+
+The search moves the guest along the pocket axis and turns it about that axis.
+The lowest energy of the search is the binding energy, and the ratio of two
+binding energies is the selectivity.
+
+A position where any pair comes closer than `overlap_ratio * sigma` is not a
+bound state, and the search rejects it. This guard is necessary. Without it the
+search finds interpenetrating positions and reports an energy that no real
+contact can give. `overlap_ratio` is 0.85, and it is a stated parameter of the
+model.
+
+Three limits must be read with every result.
+
+1. The search is coarse. It slides and turns the guest, and it does not relax
+   the guest or the wall. The energy is an upper bound on a relaxed binding
+   energy, so the value is comparable only within one target and one guest.
+2. The model has no solvent, no ion and no explicit hydrogen bond. A hydrogen
+   bond appears only as the sum of its Coulomb and dispersion parts, so the
+   model cannot state a hydrogen-bond energy.
+3. The pocket must be larger than a first estimate suggests. A bound guest
+   needs the well radius to exceed its extent plus one contact distance, and
+   the decorated groups themselves intrude into the cavity. A well of
+   radius 3.6e-10 m rejects every position, and a well of radius 7.0e-10 m
+   accepts every one.
+
+The result of the measurement at a well radius of 7.0e-10 m, in kT at 300 K,
+is the energy of each isomer, and then the ratio of ethanol to dimethyl ether:
+
+| wall group | ethanol | dimethyl ether | ratio |
+|---|---|---|---|
+| hydroxyl | 26.37 | 22.21 | 1.188 |
+| amino | 19.23 | 19.39 | 0.992 |
+| methyl | 9.50 | 10.93 | 0.869 |
+| fluoro | 6.44 | 10.77 | 0.598 |
+| chloro | 6.05 | 6.26 | 0.967 |
+| thiol | 18.47 | 9.34 | 1.978 |
+
+The two isomers share the formula C2H6O, and they differ in shape by one tenth
+of an Angstrom and in charge. The shape difference alone cannot separate them,
+as ADR-0065 states. The table shows that the wall chemistry can. The choice
+moves by a factor of 3.3 across the six groups, and it changes sign: the
+hydroxyl wall takes ethanol, the hydrogen-bond donor, and the fluoro wall takes
+dimethyl ether.
+
+This is a model statement. It is not a claim that a real pocket separates
+ethanol from dimethyl ether in water.
+
+A unit error was found while this metric was built, and the fix matters for
+every earlier result. Gasteiger returns a charge in units of the elementary
+charge. `Atom::charge_c`, by contract, holds coulombs. The first data file
+stored the raw Gasteiger number, which made every charge 1.6e19 times too
+large and every Coulomb energy about 1e17 J. The emitters now multiply by
+`ELEMENTARY_CHARGE_C`. The table above holds only after that fix.

@@ -1172,3 +1172,42 @@ ADR-0063.
     ethanol and dimethyl ether isomer pair, because they are the same size
     class. Only the wall chemistry can separate them, and M14-06 measures
     that. See ADR-0065.
+
+- [x] **M14-06** Measure wall charges and add a binding metric.
+  - Result: `crates/parts/src/group_data.rs` holds one charge for each wall
+    group. Each group is modelled on a methyl carbon, and the emitter
+    `/tmp/emit_group_charges.py` states the method: RDKit 2026.03.6,
+    ETKDGv3 embedding, MMFF94 optimization and Gasteiger-Marsili PEOE with
+    12 iterations. The file holds the host charge, the heavy-atom charge
+    and the hydrogen charge for each group.
+    `charge_wall` in `crates/parts/src/pocket.rs` writes those charges onto
+    a built pocket: the heavy atom, its hydrogens, and each lattice carbon
+    that bonds to the heavy atom.
+    `crates/meter/src/binding.rs` adds `binding_energy_j` and
+    `selectivity_ratio`. The pocket and the guest are both rigid. The
+    energy is the Lennard-Jones sum plus the Coulomb sum over the pairs
+    inside a cutoff. The search slides the guest along the pocket axis and
+    turns it about that axis. A position where any pair comes closer than
+    `overlap_ratio * sigma` is not a bound state, so the search rejects it.
+  - Verification: `cargo test -p nanocad-meter` -> 45 passed, including
+    `a_guest_in_the_well_has_a_bound_state`,
+    `a_guest_that_cannot_fit_is_rejected`,
+    `a_wider_well_binds_the_same_guest_more_weakly`,
+    `the_wall_charge_changes_the_energy`,
+    `a_polar_wall_prefers_the_hydrogen_bond_donor`,
+    `a_fluorinated_wall_prefers_the_ether` and
+    `the_wall_group_changes_the_selectivity`. `cargo test --workspace` ->
+    692 passed.
+    The selectivity result at a well radius of 7.0e-10 m, with no rejected
+    position, is the energy of each isomer in kT:
+    hydroxyl 26.37 against 22.21 (ratio 1.188), amino 19.23 against 19.39
+    (0.992), methyl 9.50 against 10.93 (0.869), fluoro 6.44 against 10.77
+    (0.598), chloro 6.05 against 6.26 (0.967), and thiol 18.47 against 9.34
+    (1.978). The wall chemistry therefore changes which isomer binds more
+    strongly by a factor of 3.3 across the six groups. The hydroxyl wall
+    takes ethanol, the hydrogen-bond donor. The fluoro wall takes dimethyl
+    ether.
+    A charge-unit error was found and fixed here. Gasteiger returns a
+    charge in elementary charges, and `Atom::charge_c` holds coulombs. The
+    emitters now multiply by `ELEMENTARY_CHARGE_C`, and the selective
+    result above holds only after that fix. See ADR-0066.

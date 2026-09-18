@@ -16,6 +16,7 @@ pub mod gear_profile;
 pub mod generator;
 pub mod geometry;
 mod group;
+mod group_data;
 mod guest;
 mod guest_data;
 pub mod housing;

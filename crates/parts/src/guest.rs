@@ -204,6 +204,9 @@ pub fn build_guest_part(id: &str) -> Result<Part, PartError> {
 mod tests {
     use super::*;
 
+    /// The elementary charge, in coulombs.
+    const ELEMENTARY_CHARGE_C: f64 = 1.602_176_634e-19;
+
     #[test]
     fn the_table_holds_five_molecules() {
         assert_eq!(guests().len(), 5);
@@ -252,7 +255,7 @@ mod tests {
                 .fold(0.0_f64, f64::min)
         };
         assert!(
-            (charge(ethanol) - charge(ether)).abs() > 1.0e-3,
+            (charge(ethanol) - charge(ether)).abs() > 1.0e-3 * ELEMENTARY_CHARGE_C,
             "the two oxygens must not carry the same charge"
         );
     }
@@ -317,7 +320,11 @@ mod tests {
     fn every_guest_is_neutral() {
         for entry in guests() {
             let total = entry.total_charge_c();
-            assert!(total.abs() < 1.0e-4, "{} has charge {total}", entry.id);
+            assert!(
+                total.abs() < 1.0e-4 * ELEMENTARY_CHARGE_C,
+                "{} has charge {total}",
+                entry.id
+            );
         }
     }
 

@@ -6,6 +6,7 @@
 //! fidelity field.
 #![forbid(unsafe_code)]
 
+pub mod binding;
 pub mod bonded;
 pub mod clearance;
 pub mod drive;
@@ -15,6 +16,7 @@ pub mod loaded;
 pub mod relaxed;
 pub mod slip;
 
+pub use binding::{binding_energy_j, selectivity_ratio, BindingReport, BindingTarget};
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
 pub use drive::{DriveReport, DriveTarget, SteeredDrive};
 pub use geometry::{atom_count, contact_ratio};
