@@ -1061,3 +1061,25 @@ ADR-0063.
     `an_unlisted_element_has_no_chemistry`,
     `a_hydrogen_carbon_bond_is_near_the_known_length` and
     `no_element_appears_twice`.
+
+- [x] **M14-02** Add functional groups to a diamond surface.
+  - Result: `crates/parts/src/group.rs` adds `FunctionalGroup` with six
+    groups: hydroxyl, amino, methyl, fluoro, chloro and thiol. Each group
+    attaches through one bond to a surface carbon, and its heavy atom takes
+    one hydrogen for each remaining bond, so every atom keeps its usual
+    valence. The bond lengths come from `nanocad_model::bond_length_m`, so
+    the group and the lattice share one source of radii. The remaining bonds
+    take the tetrahedral angle.
+    `crates/parts/src/diamond_solid.rs` splits the old `bond_and_cap` into
+    `bond_atoms`, `free_directions` and `cap_free`. A `CapPlan` names the
+    group at each free direction, keyed by host and slot. `bond_and_cap` is
+    now the three calls with an empty plan, so its behaviour is unchanged.
+  - Verification: `cargo test -p nanocad-parts` -> 165 passed, so every
+    earlier part test still passes. The new tests include
+    `every_group_reaches_its_usual_valence`,
+    `the_contact_bond_uses_the_table_length`,
+    `the_hydrogens_sit_at_the_tetrahedral_angle`,
+    `a_halide_group_has_no_hydrogen` and `a_zero_direction_is_refused`.
+    `cargo test --workspace` -> 630 passed. Note: `free_directions` counts
+    degrees in one pass over the bonds, because a per-atom scan is quadratic
+    and a gear has more than a hundred thousand atoms.

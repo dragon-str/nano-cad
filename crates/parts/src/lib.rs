@@ -15,6 +15,7 @@ pub mod error;
 pub mod gear_profile;
 pub mod generator;
 pub mod geometry;
+mod group;
 pub mod housing;
 pub mod lattice;
 pub mod lattice_fill;
@@ -40,6 +41,7 @@ pub use dislocation::{
 pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
 pub use generator::{PartGenerator, PartSchema};
+pub use group::FunctionalGroup;
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;

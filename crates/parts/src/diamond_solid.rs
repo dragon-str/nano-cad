@@ -111,12 +111,38 @@ pub(crate) fn fill_profile(
     })
 }
 
+/// One free tetrahedral direction of a surface carbon.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct FreeDirection {
+    /// The surface carbon.
+    pub host: u32,
+    /// The slot of the direction, from 0 to 3.
+    pub slot: usize,
+    /// The unit direction from the carbon outwards.
+    pub direction_m: [f64; 3],
+}
+
+/// A group at one free direction, keyed by host and slot.
+///
+/// A free direction outside the plan takes one hydrogen.
+pub(crate) type CapPlan = HashMap<(u32, usize), crate::group::FunctionalGroup>;
+
 /// Bonds every first-shell carbon pair in `atoms` and caps the surface.
 ///
 /// The bonds use the diamond first-shell length. A carbon with fewer than
 /// four bonds receives one hydrogen for each missing tetrahedral direction,
 /// so every carbon reaches a valence of four.
 pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec<u32>, PartError> {
+    bond_atoms(topology, atoms)?;
+    let free = free_directions(topology, atoms);
+    cap_free(topology, &free, &CapPlan::new())
+}
+
+/// Adds one bond for every first-shell carbon pair in `atoms`.
+///
+/// The pass adds no cap. Call [`free_directions`] and then [`cap_free`] to
+/// fill the surface, or use [`bond_and_cap`] to do both.
+pub(crate) fn bond_atoms(topology: &mut Topology, atoms: &[u32]) -> Result<(), PartError> {
     let bond_m = diamond_bond_length_m();
     let tolerance_m = bond_m * 1.0e-3;
     let cell_m = bond_m;
@@ -130,7 +156,6 @@ pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec
         }
     }
 
-    let mut degree: HashMap<u32, u32> = HashMap::new();
     for &u in atoms {
         let position_u_m = match topology.position_m(u as usize) {
             Some(position) => position,
@@ -152,25 +177,58 @@ pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec
                         };
                         if (distance_m(position_u_m, position_v_m) - bond_m).abs() <= tolerance_m {
                             topology.add_bond(Bond::new(u, v, 1, BondType::Single))?;
-                            *degree.entry(u).or_insert(0) += 1;
-                            *degree.entry(v).or_insert(0) += 1;
                         }
                     }
                 }
             }
         }
     }
+    Ok(())
+}
 
-    let mut capped: Vec<u32> = Vec::new();
+/// Returns every free tetrahedral direction of the atoms in `atoms`.
+///
+/// A direction is free when the carbon has fewer than four bonds inside
+/// `atoms`, and when no atom of `atoms` already sits one bond along that
+/// direction.
+pub(crate) fn free_directions(topology: &Topology, atoms: &[u32]) -> Vec<FreeDirection> {
+    let bond_m = diamond_bond_length_m();
+    let tolerance_m = bond_m * 1.0e-3;
+    let cell_m = bond_m;
+    let members: std::collections::HashSet<u32> = atoms.iter().copied().collect();
+
+    let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
     for &index in atoms {
+        if let Some(position_m) = topology.position_m(index as usize) {
+            grid.entry(cell_of(position_m, cell_m))
+                .or_default()
+                .push(index);
+        }
+    }
+
+    // One pass over the bonds gives the degree of every member. A per-atom
+    // scan would be quadratic, and a gear has more than a hundred thousand
+    // atoms.
+    let mut degree: HashMap<u32, u32> = HashMap::new();
+    for bond in topology.bonds() {
+        if members.contains(&bond.u) && members.contains(&bond.v) {
+            *degree.entry(bond.u).or_insert(0) += 1;
+            *degree.entry(bond.v).or_insert(0) += 1;
+        }
+    }
+
+    let mut free = Vec::new();
+    for &index in atoms {
+        let Some(position_m) = topology.position_m(index as usize) else {
+            continue;
+        };
         if *degree.get(&index).unwrap_or(&0) >= 4 {
             continue;
         }
-        let position_m = match topology.position_m(index as usize) {
-            Some(position) => position,
-            None => continue,
-        };
-        for direction in tetrahedral_directions(position_m, DIAMOND_LATTICE_CONSTANT_M) {
+        for (slot, direction) in tetrahedral_directions(position_m, DIAMOND_LATTICE_CONSTANT_M)
+            .iter()
+            .enumerate()
+        {
             // An existing carbon neighbour sits at the C-C bond length along
             // this direction, so probe there, not at the C-H length.
             let neighbour_m = [
@@ -206,17 +264,51 @@ pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec
             if occupied {
                 continue;
             }
-            let candidate_m = [
-                position_m[0] + C_H_BOND_M * direction[0],
-                position_m[1] + C_H_BOND_M * direction[1],
-                position_m[2] + C_H_BOND_M * direction[2],
-            ];
-            let hydrogen = topology.add_atom(Atom::new(Element::HYDROGEN, candidate_m, 0.0, "H"));
-            topology.add_bond(Bond::new(index, hydrogen, 1, BondType::Single))?;
-            capped.push(hydrogen);
+            free.push(FreeDirection {
+                host: index,
+                slot,
+                direction_m: *direction,
+            });
         }
     }
-    Ok(capped)
+    free
+}
+
+/// Fills every free direction with a group from `plan`, or one hydrogen.
+///
+/// The returned indices are the atoms that fill the directions, in the order
+/// of `free`.
+pub(crate) fn cap_free(
+    topology: &mut Topology,
+    free: &[FreeDirection],
+    plan: &CapPlan,
+) -> Result<Vec<u32>, PartError> {
+    let mut added = Vec::new();
+    for direction in free {
+        let Some(host_position_m) = topology.position_m(direction.host as usize) else {
+            continue;
+        };
+        if let Some(group) = plan.get(&(direction.host, direction.slot)) {
+            let group_atoms = crate::group::add_group(
+                topology,
+                direction.host,
+                host_position_m,
+                direction.direction_m,
+                *group,
+            )?;
+            added.extend(group_atoms);
+            continue;
+        }
+        let candidate_m = [
+            host_position_m[0] + C_H_BOND_M * direction.direction_m[0],
+            host_position_m[1] + C_H_BOND_M * direction.direction_m[1],
+            host_position_m[2] + C_H_BOND_M * direction.direction_m[2],
+        ];
+        let hydrogen = topology.add_atom(Atom::new(Element::HYDROGEN, candidate_m, 0.0, "H"));
+        topology.add_bond(Bond::new(direction.host, hydrogen, 1, BondType::Single))?;
+        added.push(hydrogen);
+    }
+    Ok(added)
 }
 
 /// The four tetrahedral directions of the carbon at `position_m`.
