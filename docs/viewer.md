@@ -168,13 +168,16 @@ revolute joint, the fixed cam plate below the rotor, and 12 ejection rods, one
 for each pocket. Each rod lies along the radius of its pocket, sits in a radial
 bore in the rotor, and turns with the rotor, because it is captive in the rotor.
 
-The cam is a plate below the rotor, not a ring in the rotor plane. One circular
-groove is cut into the plate face, and the groove centre is offset from the
-rotor axis by 1.0 nm. The groove radius therefore runs from 2.0 nm to 4.0 nm, a
-stroke of 2.0 nm. Each rod carries a follower pin that hangs into the groove.
-As the rotor turns, one wall of the offset groove pushes a rod outward and the
-opposite wall pulls it back, so the eccentric groove gives the push and the pull
-with no return spring. All 12 rods move smoothly, each at its own phase.
+The cam is a plate below the rotor, not a ring in the rotor plane. One groove is
+cut into the plate face. The groove centreline dwells at a base radius of 2.0 nm,
+and it rises to 3.5 nm over a short ramp at the outlet azimuth. The rise is a
+raised cosine over a half-angle of 0.21 rad, about 12 degrees, and the stroke is
+1.5 nm. Each rod carries a follower pin that hangs into the groove. As the rotor
+turns, one wall of the groove pushes a rod outward and the opposite wall pulls it
+back, so the groove gives the push and the pull with no return spring. The ramp
+holds the stroke to a short arc, so a rod pushes the guest out only as its pocket
+meets the outlet, and the other eleven rods stay retracted. A fully extended rod
+stops at the rotor rim and cannot cross the housing.
 
 The plate top face is flush with the housing lower face, and its outer radius
 equals the housing outside radius, so the plate laps under the ring and the
@@ -182,7 +185,9 @@ housing holds it from below and around its rim. The rotor is turned by a drive
 shaft on the rotor axis. A key on the shaft sits in a keyway in the rotor bore,
 so the shaft and the rotor turn as one body. The rotor central bore is 1.5 nm.
 The panel lists the cam plate atoms and mass, the drive shaft atoms, the pin
-atoms, the rod count and the rod length with the other facts.
+atoms, the rod count and the rod length with the other facts. The **Hide housing
+top** control removes the housing body above the rotor mid-plane, so the rods,
+the follower pins and the cam groove below the rotor become visible.
 
 The rotor scene uses the scene schema of the gearbox. The design block is zero,
 and the viewer reads a zero module as "not a gearbox". It then turns the rotor
@@ -190,9 +195,9 @@ about `z` from the joint, instead of from the gear kinematics. The scorecard
 measures the gearbox, so the viewer clears it and states the reason. The real
 rate is 86000 revolutions per second, and no display shows that, so the viewer
 turns the rotor at 2.0 rad/s and the readout names it a display rate.
-The cam stroke is 2.0 nm, which is the full diameter of a pocket. The display
-gives every rod the eccentric phase for its own azimuth, so all 12 rods move and
-each pocket is swept once for each turn of the rotor.
+The cam stroke is 1.5 nm. The display gives every rod the profiled phase for its
+own azimuth, so a rod moves inside the ramp window and stays still outside it.
+Each pocket is swept once for each turn of the rotor.
 
 The example builds the mechanics only. It builds the follower pins and the drive
 shaft, but it models no contact force between a pin and the groove wall, no

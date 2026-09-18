@@ -9,24 +9,22 @@
 //!
 //! Each rod carries a follower pin that reaches down into the groove. The pin
 //! must lie on the groove and on its own radial guide, so the groove fixes the
-//! rod radius:
+//! rod radius. The groove is profiled, not a circle. Its centreline dwells at
+//! `groove_base_radius_m` for most of the turn, and rises to
+//! `groove_base_radius_m + groove_rise_m` at the azimuth `groove_angle_rad`.
+//! The rise is a raised cosine over the half-angle `groove_ramp_half_angle_rad`,
+//! so the rod stays retracted until the ramp and returns on the far side. The
+//! two walls of the groove drive the rod in both directions, so no return
+//! spring is needed and the motion is reversible. This is the off-centre cam of
+//! the reference: the rods "are forcibly ejected by rods thrust outward by the
+//! cam surface" (Freitas, *Nanomedicine* Volume I, Section 3.4.2).
 //!
-//! ```text
-//! rho(theta) = e*cos(theta - phi) + sqrt(R^2 - e^2*sin^2(theta - phi))
-//! ```
-//!
-//! with `e` the eccentricity, `R` the groove radius and `phi` the groove
-//! azimuth. The rod therefore moves out and in exactly once for each turn of
-//! the rotor, with a stroke of `2*e`. The two walls of the groove drive the rod
-//! in both directions, so no return spring is needed and the motion is
-//! reversible. This is the off-centre cam of the reference: the rods "are
-//! forcibly ejected by rods thrust outward by the cam surface" (Freitas,
-//! *Nanomedicine* Volume I, Section 3.4.2).
-//!
-//! The groove is a circle, so the stroke is a sinusoid and the rod has no
-//! dwell. A profiled groove would add a dwell. The groove is a radial key, not
-//! a tuned motion law. This generator builds no housing, rod, pin, sliding fit
-//! or drive. All lengths are SI metres and all angles are radians.
+//! The ramps hold the stroke to a short arc, so the rod pushes the guest out
+//! only as the pocket meets the housing outlet. The rise and the rod length are
+//! chosen together so a fully extended rod stops at the rotor rim and does not
+//! touch the housing. The groove is a radial key, not a tuned motion law. This
+//! generator builds no housing, rod, pin, sliding fit or drive. All lengths are
+//! SI metres and all angles are radians.
 
 use std::f64::consts::PI;
 
@@ -39,7 +37,12 @@ use crate::generator::PartGenerator;
 use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::port::{Dof, Port};
-use crate::shape::{Cylinder, Difference, Solid};
+use crate::shape::{Cylinder, Difference, Solid, Union};
+
+/// The number of follower positions that shape the groove centreline. Each
+/// position cuts a disk of the groove width, and the disks overlap into one
+/// slot. More samples make the ramp smoother.
+pub const GROOVE_SAMPLES: usize = 240;
 
 /// The parameter specs of [`CamPlateGenerator`], in a stable order.
 static CAM_PLATE_PARAMETERS: &[ParameterSpec] = &[
@@ -71,22 +74,31 @@ static CAM_PLATE_PARAMETERS: &[ParameterSpec] = &[
         "thickness of the cam plate along z in metres",
     ),
     ParameterSpec::new(
-        "groove_radius_m",
+        "groove_base_radius_m",
         Some(Unit::Metre),
-        3.0e-9,
+        2.0e-9,
         1.0e-10,
         5.0e-8,
         false,
-        "radius of the circular groove centreline in metres",
+        "radius of the groove centreline over the dwell in metres",
     ),
     ParameterSpec::new(
-        "groove_eccentricity_m",
+        "groove_rise_m",
         Some(Unit::Metre),
-        1.0e-9,
+        1.5e-9,
         0.0,
         5.0e-8,
         false,
-        "offset of the groove centre from the rotor axis in metres; the stroke is twice this",
+        "rise of the groove centreline above the dwell in metres; the stroke is this",
+    ),
+    ParameterSpec::new(
+        "groove_ramp_half_angle_rad",
+        None,
+        0.21,
+        1.0e-3,
+        PI,
+        false,
+        "half-angle of the lobe ramp in radians; the groove dwells outside it",
     ),
     ParameterSpec::new(
         "groove_width_m",
@@ -136,7 +148,7 @@ impl CamPlateGenerator {
     pub fn groove_port(&self) -> Port {
         let angle_rad = self.groove_angle_rad();
         let (sin_rad, cos_rad) = angle_rad.sin_cos();
-        let reach_m = self.groove_eccentricity_m() + self.groove_radius_m();
+        let reach_m = self.groove_base_radius_m() + self.groove_rise_m();
         let mut port = Port::named("groove");
         port.origin_m = [
             reach_m * cos_rad,
@@ -163,14 +175,19 @@ impl CamPlateGenerator {
         self.default_m("thickness_m")
     }
 
-    /// Returns the radius of the groove centreline, in metres.
-    pub fn groove_radius_m(&self) -> f64 {
-        self.default_m("groove_radius_m")
+    /// Returns the groove centreline radius over the dwell, in metres.
+    pub fn groove_base_radius_m(&self) -> f64 {
+        self.default_m("groove_base_radius_m")
     }
 
-    /// Returns the offset of the groove centre from the axis, in metres.
-    pub fn groove_eccentricity_m(&self) -> f64 {
-        self.default_m("groove_eccentricity_m")
+    /// Returns the groove centreline rise at the lobe, in metres.
+    pub fn groove_rise_m(&self) -> f64 {
+        self.default_m("groove_rise_m")
+    }
+
+    /// Returns the half-angle of the lobe ramp, in radians.
+    pub fn groove_ramp_half_angle_rad(&self) -> f64 {
+        self.default_m("groove_ramp_half_angle_rad")
     }
 
     /// Returns the full width of the groove, in metres.
@@ -188,17 +205,69 @@ impl CamPlateGenerator {
         self.default_m("groove_angle_rad")
     }
 
-    /// Returns the rod radius for a rotor azimuth, in metres.
+    /// Returns the groove centreline radius at `theta_rad`, in metres.
     ///
-    /// This is the position that the groove forces on a rod whose radial guide
-    /// points along `theta_rad`, measured from the groove azimuth.
+    /// `theta_rad` is measured from the groove azimuth. The centreline dwells at
+    /// the base radius outside the ramp. Inside the ramp it rises by a raised
+    /// cosine, so the rod reaches full extension at the groove azimuth and
+    /// returns with no step.
     pub fn rod_radius_m(&self, theta_rad: f64) -> f64 {
-        let eccentricity_m = self.groove_eccentricity_m();
-        let radius_m = self.groove_radius_m();
-        eccentricity_m * theta_rad.cos()
-            + (radius_m * radius_m - eccentricity_m * eccentricity_m * theta_rad.sin().powi(2))
-                .max(0.0)
-                .sqrt()
+        Self::rod_radius_with(
+            self.groove_base_radius_m(),
+            self.groove_rise_m(),
+            self.groove_ramp_half_angle_rad(),
+            theta_rad,
+        )
+    }
+
+    /// Returns the swept slot that the groove removes from the plate face.
+    ///
+    /// One disk of the groove width is placed at each of [`GROOVE_SAMPLES`]
+    /// follower positions around the centreline, and the disks union into one
+    /// slot. The disks overlap, so the slot keeps the groove width through the
+    /// ramp.
+    fn groove_slot_m(
+        base_radius_m: f64,
+        rise_m: f64,
+        ramp_rad: f64,
+        groove_width_m: f64,
+        groove_depth_m: f64,
+        groove_angle_rad: f64,
+        height_m: f64,
+    ) -> Box<dyn Solid> {
+        let half_width_m = 0.5 * groove_width_m;
+        let center_z_m = 0.5 * height_m - 0.5 * groove_depth_m;
+        let disk = |index: usize| {
+            let delta_rad = 2.0 * PI * index as f64 / GROOVE_SAMPLES as f64;
+            let profile = Self::rod_radius_with(base_radius_m, rise_m, ramp_rad, delta_rad);
+            let angle_rad = groove_angle_rad + delta_rad;
+            let (sin_rad, cos_rad) = angle_rad.sin_cos();
+            Cylinder {
+                center_m: [profile * cos_rad, profile * sin_rad, center_z_m],
+                radius_m: half_width_m,
+                height_m: groove_depth_m,
+            }
+        };
+        let mut slot: Box<dyn Solid> = Box::new(disk(0));
+        for index in 1..GROOVE_SAMPLES {
+            slot = Box::new(Union {
+                a: slot,
+                b: Box::new(disk(index)),
+            });
+        }
+        slot
+    }
+
+    /// Returns the dwell-and-ramp centreline radius for the given parameters.
+    ///
+    /// `delta_rad` is the angle from the groove azimuth. It is wrapped to
+    /// `(-PI, PI]`, so a caller may pass an unwrapped sample angle.
+    fn rod_radius_with(base_radius_m: f64, rise_m: f64, ramp_rad: f64, delta_rad: f64) -> f64 {
+        let delta_rad = (delta_rad + PI).rem_euclid(2.0 * PI) - PI;
+        if delta_rad.abs() >= ramp_rad {
+            return base_radius_m;
+        }
+        base_radius_m + rise_m * 0.5 * (1.0 + (PI * delta_rad / ramp_rad).cos())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -206,18 +275,13 @@ impl CamPlateGenerator {
         outer_radius_m: f64,
         inner_radius_m: f64,
         thickness_m: f64,
-        groove_radius_m: f64,
-        groove_eccentricity_m: f64,
+        base_radius_m: f64,
+        rise_m: f64,
+        ramp_rad: f64,
         groove_width_m: f64,
         groove_depth_m: f64,
         groove_angle_rad: f64,
     ) -> Box<dyn Solid> {
-        let (sin_rad, cos_rad) = groove_angle_rad.sin_cos();
-        let center_m = [
-            groove_eccentricity_m * cos_rad,
-            groove_eccentricity_m * sin_rad,
-            0.5 * thickness_m - 0.5 * groove_depth_m,
-        ];
         let plate = Difference {
             outer: Box::new(Cylinder {
                 center_m: [0.0, 0.0, 0.0],
@@ -230,21 +294,18 @@ impl CamPlateGenerator {
                 height_m: thickness_m,
             }),
         };
-        let groove = Difference {
-            outer: Box::new(Cylinder {
-                center_m,
-                radius_m: groove_radius_m + 0.5 * groove_width_m,
-                height_m: groove_depth_m,
-            }),
-            inner: Box::new(Cylinder {
-                center_m,
-                radius_m: groove_radius_m - 0.5 * groove_width_m,
-                height_m: groove_depth_m,
-            }),
-        };
+        let groove = Self::groove_slot_m(
+            base_radius_m,
+            rise_m,
+            ramp_rad,
+            groove_width_m,
+            groove_depth_m,
+            groove_angle_rad,
+            thickness_m,
+        );
         Box::new(Difference {
             outer: Box::new(plate),
-            inner: Box::new(groove),
+            inner: groove,
         })
     }
 
@@ -274,8 +335,9 @@ impl PartGenerator for CamPlateGenerator {
         let outer_radius_m = resolved.require("outer_radius_m")?;
         let inner_radius_m = resolved.require("inner_radius_m")?;
         let thickness_m = resolved.require("thickness_m")?;
-        let groove_radius_m = resolved.require("groove_radius_m")?;
-        let groove_eccentricity_m = resolved.require("groove_eccentricity_m")?;
+        let groove_base_radius_m = resolved.require("groove_base_radius_m")?;
+        let groove_rise_m = resolved.require("groove_rise_m")?;
+        let groove_ramp_half_angle_rad = resolved.require("groove_ramp_half_angle_rad")?;
         let groove_width_m = resolved.require("groove_width_m")?;
         let groove_depth_m = resolved.require("groove_depth_m")?;
         let groove_angle_rad = resolved.require("groove_angle_rad")?;
@@ -286,10 +348,10 @@ impl PartGenerator for CamPlateGenerator {
                  {inner_radius_m} m, so the plate has no material"
             )));
         }
-        if groove_width_m >= groove_radius_m {
+        if groove_width_m >= 2.0 * groove_base_radius_m {
             return Err(PartError::InvalidGeometry(format!(
-                "the groove width {groove_width_m} m is at or above its radius \
-                 {groove_radius_m} m, so the groove has no centreline"
+                "the groove width {groove_width_m} m is at or above twice the base radius \
+                 {groove_base_radius_m} m, so the groove has no centreline"
             )));
         }
         if groove_depth_m > thickness_m {
@@ -298,14 +360,14 @@ impl PartGenerator for CamPlateGenerator {
                  {thickness_m} m"
             )));
         }
-        let reach_m = groove_eccentricity_m + groove_radius_m + 0.5 * groove_width_m;
+        let reach_m = groove_base_radius_m + groove_rise_m + 0.5 * groove_width_m;
         if reach_m > outer_radius_m {
             return Err(PartError::InvalidGeometry(format!(
                 "the groove reaches {reach_m} m and breaks the outer radius \
                  {outer_radius_m} m"
             )));
         }
-        let near_m = groove_radius_m - 0.5 * groove_width_m - groove_eccentricity_m;
+        let near_m = groove_base_radius_m - 0.5 * groove_width_m;
         if near_m <= inner_radius_m {
             return Err(PartError::InvalidGeometry(format!(
                 "the groove comes within {near_m} m of the axis and opens into the \
@@ -317,8 +379,9 @@ impl PartGenerator for CamPlateGenerator {
             outer_radius_m,
             inner_radius_m,
             thickness_m,
-            groove_radius_m,
-            groove_eccentricity_m,
+            groove_base_radius_m,
+            groove_rise_m,
+            groove_ramp_half_angle_rad,
             groove_width_m,
             groove_depth_m,
             groove_angle_rad,
@@ -358,21 +421,30 @@ mod tests {
             .count()
     }
 
-    fn in_groove_m(position_m: [f64; 3]) -> bool {
+    fn groove_centers_m() -> Vec<[f64; 2]> {
         let angle_rad = CamPlateGenerator.groove_angle_rad();
-        let (sin_rad, cos_rad) = angle_rad.sin_cos();
-        let center_m = [
-            CamPlateGenerator.groove_eccentricity_m() * cos_rad,
-            CamPlateGenerator.groove_eccentricity_m() * sin_rad,
-        ];
-        let distance_m = (position_m[0] - center_m[0]).hypot(position_m[1] - center_m[1]);
+        (0..GROOVE_SAMPLES)
+            .map(|index| {
+                let delta_rad = 2.0 * PI * index as f64 / GROOVE_SAMPLES as f64;
+                let profile_m = CamPlateGenerator.rod_radius_m(delta_rad);
+                let theta_rad = angle_rad + delta_rad;
+                let (sin_rad, cos_rad) = theta_rad.sin_cos();
+                [profile_m * cos_rad, profile_m * sin_rad]
+            })
+            .collect()
+    }
+
+    fn in_groove_m(position_m: [f64; 3], centers_m: &[[f64; 2]]) -> bool {
         let half_width_m = 0.5 * CamPlateGenerator.groove_width_m();
         let top_m = 0.5 * CamPlateGenerator.thickness_m();
         let bottom_m = top_m - CamPlateGenerator.groove_depth_m();
-        distance_m > CamPlateGenerator.groove_radius_m() - half_width_m + 1.0e-12
-            && distance_m < CamPlateGenerator.groove_radius_m() + half_width_m - 1.0e-12
-            && position_m[2] < top_m - 1.0e-12
-            && position_m[2] > bottom_m + 1.0e-12
+        if position_m[2] >= top_m - 1.0e-12 || position_m[2] <= bottom_m + 1.0e-12 {
+            return false;
+        }
+        centers_m.iter().any(|center_m| {
+            (position_m[0] - center_m[0]).hypot(position_m[1] - center_m[1])
+                < half_width_m - 1.0e-12
+        })
     }
 
     #[test]
@@ -404,6 +476,7 @@ mod tests {
     #[test]
     fn the_groove_is_void() {
         let part = plate();
+        let centers_m = groove_centers_m();
         for index in 0..part.atom_count() {
             if part.topology.element(index) != Some(Element::CARBON) {
                 continue;
@@ -412,7 +485,7 @@ mod tests {
                 continue;
             };
             assert!(
-                !in_groove_m(position_m),
+                !in_groove_m(position_m, &centers_m),
                 "an atom at {position_m:?} m sits inside the groove"
             );
         }
@@ -434,14 +507,15 @@ mod tests {
     }
 
     #[test]
-    fn the_groove_radius_follows_the_eccentricity() {
-        let e_m = CamPlateGenerator.groove_eccentricity_m();
-        let radius_m = CamPlateGenerator.groove_radius_m();
-        let near_m = CamPlateGenerator.rod_radius_m(0.0);
-        let far_m = CamPlateGenerator.rod_radius_m(PI);
-        assert!((near_m - (radius_m + e_m)).abs() < 1.0e-18);
-        assert!((far_m - (radius_m - e_m)).abs() < 1.0e-18);
-        assert!((near_m - far_m - 2.0 * e_m).abs() < 1.0e-18);
+    fn the_groove_dwells_and_rises_at_the_lobe() {
+        let base_m = CamPlateGenerator.groove_base_radius_m();
+        let rise_m = CamPlateGenerator.groove_rise_m();
+        let ramp_rad = CamPlateGenerator.groove_ramp_half_angle_rad();
+        assert!((CamPlateGenerator.rod_radius_m(0.0) - (base_m + rise_m)).abs() < 1.0e-18);
+        assert!((CamPlateGenerator.rod_radius_m(ramp_rad) - base_m).abs() < 1.0e-18);
+        assert!((CamPlateGenerator.rod_radius_m(PI) - base_m).abs() < 1.0e-18);
+        let mid_m = CamPlateGenerator.rod_radius_m(0.5 * ramp_rad);
+        assert!(mid_m > base_m && mid_m < base_m + rise_m);
     }
 
     #[test]
@@ -449,8 +523,7 @@ mod tests {
         let port = CamPlateGenerator.groove_port();
         let angle_rad = CamPlateGenerator.groove_angle_rad();
         let (sin_rad, cos_rad) = angle_rad.sin_cos();
-        let reach_m =
-            CamPlateGenerator.groove_eccentricity_m() + CamPlateGenerator.groove_radius_m();
+        let reach_m = CamPlateGenerator.groove_base_radius_m() + CamPlateGenerator.groove_rise_m();
         assert!((port.origin_m[0] - reach_m * cos_rad).abs() < 1.0e-18);
         assert!((port.origin_m[1] - reach_m * sin_rad).abs() < 1.0e-18);
         assert_eq!(port.dof, Dof::Fixed);
@@ -467,22 +540,21 @@ mod tests {
     #[test]
     fn a_groove_that_breaks_the_rim_is_refused() {
         let mut parameters = ParameterSet::new();
-        parameters.set("groove_eccentricity_m", 5.0e-9);
+        parameters.set("groove_rise_m", 10.0e-9);
         assert!(CamPlateGenerator.generate(&parameters).is_err());
     }
 
     #[test]
     fn a_groove_that_opens_into_the_hole_is_refused() {
         let mut parameters = ParameterSet::new();
-        parameters.set("groove_radius_m", 1.0e-9);
-        parameters.set("groove_eccentricity_m", 2.0e-9);
+        parameters.set("groove_base_radius_m", 1.0e-9);
         assert!(CamPlateGenerator.generate(&parameters).is_err());
     }
 
     #[test]
     fn a_groove_wider_than_its_radius_is_refused() {
         let mut parameters = ParameterSet::new();
-        parameters.set("groove_width_m", 3.0e-9);
+        parameters.set("groove_width_m", 4.0e-9);
         assert!(CamPlateGenerator.generate(&parameters).is_err());
     }
 

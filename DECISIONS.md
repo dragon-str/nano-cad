@@ -1560,3 +1560,58 @@ models no contact force between the pin and the groove wall, no torque on the
 drive shaft, and no external machine. The work of one ejection stays the
 measured barrier in `crates/meter/src/ejection.rs`, not a force on a simulated
 rod. The scene still holds no guest, no solvent and no molecule in a pocket.
+
+## ADR-0071
+
+### The cam groove dwells, and the cutaway shows the mechanism
+
+Status: accepted. This supersedes ADR-0070.
+
+ADR-0070 moved the cam below the rotor, but the groove stayed a circle. A
+circular groove gives a sinusoid, so a rod moved for the whole turn. The user
+reported three defects. First, an extended rod overlapped the housing atoms.
+Second, a rod pushed the guest out too early, before its pocket reached the
+outlet. Third, the mechanism below the housing was not visible.
+
+The overlap came from the rod length. The groove centreline ran from 2.0e-9 m to
+4.0e-9 m, and the rod was 3.5e-9 m long, so a rod tip reached 7.5e-9 m. The
+housing chamber radius is 7.2e-9 m, so the tip crossed the housing ring at the
+outlet. The groove rise is now 1.5e-9 m, so the centreline runs from 2.0e-9 m to
+3.5e-9 m and a rod tip stops at 7.0e-9 m, which is the rotor rim.
+`build_rotor_scene` refuses a design whose fully extended tip passes the rim.
+
+The groove is now profiled. Its centreline dwells at `groove_base_radius_m`, and
+it rises by `groove_rise_m` over a raised cosine of half-angle
+`groove_ramp_half_angle_rad` about the azimuth `groove_angle_rad`. The default
+ramp is 0.21 rad, about 12 degrees, which is close to the housing outlet window
+of about 8 degrees at the chamber radius. A rod therefore pushes only as its
+pocket meets the outlet, and it stays retracted for the rest of the turn.
+`CamPlateGenerator` sweeps 240 disks of the groove width along the centreline
+into one slot, so the groove keeps its width through the ramp. The eccentric
+circle of ADR-0070 is gone.
+
+The viewer uses the same profile. It gives a rod an offset of
+`0.5 * (1 + cos(pi * delta / ramp))` inside the ramp and zero outside it, where
+`delta` is the rod azimuth less the groove azimuth. The stroke is 1.5e-9 m.
+
+The viewer also shows the mechanism. `site/index.html` adds a **Hide housing
+top** control, and `viewer.js` hides the housing body atoms above the rotor
+mid-plane when the control is on. `uploadAtoms` and the 2D fallback both apply
+the cutaway, so the rods, the follower pins and the cam groove below the rotor
+become visible.
+
+The measured scene now holds 157857 atoms and 2.2505103227300436e-21 kg. The cam
+plate holds 55173 atoms, the housing 39848, the rotor body 54844 (49708 rotor and
+5136 shaft), and each rod 666 (602 rod and 64 pin). The headless harness
+measured the rod peak as 1.475e-9 m, which is 98.4 percent of the stroke and is
+limited by the sample step. The worst deviation from the profiled model was
+3.2e-12 m. The cam plate did not move. The largest rod radius over a turn was
+6.91e-9 m, below the housing inner radius of 7.2e-9 m, so no rod crosses the
+housing. The harness reported zero console errors.
+
+Limits on this work. The ramp angle and the rise are chosen values, not a tuned
+motion law, so a profiled groove could still change the acceleration. The pin
+slides in the groove; a roller follower would roll. The scene models no contact
+force between the pin and the groove wall, no torque on the drive shaft, and no
+external machine. The scene still holds no guest, no solvent and no molecule in
+a pocket.

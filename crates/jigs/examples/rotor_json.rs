@@ -127,9 +127,9 @@ fn main() {
     let pocket_radius_m = resolved_m(&SortingRotorGenerator, "pocket_radius_m");
     let pocket_inner_m = pocket_orbit_m - pocket_radius_m;
     let tip_length_m = resolved_m(&EjectionRodGenerator, "tip_length_m");
-    let cam_retract_m =
-        CamPlateGenerator.groove_radius_m() - CamPlateGenerator.groove_eccentricity_m();
-    let stroke_m = 2.0 * CamPlateGenerator.groove_eccentricity_m();
+    let cam_retract_m = CamPlateGenerator.groove_base_radius_m();
+    let stroke_m = CamPlateGenerator.groove_rise_m();
+    let ramp_rad = CamPlateGenerator.groove_ramp_half_angle_rad();
     let rod_length_m = pocket_inner_m - cam_retract_m;
     let rod = match EjectionRodGenerator
         .generate(&ParameterSet::new().with("shaft_length_m", rod_length_m - tip_length_m))
@@ -189,7 +189,7 @@ fn main() {
          \"shaft_atoms\":{shaft_atoms},\"shaft_mass_kg\":{shaft_mass_kg:e},\
          \"pin_atoms\":{pin_atoms},\"pin_mass_kg\":{pin_mass_kg:e},\
          \"rod_count\":{ROD_COUNT},\"rod_atoms\":{rod_atoms},\"rod_mass_kg\":{rod_mass_kg:e},\
-         \"rod_length_m\":{rod_length_m:e},\"rod_stroke_m\":{stroke_m:e},\
+         \"rod_length_m\":{rod_length_m:e},\"rod_stroke_m\":{stroke_m:e},\"rod_ramp_rad\":{ramp_rad:e},\
          \"total_atoms\":{total_atoms},\"total_mass_kg\":{total_mass_kg:e},\
          \"rate_rad_per_s\":{rate_rad_per_s:e},\"revolutions_per_s\":{revolutions_per_s:e},\
          \"rim_speed_m_per_s\":{rim_speed_m_per_s:e},\"pocket_cycle_s\":{pocket_cycle_s:e},\

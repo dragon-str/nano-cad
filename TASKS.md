@@ -1469,3 +1469,38 @@ drive shaft.
     `cargo clippy --workspace --all-targets -- -D warnings` clean;
     `cargo test --workspace` -> 759 passed; `python3 site/check.py` -> all
     checks passed; `node site/render_atoms.test.js` -> 11 passed.
+
+## M18 — Profile the cam groove and show the mechanism
+
+- [x] **M18-01** Profile the cam groove and hold the rods inside the rim.
+  - Result: `CamPlateGenerator` replaces `groove_radius_m` and
+    `groove_eccentricity_m` with `groove_base_radius_m` (2.0e-9 m),
+    `groove_rise_m` (1.5e-9 m) and `groove_ramp_half_angle_rad` (0.21 rad). The
+    centreline dwells at the base and rises by a raised cosine over the ramp, so
+    a rod pushes only as its pocket meets the outlet. The groove is a slot of
+    240 overlapping disks, not a circle. `build_rotor_scene` refuses a design
+    whose fully extended rod tip passes the rotor rim, and the rod tip now stops
+    at 7.0e-9 m, inside the housing inner radius of 7.2e-9 m. The stroke falls
+    from 2.0e-9 m to 1.5e-9 m.
+  - Verification: `cargo test -p nanocad-parts cam_plate` -> 11 passed. The
+    dwell test asserts the profile at the lobe, at the ramp edge and at the far
+    side. `cargo test -p nanocad-jigs rotor_scene` -> 11 passed, with the cam
+    plate count updated to 55173.
+
+- [x] **M18-02** Add the housing cutaway and animate the profiled groove.
+  - Result: `site/index.html` adds a **Hide housing top** control.
+    `site/viewer.js` hides the housing body above the rotor mid-plane, and it
+    gives every rod the windowed profile `0.5 * (1 + cos(pi * delta / ramp))`
+    inside the ramp and zero outside it. `rotor_json` reports `rod_ramp_rad`.
+  - Verification: the headless harness measured the rod peak as 1.475e-9 m
+    (98.4 percent of the stroke), the worst deviation from the model as
+    3.2e-12 m, the cam drift as zero and the largest rod radius as 6.91e-9 m,
+    below the housing inner 7.2e-9 m. The cutaway hid 19376 housing atoms and
+    left the rotor atoms unchanged. Zero console errors.
+
+- [x] **M18-03** Update the docs and record the decision.
+  - Result: `docs/viewer.md` describes the dwell-and-ramp groove, the 1.5 nm
+    stroke and the cutaway. ADR-0071 records the rim cap, the profiled groove
+    and the cutaway, and it supersedes ADR-0070.
+  - Verification: `python3 scripts/build_docs_site.py` regenerates the pages;
+    `python3 site/check.py` passes.

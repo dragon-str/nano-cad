@@ -25,6 +25,7 @@
   var aoToggle = document.getElementById("toggle-ao");
   var atomSizeInput = document.getElementById("atom-size");
   var clipInput = document.getElementById("clip");
+  var housingTopToggle = document.getElementById("toggle-housing-top");
   var speedInput = document.getElementById("speed");
   var scaleBarLine = document.getElementById("scale-bar-line");
   var scaleBarLabel = document.getElementById("scale-bar-label");
@@ -104,6 +105,7 @@
     atomSize: 1,
     clip: 1,
     hiddenElements: {},
+    hideHousingTop: false,
   };
   var atomCache = null;
   var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0, kind: "gears" };
@@ -113,14 +115,20 @@
   var ROTOR_DISPLAY_RATE_RAD_PER_S = 2.0;
 
   /* Each rod pushes the guest out of its pocket by this distance at full
-     stroke. It matches twice the groove_eccentricity_m default in
-     crates/parts/src/cam_plate.rs. The eccentric groove drives one rod out and
-     pulls it back once for each rotor turn. */
-  var ROTOR_ROD_STROKE_M = 2.0e-9;
+     stroke. It matches the groove_rise_m default in
+     crates/parts/src/cam_plate.rs. The profiled groove holds the rod at its
+     base radius over the dwell, then drives it out and back over the ramp once
+     for each rotor turn. */
+  var ROTOR_ROD_STROKE_M = 1.5e-9;
 
   /* The groove centre angle in radians. It matches the groove_angle_rad default
      in crates/parts/src/cam_plate.rs, which faces the housing outlet at PI. */
   var ROTOR_CAM_LOBE_RAD = Math.PI;
+
+  /* The half-angle of the groove ramp in radians. It matches the
+     groove_ramp_half_angle_rad default in crates/parts/src/cam_plate.rs. Outside
+     this window the rod does not move. */
+  var ROTOR_CAM_RAMP_RAD = 0.21;
 
   var hoverAtom = -1;
   var measure = [];
@@ -373,12 +381,21 @@
   }
 
   function hasHiddenElements() {
+    if (display.hideHousingTop) {
+      return true;
+    }
     for (var key in display.hiddenElements) {
       if (display.hiddenElements[key]) {
         return true;
       }
     }
     return false;
+  }
+
+  /* True when the rotor cutaway hides this atom: the housing body above the
+     rotor mid-plane. The cutaway shows the rods and the cam groove below. */
+  function isHiddenByCutaway(atom) {
+    return display.hideHousingTop && atom.body === 0 && atom.position_m[2] > 0;
   }
 
   function uploadAtoms() {
@@ -393,9 +410,13 @@
     }
     var kept = [];
     for (var i = 0; i < cache.atoms.length; i += 1) {
-      if (!display.hiddenElements[cache.atoms[i].element]) {
-        kept.push(i);
+      if (display.hiddenElements[cache.atoms[i].element]) {
+        continue;
       }
+      if (isHiddenByCutaway(cache.atoms[i])) {
+        continue;
+      }
+      kept.push(i);
     }
     var position = new Float32Array(kept.length * 3);
     var radii = new Float32Array(kept.length);
@@ -449,7 +470,10 @@
           var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
           var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
           delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-          var ratio = 0.5 * (1 + Math.cos(delta));
+          var ratio =
+            Math.abs(delta) < ROTOR_CAM_RAMP_RAD
+              ? 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_CAM_RAMP_RAD))
+              : 0;
           var offset = motion.rod_stroke_m * ratio;
           ox = x * cc - y * sc + Math.cos(rodAngle) * offset;
           oy = x * sc + y * cc + Math.sin(rodAngle) * offset;
@@ -954,7 +978,7 @@
     }
     var groups = new Map();
     for (var i = 0; i < atoms.length; i += 1) {
-      if (display.hiddenElements[atoms[i].element]) {
+      if (display.hiddenElements[atoms[i].element] || isHiddenByCutaway(atoms[i])) {
         continue;
       }
       var world = atomPoint(i);
@@ -1161,7 +1185,9 @@
         "joints: " + scene.device.joints.length + " (revolute, prismatic)",
         "atoms: " + scene.atomistic.atom_count,
         "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
-        "cam groove centre at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg",
+        "cam groove centre at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg," +
+          " ramp +/-" + ((ROTOR_CAM_RAMP_RAD * 180) / Math.PI).toFixed(0) + " deg",
+        "cutaway: hide the housing top to see the groove",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1481,6 +1507,11 @@
     display.clip = parseFloat(clipInput.value);
     draw();
   });
+  housingTopToggle.addEventListener("change", function () {
+    display.hideHousingTop = housingTopToggle.checked;
+    uploadAtoms();
+    draw();
+  });
   speedInput.addEventListener("input", function () {
     motion.speed = parseFloat(speedInput.value);
   });
@@ -1795,7 +1826,7 @@
     );
     row(
       "cam plate " + payload.cam_atoms + " atoms, " + exponent(payload.cam_mass_kg) +
-      " kg, fixed below the rotor, one eccentric groove with a " +
+      " kg, fixed below the rotor, one profiled groove with a dwell and a " +
       (Number(payload.rod_stroke_m) * 1e9).toFixed(1) + " nm stroke"
     );
     row(

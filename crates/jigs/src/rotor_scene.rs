@@ -14,9 +14,10 @@
 //! - Body 14 is the cam plate. It is fixed to the housing and shares the rotor
 //!   axis. The plate lies below the rotor, and its face laps under the housing
 //!   ring, so the housing holds the plate from below and around its rim. One
-//!   circular groove is cut into the plate face. The groove centre is offset
-//!   from the rotor axis, so one wall of the groove pushes a rod out and the
-//!   opposite wall pulls it back, with no spring.
+//!   groove is cut into the plate face. The groove dwells at a base radius for
+//!   most of the turn, then rises over a short ramp at the outlet, so a rod
+//!   stays retracted until its pocket reaches the outlet. The two walls of the
+//!   groove push the rod out and pull it back, with no spring.
 //! - Each rod carries a follower pin. The pin hangs from the rod into the
 //!   groove, so the groove walls drive the rod.
 //! - The design block is zero. Its fields describe a gear set, and a rotor has
@@ -31,13 +32,15 @@
 //! # Scope limit
 //!
 //! The scene does not include a binding site, a guest molecule, a solvent or
-//! an ion, so it does not show molecular selectivity. The eccentric groove
-//! gives one out stroke and one return stroke for each rotor turn. It is a
-//! radial key and not a tuned motion law, so the rod acceleration is not
-//! designed. The pin slides in the groove; a roller follower would roll. The
-//! scene omits the contact force between the pin and the groove, the torque on
-//! the drive shaft, and the machine that turns the shaft. The work of one
-//! ejection stays a measured barrier in [`nanocad_meter`], not a rod force.
+//! an ion, so it does not show molecular selectivity. The profiled groove gives
+//! one out stroke and one return stroke for each rotor turn, and it holds the
+//! stroke to a short ramp, so the rod pushes the guest out only as the pocket
+//! meets the housing outlet. It is a radial key and not a tuned motion law, so
+//! the rod acceleration is not designed. The pin slides in the groove; a roller
+//! follower would roll. The scene omits the contact force between the pin and
+//! the groove, the torque on the drive shaft, and the machine that turns the
+//! shaft. The work of one ejection stays a measured barrier in
+//! [`nanocad_meter`], not a rod force.
 
 use nanocad_model::Part;
 use nanocad_parts::{
@@ -184,19 +187,26 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let rotor_bore_m = default_m(&SortingRotorGenerator, "bore_radius_m");
     let rod_radius_m = default_m(&EjectionRodGenerator, "shaft_radius_m");
     let tip_length_m = default_m(&EjectionRodGenerator, "tip_length_m");
-    let groove_radius_m = CamPlateGenerator.groove_radius_m();
-    let groove_eccentricity_m = CamPlateGenerator.groove_eccentricity_m();
+    let groove_base_radius_m = CamPlateGenerator.groove_base_radius_m();
+    let groove_rise_m = CamPlateGenerator.groove_rise_m();
     let groove_depth_m = CamPlateGenerator.groove_depth_m();
     let groove_width_m = CamPlateGenerator.groove_width_m();
-    let cam_retract_m = groove_radius_m - groove_eccentricity_m;
-    let cam_extend_m = groove_radius_m + groove_eccentricity_m;
+    let cam_retract_m = groove_base_radius_m;
     if cam_retract_m <= rotor_bore_m + rod_radius_m {
         return Err(SceneError::Part(format!(
             "the cam groove retracts to {cam_retract_m} m, which reaches the rotor bore \
              {rotor_bore_m} m plus the rod radius {rod_radius_m} m"
         )));
     }
+    let disc_radius_m = default_m(&SortingRotorGenerator, "disc_radius_m");
     let rod_length_m = pocket_inner_m - cam_retract_m;
+    let rod_tip_m = pocket_inner_m + groove_rise_m;
+    if rod_tip_m > disc_radius_m + 1.0e-15 {
+        return Err(SceneError::Part(format!(
+            "the rod reaches {rod_tip_m} m at full stroke, past the rotor rim {disc_radius_m} m, \
+             so it would cross the housing"
+        )));
+    }
     let shaft_length_m = rod_length_m - tip_length_m;
     if shaft_length_m <= 0.0 {
         return Err(SceneError::Part(
@@ -206,7 +216,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let rod = EjectionRodGenerator
         .generate(&ParameterSet::new().with("shaft_length_m", shaft_length_m))?;
     let half_shaft_m = 0.5 * shaft_length_m;
-    let rod_reach_m = half_shaft_m + tip_length_m;
     let radial_offset_m = cam_retract_m + half_shaft_m;
 
     let shaft_radius_m = default_m(&DriveShaftGenerator, "shaft_radius_m");
@@ -237,8 +246,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             2.0 * pin_head_radius_m
         )));
     }
-    let _ = (rod_reach_m, cam_extend_m);
-
     let housing_atoms = scene_atoms(&housing, HOUSING_BODY, HOUSING_ROLE, "rotor_housing");
     let mut rotor_atoms = scene_atoms(&rotor, ROTOR_BODY, ROTOR_ROLE, "sorting_rotor");
     rotor_atoms.extend(scene_atoms(&shaft, ROTOR_BODY, ROTOR_ROLE, SHAFT_PART_ID));
@@ -591,7 +598,7 @@ mod tests {
         }
         assert_eq!(counts[HOUSING_BODY], 39848);
         assert_eq!(counts[ROTOR_BODY], 54844);
-        assert_eq!(counts[CAM_BODY], 54953);
+        assert_eq!(counts[CAM_BODY], 55173);
         assert_eq!(counts[ROD_BODY_FIRST], 666);
         for index in 0..ROD_COUNT {
             assert_eq!(
