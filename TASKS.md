@@ -1137,3 +1137,38 @@ ADR-0063.
     `a_pair_beyond_the_cutoff_contributes_nothing`. The nonbonded tests check
     the mixing rule, its symmetry, the `sigma` conversion and the refusal of
     gold. See ADR-0064.
+
+- [x] **M14-05** Add a binding pocket generator.
+  - Result: `crates/parts/src/pocket.rs` adds `BindingPocketGenerator`, id
+    `binding_pocket`. The part is a diamond block with a cylindrical well,
+    and the well opens at the top face. Parameters: `pocket_radius_m`,
+    `pocket_depth_m`, `wall_m`, `thickness_m` and `wall_group`.
+    `wall_group` is an index into `FUNCTIONAL_GROUPS`, because a parameter
+    set holds numbers.
+    The wall decoration is geometric. `diamond_solid::free_directions`
+    gives the free tetrahedral bond on every surface carbon. A direction
+    decorates when a short step along it lands inside the cavity. The part
+    then attaches the chosen `FunctionalGroup` at each such site, and a
+    hydrogen everywhere else.
+    Two helpers size the pocket from a guest: `pocket_radius_for(guest,
+    clearance_m)` and `guest_clearance_m(guest)`. The wall contact
+    distance is the carbon nonbonded distance from `nonbonded.rs`.
+    The generator joins the registry under `device`, so the library now
+    holds 21 generators in 4 categories. `crates/parts/examples/pocket_json.rs`
+    prints the geometry and the fit of every guest as one line of JSON.
+  - Verification: `cargo test -p nanocad-parts pocket` -> 20 passed;
+    `cargo test -p nanocad-parts` -> 194 passed; `cargo test --workspace`
+    -> 682 passed. A wide default well (radius 1.0e-9 m) holds 6166 atoms,
+    decorates 116 sites, and fits every guest, so it selects nothing. A
+    guest-scale well (radius 2.3e-10 m) holds 2376 atoms and decorates 40
+    sites, and it fits methanol, ethanol and dimethyl ether while it
+    rejects benzene and cyclohexane. The test
+    `a_guest_scale_well_separates_the_size_classes` holds that result.
+    Honest limits, and the tests state them: the lattice is discrete, so
+    the well radius moves in steps and a tenth of an Angstrom can change
+    nothing (`the_well_radius_resolves_in_lattice_steps`); the decorated
+    groups intrude into the nominal cavity, so the effective opening is
+    smaller than `pocket_radius_m`; and size alone cannot separate the
+    ethanol and dimethyl ether isomer pair, because they are the same size
+    class. Only the wall chemistry can separate them, and M14-06 measures
+    that. See ADR-0065.

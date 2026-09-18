@@ -25,6 +25,7 @@ pub mod nanotube;
 pub mod parameter;
 pub mod placement;
 pub mod planetary;
+mod pocket;
 pub mod port;
 pub mod registry;
 pub mod respirocyte;
@@ -43,7 +44,7 @@ pub use dislocation::{
 pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
 pub use generator::{PartGenerator, PartSchema};
-pub use group::FunctionalGroup;
+pub use group::{FunctionalGroup, FUNCTIONAL_GROUPS};
 pub use guest::{
     build_guest, build_guest_part, guest, guests, Guest, GuestAtom, GuestBond, AVOGADRO_PER_MOL,
 };
@@ -55,6 +56,9 @@ pub use parameter::{ParameterSet, ParameterSpec};
 pub use placement::{assembly_document, place, PlacedPart};
 pub use planetary::{
     planetary_constraint_holds, PlanetaryDesign, PlanetaryGenerator, PlanetarySet,
+};
+pub use pocket::{
+    pocket_radius_for, wall_contact_distance_m, wall_well_depth_j, BindingPocketGenerator,
 };
 pub use port::{connect, mate_offset_m, Dof, Port, PortFrame};
 pub use registry::{

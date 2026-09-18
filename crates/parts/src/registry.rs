@@ -22,6 +22,7 @@ use crate::lattice::{DiamondGenerator, GraphiteGenerator};
 use crate::nanotube::NanotubeGenerator;
 use crate::parameter::ParameterSet;
 use crate::planetary::PlanetaryGenerator;
+use crate::pocket::BindingPocketGenerator;
 use crate::respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotorGenerator, RespirocyteTankGenerator,
 };
@@ -48,6 +49,7 @@ static RESPIROCYTE_PUMP: RespirocytePumpGenerator = RespirocytePumpGenerator;
 static RESPIROCYTE_TANK: RespirocyteTankGenerator = RespirocyteTankGenerator;
 static SORTING_ROTOR: SortingRotorGenerator = SortingRotorGenerator;
 static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
+static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -134,6 +136,10 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &ROTOR_HOUSING,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &BINDING_POCKET,
         category: "device",
     },
 ];

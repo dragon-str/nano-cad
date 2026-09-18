@@ -1191,3 +1191,56 @@ against experiment.
 UFF is also known to be weak for metals and for inorganic compounds, and most
 of its entries were never validated. Every result that uses this table is a
 model result for that reason as well.
+
+## ADR-0065
+
+### The binding pocket is a decorated well in the diamond lattice
+
+Status: accepted.
+
+A pocket that sorts one molecule from another needs two properties. It needs a
+cavity that fits one guest, and it needs a wall that holds one guest better
+than another. `BindingPocketGenerator` in `crates/parts/src/pocket.rs` builds
+both.
+
+The cavity is a cylinder subtracted from a diamond block. The well opens at
+the top face, so a guest can enter from the solution and leave to the chamber.
+The block is large enough to hold a wall around the well, so the well is a hole
+and not a through slot.
+
+The wall chemistry is decoration, not geometry. `diamond_solid` already splits
+a fill into bonding, free directions and capping. This generator reads the free
+directions, and for each one it steps a short distance along the bond. When
+that probe point lands inside the cavity, the generator attaches the chosen
+`FunctionalGroup` there and lets the group's own hydrogens finish the valence.
+Everywhere else it caps with hydrogen, so the surface is unchanged.
+
+The probe rule is geometric on purpose. A direction that points into the well
+is a direction that faces the guest, and the wall atoms that face the guest are
+exactly the atoms that can hold it. No separate surface-area calculation is
+needed, and the bond lengths and angles come from the chemistry table.
+
+The group is a parameter index, not a name. A `ParameterSet` holds numbers, so
+`wall_group` is an index into `FUNCTIONAL_GROUPS`. This keeps the generator on
+the same interface as every other generator.
+
+Scope limit. The pocket selects by shape, through the size of the well, and by
+stated charge and dispersion, through the wall group. It does not model a
+solvent, an ion, a hydrogen bond with an explicit geometry, or a
+conformational change. It does not prove that a pocket binds one species in a
+real solution. It measures the interaction of a frozen guest with a frozen
+wall. Every number it gives is a model number.
+
+Three limits follow from the lattice and must be read with every result.
+
+1. The lattice is discrete. The well radius moves in lattice steps, so two
+   radii a tenth of an Angstrom apart can give the same part. Any claim about
+   a pocket that turns on a finer distinction is not supported.
+2. The decorated groups reach into the nominal cavity. The effective opening
+   is smaller than `pocket_radius_m`, so a guest that fits by the stated
+   radius can still fail in a built part.
+3. Size alone cannot separate two guests of the same size class. Ethanol and
+   dimethyl ether share the formula C2H6O and their extents differ by one
+   tenth of an Angstrom. The well that admits one admits the other, so only
+   the wall chemistry can separate them. That is the measurement of M14-06,
+   and it is the measurement that gives this layer its meaning.

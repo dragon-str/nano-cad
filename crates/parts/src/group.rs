@@ -36,7 +36,37 @@ pub enum FunctionalGroup {
 /// The tetrahedral bond angle, `acos(-1/3)`, in radians.
 const TETRAHEDRAL_ANGLE_RAD: f64 = 1.910_633_149_330_218;
 
+/// Every group, in the order of [`FunctionalGroup::index`].
+pub const FUNCTIONAL_GROUPS: [FunctionalGroup; 6] = [
+    FunctionalGroup::Hydroxyl,
+    FunctionalGroup::Amino,
+    FunctionalGroup::Methyl,
+    FunctionalGroup::Fluoro,
+    FunctionalGroup::Chloro,
+    FunctionalGroup::Thiol,
+];
+
 impl FunctionalGroup {
+    /// Returns the index of the group in [`FUNCTIONAL_GROUPS`].
+    ///
+    /// A parameter set stores numbers, so a generator states its wall group as
+    /// this index.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Hydroxyl => 0,
+            Self::Amino => 1,
+            Self::Methyl => 2,
+            Self::Fluoro => 3,
+            Self::Chloro => 4,
+            Self::Thiol => 5,
+        }
+    }
+
+    /// Returns the group at `index`, or `None` when no group has that index.
+    pub fn from_index(index: usize) -> Option<Self> {
+        FUNCTIONAL_GROUPS.get(index).copied()
+    }
+
     /// Returns a short label for the group.
     pub fn label(self) -> &'static str {
         match self {
