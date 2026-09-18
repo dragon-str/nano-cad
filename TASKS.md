@@ -1504,3 +1504,12 @@ drive shaft.
     and the cutaway, and it supersedes ADR-0070.
   - Verification: `python3 scripts/build_docs_site.py` regenerates the pages;
     `python3 site/check.py` passes.
+
+- [x] **M18-04** Cut away the rotor top instead of the housing top.
+  - Result: the user reported that the housing cutaway was not the useful view.
+    The **Hide rotor top** control now removes the rotor body above its
+    mid-plane and leaves the housing in place, so the radial bores, the follower
+    pins and the cam groove below the rotor are visible.
+  - Verification: `site/viewer.js` hides body 1 above `z = 0`; the headless
+    harness reports the cutaway flag, the reduced live atom count and zero
+    console errors.

@@ -185,9 +185,10 @@ housing holds it from below and around its rim. The rotor is turned by a drive
 shaft on the rotor axis. A key on the shaft sits in a keyway in the rotor bore,
 so the shaft and the rotor turn as one body. The rotor central bore is 1.5 nm.
 The panel lists the cam plate atoms and mass, the drive shaft atoms, the pin
-atoms, the rod count and the rod length with the other facts. The **Hide housing
-top** control removes the housing body above the rotor mid-plane, so the rods,
-the follower pins and the cam groove below the rotor become visible.
+atoms, the rod count and the rod length with the other facts. The **Hide rotor
+top** control removes the rotor body above its mid-plane, so the radial bores,
+the follower pins and the cam groove below the rotor become visible while the
+housing stays in place.
 
 The rotor scene uses the scene schema of the gearbox. The design block is zero,
 and the viewer reads a zero module as "not a gearbox". It then turns the rotor

@@ -25,7 +25,7 @@
   var aoToggle = document.getElementById("toggle-ao");
   var atomSizeInput = document.getElementById("atom-size");
   var clipInput = document.getElementById("clip");
-  var housingTopToggle = document.getElementById("toggle-housing-top");
+  var rotorTopToggle = document.getElementById("toggle-rotor-top");
   var speedInput = document.getElementById("speed");
   var scaleBarLine = document.getElementById("scale-bar-line");
   var scaleBarLabel = document.getElementById("scale-bar-label");
@@ -105,7 +105,7 @@
     atomSize: 1,
     clip: 1,
     hiddenElements: {},
-    hideHousingTop: false,
+    hideRotorTop: false,
   };
   var atomCache = null;
   var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0, kind: "gears" };
@@ -381,7 +381,7 @@
   }
 
   function hasHiddenElements() {
-    if (display.hideHousingTop) {
+    if (display.hideRotorTop) {
       return true;
     }
     for (var key in display.hiddenElements) {
@@ -392,10 +392,11 @@
     return false;
   }
 
-  /* True when the rotor cutaway hides this atom: the housing body above the
-     rotor mid-plane. The cutaway shows the rods and the cam groove below. */
+  /* True when the cutaway hides this atom: the rotor body above its mid-plane.
+     The rotor disc covers the pins and the cam groove below it, so the cutaway
+     removes the upper half and leaves the housing in place. */
   function isHiddenByCutaway(atom) {
-    return display.hideHousingTop && atom.body === 0 && atom.position_m[2] > 0;
+    return display.hideRotorTop && atom.body === 1 && atom.position_m[2] > 0;
   }
 
   function uploadAtoms() {
@@ -1187,7 +1188,7 @@
         "rod stroke (display): " + (ROTOR_ROD_STROKE_M * 1e9).toFixed(1) + " nm",
         "cam groove centre at " + Math.round((ROTOR_CAM_LOBE_RAD * 180) / Math.PI) + " deg," +
           " ramp +/-" + ((ROTOR_CAM_RAMP_RAD * 180) / Math.PI).toFixed(0) + " deg",
-        "cutaway: hide the housing top to see the groove",
+        "cutaway: hide the rotor top to see the groove",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
         "real rate: 86000 rev/s, not shown",
       ];
@@ -1507,8 +1508,8 @@
     display.clip = parseFloat(clipInput.value);
     draw();
   });
-  housingTopToggle.addEventListener("change", function () {
-    display.hideHousingTop = housingTopToggle.checked;
+  rotorTopToggle.addEventListener("change", function () {
+    display.hideRotorTop = rotorTopToggle.checked;
     uploadAtoms();
     draw();
   });

@@ -1594,11 +1594,13 @@ The viewer uses the same profile. It gives a rod an offset of
 `0.5 * (1 + cos(pi * delta / ramp))` inside the ramp and zero outside it, where
 `delta` is the rod azimuth less the groove azimuth. The stroke is 1.5e-9 m.
 
-The viewer also shows the mechanism. `site/index.html` adds a **Hide housing
-top** control, and `viewer.js` hides the housing body atoms above the rotor
-mid-plane when the control is on. `uploadAtoms` and the 2D fallback both apply
-the cutaway, so the rods, the follower pins and the cam groove below the rotor
-become visible.
+The viewer also shows the mechanism. `site/index.html` adds a **Hide rotor top**
+control, and `viewer.js` hides the rotor body atoms above the rotor mid-plane
+when the control is on. The user asked to keep the housing in place, because the
+outer housing gives context and the rotor disc is the part that covers the pins
+and the groove. `uploadAtoms` and the 2D fallback both apply the cutaway, so the
+radial bores, the follower pins and the cam groove below the rotor become
+visible.
 
 The measured scene now holds 157857 atoms and 2.2505103227300436e-21 kg. The cam
 plate holds 55173 atoms, the housing 39848, the rotor body 54844 (49708 rotor and
