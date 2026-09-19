@@ -6,8 +6,10 @@
 //! result is a measured score, not a model output.
 #![forbid(unsafe_code)]
 
+pub mod cam_drive;
 pub mod cmaes;
 pub mod planetary;
 
+pub use cam_drive::{CamDriveScore, CamDriveSearch, POCKET_RAMP_LIMIT_RAD, STROKE_TARGET_M};
 pub use cmaes::{minimize, CmaEsOptions, CmaEsReport, Objective, ParameterBounds};
 pub use planetary::{PlanetaryScore, PlanetarySearch, SUN_RAD_PER_S, TEMPERATURE_K};
