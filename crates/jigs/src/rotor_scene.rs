@@ -6,7 +6,12 @@
 //! ride body 1 and no joint is needed between them. Bodies 2 to 13 are the
 //! twelve ejection rods. Each rod sits in a radial ejection bore in the rotor,
 //! so it is captive in the rotor and its prismatic joint names the rotor as
-//! `body_a`. Body 14 is the cam hub, which is fixed and shares the rotor axis.
+//! `body_a`. Bodies 14 to 25 are the follower pins, one for each rod. Every pin
+//! is a separate body with a fixed joint to its rod, at the rod inner end.
+//! Bodies 26 to 37 are the leaf springs, one for each rod. Every spring is a
+//! separate body with a fixed joint to the rotor, so it holds the pin against
+//! the hub and returns the rod over the dwell. Body 38 is the cam hub, which is
+//! fixed and shares the rotor axis.
 //!
 //! The cam hub lies below the rotor. Its outer surface dwells at the base
 //! radius and rises by a short raised-cosine ramp at the outlet azimuth, so a
@@ -49,14 +54,22 @@ pub const ROTOR_BODY: usize = 1;
 pub const ROD_BODY_FIRST: usize = 2;
 /// The number of ejection rods, which equals the number of pockets.
 pub const ROD_COUNT: usize = 12;
+/// The body index of the first follower pin.
+pub const PIN_BODY_FIRST: usize = ROD_BODY_FIRST + ROD_COUNT;
+/// The body index of the first leaf spring.
+pub const SPRING_BODY_FIRST: usize = PIN_BODY_FIRST + ROD_COUNT;
 /// The body index of the cam hub.
-pub const CAM_BODY: usize = ROD_BODY_FIRST + ROD_COUNT;
+pub const CAM_BODY: usize = SPRING_BODY_FIRST + ROD_COUNT;
 /// The role of the housing body.
 pub const HOUSING_ROLE: &str = "housing";
 /// The role of the rotor body.
 pub const ROTOR_ROLE: &str = "rotor";
 /// The role of an ejection rod body.
 pub const ROD_ROLE: &str = "ejection_rod";
+/// The role of a follower pin body.
+pub const PIN_ROLE: &str = "follower_pin";
+/// The role of a leaf spring body.
+pub const SPRING_ROLE: &str = "leaf_spring";
 /// The role of the cam hub body.
 pub const CAM_ROLE: &str = "cam_hub";
 /// The part id of the drive shaft.
@@ -152,6 +165,21 @@ fn default_m(generator: &impl PartGenerator, name: &str) -> f64 {
         .ok()
         .and_then(|resolved| resolved.get(name))
         .unwrap_or(0.0)
+}
+
+/// Returns the mean position of a set of scene atoms, in metres.
+fn centroid_m(atoms: &[SceneAtom]) -> [f64; 3] {
+    if atoms.is_empty() {
+        return [0.0, 0.0, 0.0];
+    }
+    let mut sum_m = [0.0_f64; 3];
+    for atom in atoms {
+        for (axis, value) in sum_m.iter_mut().enumerate() {
+            *value += atom.position_m[axis];
+        }
+    }
+    let count = atoms.len() as f64;
+    [sum_m[0] / count, sum_m[1] / count, sum_m[2] / count]
 }
 
 /// Returns a scene body with no initial motion.
@@ -281,65 +309,129 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     atoms.extend(rotor_atoms.iter().cloned());
 
     let mut rod_bodies = Vec::with_capacity(ROD_COUNT);
+    let mut pin_bodies = Vec::with_capacity(ROD_COUNT);
+    let mut spring_bodies = Vec::with_capacity(ROD_COUNT);
     let mut rod_joints = Vec::with_capacity(ROD_COUNT);
+    let mut pin_joints = Vec::with_capacity(ROD_COUNT);
+    let mut spring_joints = Vec::with_capacity(ROD_COUNT);
     let mut rod_coarse = Vec::with_capacity(ROD_COUNT);
+    let mut pin_coarse = Vec::with_capacity(ROD_COUNT);
+    let mut spring_coarse = Vec::with_capacity(ROD_COUNT);
     for index in 0..ROD_COUNT {
         let angle_rad = 2.0 * PI * index as f64 / pocket_count.max(1) as f64;
         let (sin_rad, cos_rad) = angle_rad.sin_cos();
         let radial_m = [cos_rad, sin_rad, 0.0];
         let pocket_center_m =
             SortingRotorGenerator::pocket_center_m(index, pocket_count, pocket_orbit_m);
-        let body = ROD_BODY_FIRST + index;
+        let rod_body = ROD_BODY_FIRST + index;
+        let pin_body = PIN_BODY_FIRST + index;
+        let spring_body = SPRING_BODY_FIRST + index;
         let pin_center_m = CamHubGenerator.pin_center_radius_m(angle_rad, pin_head_radius_m)
             + INTERFACE_CLEARANCE_M;
         let shaft_center_m = pin_center_m + half_shaft_m;
         let spring_center_m =
             pin_center_m + pin_head_radius_m + INTERFACE_CLEARANCE_M + 0.5 * SPRING_WIDTH_M;
 
-        let rod_atoms = scene_atoms_mapped(&rod, body, ROD_ROLE, "ejection_rod", |point_m| {
+        let rod_atoms = scene_atoms_mapped(&rod, rod_body, ROD_ROLE, "ejection_rod", |point_m| {
             [
                 point_m[2] * cos_rad - point_m[1] * sin_rad + shaft_center_m * cos_rad,
                 point_m[2] * sin_rad + point_m[1] * cos_rad + shaft_center_m * sin_rad,
                 -point_m[0],
             ]
         });
-        let pin_atoms = scene_atoms_mapped(&pin, body, ROD_ROLE, PIN_PART_ID, |point_m| {
+        let pin_atoms = scene_atoms_mapped(&pin, pin_body, PIN_ROLE, PIN_PART_ID, |point_m| {
             [
                 pin_center_m * cos_rad + point_m[0],
                 pin_center_m * sin_rad + point_m[1],
                 pin_top_m + point_m[2],
             ]
         });
-        let spring_atoms = scene_atoms_mapped(&spring, body, ROD_ROLE, SPRING_PART_ID, |point_m| {
-            [
-                spring_center_m * cos_rad - point_m[1] * cos_rad - point_m[0] * sin_rad,
-                spring_center_m * sin_rad - point_m[1] * sin_rad + point_m[0] * cos_rad,
-                -rotor_half_thickness_m - INTERFACE_CLEARANCE_M - 0.5 * SPRING_LENGTH_M
-                    + point_m[2],
-            ]
-        });
+        let spring_atoms = scene_atoms_mapped(
+            &spring,
+            spring_body,
+            SPRING_ROLE,
+            SPRING_PART_ID,
+            |point_m| {
+                [
+                    spring_center_m * cos_rad - point_m[1] * cos_rad - point_m[0] * sin_rad,
+                    spring_center_m * sin_rad - point_m[1] * sin_rad + point_m[0] * cos_rad,
+                    -rotor_half_thickness_m - INTERFACE_CLEARANCE_M - 0.5 * SPRING_LENGTH_M
+                        + point_m[2],
+                ]
+            },
+        );
 
-        let mut rod_atom_set = rod_atoms;
-        rod_atom_set.extend(pin_atoms);
-        rod_atom_set.extend(spring_atoms);
         rod_coarse.push(CoarseBody {
-            index: body,
+            index: rod_body,
             name: format!("ejection_rod_{index}"),
             role: ROD_ROLE.to_string(),
             pitch_circle: None,
-            bounding_cylinder: local_cylinder(&rod_atom_set, radial_m),
+            bounding_cylinder: local_cylinder(&rod_atoms, radial_m),
         });
-        atoms.extend(rod_atom_set.iter().cloned());
-        rod_bodies.push(scene_body(body, ROD_ROLE, "ejection_rod", false));
+        pin_coarse.push(CoarseBody {
+            index: pin_body,
+            name: format!("follower_pin_{index}"),
+            role: PIN_ROLE.to_string(),
+            pitch_circle: None,
+            bounding_cylinder: local_cylinder(&pin_atoms, [0.0, 0.0, 1.0]),
+        });
+        spring_coarse.push(CoarseBody {
+            index: spring_body,
+            name: format!("leaf_spring_{index}"),
+            role: SPRING_ROLE.to_string(),
+            pitch_circle: None,
+            bounding_cylinder: local_cylinder(&spring_atoms, [0.0, 0.0, 1.0]),
+        });
+
+        atoms.extend(rod_atoms.iter().cloned());
+        atoms.extend(pin_atoms.iter().cloned());
+        atoms.extend(spring_atoms.iter().cloned());
+
+        let mut rod_scene_body = scene_body(rod_body, ROD_ROLE, "ejection_rod", false);
+        rod_scene_body.position_m = centroid_m(&rod_atoms);
+        rod_bodies.push(rod_scene_body);
+
+        let mut pin_scene_body = scene_body(pin_body, PIN_ROLE, PIN_PART_ID, false);
+        pin_scene_body.position_m = centroid_m(&pin_atoms);
+        pin_bodies.push(pin_scene_body);
+
+        let mut spring_scene_body = scene_body(spring_body, SPRING_ROLE, SPRING_PART_ID, false);
+        spring_scene_body.position_m = centroid_m(&spring_atoms);
+        spring_bodies.push(spring_scene_body);
+
         rod_joints.push(SceneJoint {
             name: format!("ejection_rod_{index}"),
             kind: "prismatic".to_string(),
             body_a: ROTOR_BODY,
-            body_b: body,
+            body_b: rod_body,
             anchor_world_m: Some(pocket_center_m),
             axis_world: radial_m,
             axis_a_body: radial_m,
             axis_b_body: Some(radial_m),
+        });
+        pin_joints.push(SceneJoint {
+            name: format!("follower_pin_{index}"),
+            kind: "fixed".to_string(),
+            body_a: rod_body,
+            body_b: pin_body,
+            anchor_world_m: Some([pin_center_m * cos_rad, pin_center_m * sin_rad, 0.0]),
+            axis_world: [0.0, 0.0, 1.0],
+            axis_a_body: [0.0, 0.0, 1.0],
+            axis_b_body: Some([0.0, 0.0, 1.0]),
+        });
+        spring_joints.push(SceneJoint {
+            name: format!("leaf_spring_{index}"),
+            kind: "fixed".to_string(),
+            body_a: ROTOR_BODY,
+            body_b: spring_body,
+            anchor_world_m: Some([
+                spring_center_m * cos_rad,
+                spring_center_m * sin_rad,
+                -rotor_half_thickness_m,
+            ]),
+            axis_world: [0.0, 0.0, 1.0],
+            axis_a_body: [0.0, 0.0, 1.0],
+            axis_b_body: Some([0.0, 0.0, 1.0]),
         });
     }
     atoms.extend(cam_atoms.iter().cloned());
@@ -354,9 +446,11 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         scene_body(ROTOR_BODY, ROTOR_ROLE, "sorting_rotor", false),
     ];
     bodies.extend(rod_bodies);
+    bodies.extend(pin_bodies);
+    bodies.extend(spring_bodies);
     bodies.push(scene_body(CAM_BODY, CAM_ROLE, "cam_hub", true));
 
-    let mut joints = Vec::with_capacity(1 + ROD_COUNT);
+    let mut joints = Vec::with_capacity(1 + 3 * ROD_COUNT);
     joints.push(SceneJoint {
         name: "rotor_axis".to_string(),
         kind: "revolute".to_string(),
@@ -368,6 +462,8 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         axis_b_body: Some(axis),
     });
     joints.extend(rod_joints);
+    joints.extend(pin_joints);
+    joints.extend(spring_joints);
 
     let mut coarse = vec![
         CoarseBody {
@@ -386,6 +482,8 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         },
     ];
     coarse.extend(rod_coarse);
+    coarse.extend(pin_coarse);
+    coarse.extend(spring_coarse);
     coarse.push(CoarseBody {
         index: CAM_BODY,
         name: "cam_hub".to_string(),
@@ -543,22 +641,38 @@ mod tests {
     }
 
     #[test]
-    fn the_rotor_scene_has_fifteen_bodies_and_thirteen_joints() {
+    fn the_rotor_scene_has_thirty_nine_bodies_and_thirty_seven_joints() {
         let scene = scene();
-        assert_eq!(scene.device.body_count, 15);
-        assert_eq!(scene.device.bodies.len(), 15);
-        assert_eq!(scene.device.joints.len(), 13);
-        assert_eq!(scene.coarse.body_count, 15);
+        assert_eq!(scene.device.body_count, 39);
+        assert_eq!(scene.device.bodies.len(), 39);
+        assert_eq!(scene.device.joints.len(), 37);
+        assert_eq!(scene.coarse.body_count, 39);
         let axis_joint = &scene.device.joints[0];
         assert_eq!(axis_joint.kind, "revolute");
         assert_eq!(axis_joint.body_a, HOUSING_BODY);
         assert_eq!(axis_joint.body_b, ROTOR_BODY);
         assert_eq!(axis_joint.axis_world, [0.0, 0.0, 1.0]);
-        for (index, joint) in scene.device.joints[1..].iter().enumerate() {
+        for (index, joint) in scene.device.joints[1..1 + ROD_COUNT].iter().enumerate() {
             assert_eq!(joint.kind, "prismatic");
             assert_eq!(joint.body_a, ROTOR_BODY);
             assert_eq!(joint.body_b, ROD_BODY_FIRST + index);
             assert!(joint.anchor_world_m.is_some());
+        }
+        for (index, joint) in scene.device.joints[1 + ROD_COUNT..1 + 2 * ROD_COUNT]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(joint.kind, "fixed");
+            assert_eq!(joint.body_a, ROD_BODY_FIRST + index);
+            assert_eq!(joint.body_b, PIN_BODY_FIRST + index);
+        }
+        for (index, joint) in scene.device.joints[1 + 2 * ROD_COUNT..1 + 3 * ROD_COUNT]
+            .iter()
+            .enumerate()
+        {
+            assert_eq!(joint.kind, "fixed");
+            assert_eq!(joint.body_a, ROTOR_BODY);
+            assert_eq!(joint.body_b, SPRING_BODY_FIRST + index);
         }
     }
 
@@ -610,35 +724,51 @@ mod tests {
     }
 
     #[test]
-    fn every_rod_carries_a_follower_pin() {
+    fn every_rod_carries_a_follower_pin_as_a_joined_body() {
         let scene = scene();
         for index in 0..ROD_COUNT {
-            let body = ROD_BODY_FIRST + index;
-            assert!(
-                part_atoms(scene, body, PIN_PART_ID) > 0,
-                "rod {index} has no pin"
-            );
+            let rod = ROD_BODY_FIRST + index;
+            let pin = PIN_BODY_FIRST + index;
+            assert_eq!(part_atoms(scene, pin, PIN_PART_ID), 64, "pin {index}");
+            assert_eq!(part_atoms(scene, rod, PIN_PART_ID), 0);
+            let joint = scene
+                .device
+                .joints
+                .iter()
+                .find(|joint| joint.body_b == pin)
+                .expect("each pin has a joint");
+            assert_eq!(joint.kind, "fixed");
+            assert_eq!(joint.body_a, rod);
         }
     }
 
     #[test]
-    fn every_rod_carries_a_leaf_spring() {
+    fn every_leaf_spring_is_a_body_held_to_the_rotor() {
         let scene = scene();
         for index in 0..ROD_COUNT {
-            let body = ROD_BODY_FIRST + index;
-            assert!(
-                part_atoms(scene, body, SPRING_PART_ID) > 0,
-                "rod {index} has no spring"
+            let spring = SPRING_BODY_FIRST + index;
+            assert_eq!(
+                part_atoms(scene, spring, SPRING_PART_ID),
+                36,
+                "spring {index}"
             );
+            let joint = scene
+                .device
+                .joints
+                .iter()
+                .find(|joint| joint.body_b == spring)
+                .expect("each spring has a joint");
+            assert_eq!(joint.kind, "fixed");
+            assert_eq!(joint.body_a, ROTOR_BODY);
         }
     }
 
     #[test]
-    fn every_atom_belongs_to_one_of_the_fifteen_bodies() {
+    fn every_atom_belongs_to_one_of_the_thirty_nine_bodies() {
         let scene = scene();
         assert_eq!(scene.atomistic.atom_count, scene.atomistic.atoms.len());
         for atom in &scene.atomistic.atoms {
-            assert!(atom.body < 15);
+            assert!(atom.body < 39);
             assert!(atom.atomic_number > 0);
         }
         assert_eq!(scene.atomistic.atom_count, 120_884);
@@ -646,11 +776,31 @@ mod tests {
         assert_eq!(body_atoms(scene, ROTOR_BODY), 38_740);
         assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
         for index in 0..ROD_COUNT {
-            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 778);
-            assert_eq!(
-                part_atoms(scene, ROD_BODY_FIRST + index, SPRING_PART_ID),
-                36
-            );
+            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 678);
+            assert_eq!(body_atoms(scene, PIN_BODY_FIRST + index), 64);
+            assert_eq!(body_atoms(scene, SPRING_BODY_FIRST + index), 36);
+        }
+    }
+
+    #[test]
+    fn the_pins_and_the_springs_are_held_by_fixed_joints() {
+        let scene = scene();
+        let report = crate::sense_report(scene);
+        for index in 0..ROD_COUNT {
+            for body in [
+                ROD_BODY_FIRST + index,
+                PIN_BODY_FIRST + index,
+                SPRING_BODY_FIRST + index,
+            ] {
+                assert!(!report.floating_bodies.contains(&body));
+                assert!(
+                    !report
+                        .disjoint_bodies
+                        .iter()
+                        .any(|split| split.body == body),
+                    "linkage body {body} is split"
+                );
+            }
         }
     }
 

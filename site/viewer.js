@@ -133,9 +133,17 @@
      See crates/parts/src/leaf_spring.rs. */
   var ROTOR_CAM_RAMP_RAD = 0.21;
 
+  /* The body-index ranges of the sorting rotor. They match rotor_scene.rs:
+     bodies 2..13 are rods, 14..25 are follower pins, 26..37 are leaf springs. */
+  var ROTOR_ROD_FIRST = 2;
+  var ROTOR_ROD_COUNT = 12;
+  var ROTOR_PIN_FIRST = ROTOR_ROD_FIRST + ROTOR_ROD_COUNT;
+  var ROTOR_SPRING_FIRST = ROTOR_PIN_FIRST + ROTOR_ROD_COUNT;
+
   var hoverAtom = -1;
   var measure = [];
   var livePositions = null;
+  var glMarkersActive = false;
 
   /* ---------- Small vector helpers ---------- */
 
@@ -322,7 +330,7 @@
       keyDir: [-0.42, 0.55, 0.72],
       clipZ: clipZ,
       clipOn: display.clip < 0.999,
-      showBonds: false,
+      showBonds: Boolean(toggles.device && toggles.device.checked),
       ao: display.ao,
       aoRadius: 0.02,
       aoStrength: 1.0,
@@ -466,11 +474,19 @@
       var ox;
       var oy;
       if (motion.kind === "rotor") {
-        if (body === 1) {
+        if (
+          body === 1 ||
+          (body >= ROTOR_SPRING_FIRST && body - ROTOR_SPRING_FIRST < motion.rods.length)
+        ) {
           ox = x * cc - y * sc;
           oy = x * sc + y * cc;
-        } else if (body >= 2 && body - 2 < motion.rods.length) {
-          var rod = motion.rods[body - 2];
+        } else if (
+          (body >= ROTOR_ROD_FIRST && body - ROTOR_ROD_FIRST < motion.rods.length) ||
+          (body >= ROTOR_PIN_FIRST && body - ROTOR_PIN_FIRST < motion.rods.length)
+        ) {
+          var rodIndex =
+            body >= ROTOR_PIN_FIRST ? body - ROTOR_PIN_FIRST : body - ROTOR_ROD_FIRST;
+          var rod = motion.rods[rodIndex];
           var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
           var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
           delta = Math.atan2(Math.sin(delta), Math.cos(delta));
@@ -504,6 +520,75 @@
       live[i * 3] = ox;
       live[i * 3 + 1] = oy;
     }
+  }
+
+  /* The live rotor position of a point on a body, for the 3D device layer. */
+  function rotorBodyPoint(body, x, y) {
+    var t = motion.time;
+    var cc = Math.cos(motion.w_sun * t);
+    var sc = Math.sin(motion.w_sun * t);
+    if (
+      body === 1 ||
+      (body >= ROTOR_SPRING_FIRST && body - ROTOR_SPRING_FIRST < motion.rods.length)
+    ) {
+      return [x * cc - y * sc, x * sc + y * cc];
+    }
+    if (
+      (body >= ROTOR_ROD_FIRST && body - ROTOR_ROD_FIRST < motion.rods.length) ||
+      (body >= ROTOR_PIN_FIRST && body - ROTOR_PIN_FIRST < motion.rods.length)
+    ) {
+      var rodIndex =
+        body >= ROTOR_PIN_FIRST ? body - ROTOR_PIN_FIRST : body - ROTOR_ROD_FIRST;
+      var rod = motion.rods[rodIndex];
+      var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
+      var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
+      delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+      var ratio =
+        Math.abs(delta) < ROTOR_CAM_RAMP_RAD
+          ? 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_CAM_RAMP_RAD))
+          : 0;
+      var offset = motion.rod_stroke_m * ratio;
+      return [
+        x * cc - y * sc + Math.cos(rodAngle) * offset,
+        x * sc + y * cc + Math.sin(rodAngle) * offset,
+      ];
+    }
+    return [x, y];
+  }
+
+  function liveBodyPoint(body, point) {
+    if (motion.kind !== "rotor" || !motion.rods) {
+      return [point[0], point[1], point[2]];
+    }
+    var p = rotorBodyPoint(body, point[0], point[1]);
+    return [p[0], p[1], point[2]];
+  }
+
+  /* World-space line segments for the device layer. The WebGL pass draws
+     them, so the joint links and the body markers are depth tested against
+     the atoms. Returns a flat float array of segment endpoints. */
+  function deviceSegments() {
+    if (!scene || !scene.device) {
+      return new Float32Array(0);
+    }
+    var bodies = scene.device.bodies;
+    var arm = fit.r * 0.02;
+    var out = [];
+    function push(a, b) {
+      out.push(a[0], a[1], a[2], b[0], b[1], b[2]);
+    }
+    for (var j = 0; j < scene.device.joints.length; j += 1) {
+      var joint = scene.device.joints[j];
+      var pa = joint.anchor_world_m || bodies[joint.body_a].position_m;
+      push(liveBodyPoint(joint.body_a, pa), liveBodyPoint(joint.body_b, bodies[joint.body_b].position_m));
+    }
+    for (var i = 0; i < bodies.length; i += 1) {
+      var c = liveBodyPoint(i, bodies[i].position_m);
+      push([c[0] - arm, c[1], c[2]], [c[0] + arm, c[1], c[2]]);
+      push([c[0], c[1] - arm, c[2]], [c[0], c[1] + arm, c[2]]);
+      push([c[0], c[1], c[2] - arm], [c[0], c[1], c[2] + arm]);
+    }
+    return new Float32Array(out);
   }
 
   /* ---------- Legend ---------- */
@@ -1076,23 +1161,25 @@
 
     ctx.globalAlpha = alpha;
 
-    ctx.strokeStyle = "rgba(230, 237, 243, 0.35)";
-    ctx.lineWidth = 1.2;
-    for (var j = 0; j < scene.device.joints.length; j += 1) {
-      var joint = scene.device.joints[j];
-      var a = camera(bodies[joint.body_a].position_m);
-      var b = camera(bodies[joint.body_b].position_m);
-      ctx.beginPath();
-      ctx.moveTo(a[0], a[1]);
-      ctx.lineTo(b[0], b[1]);
-      ctx.stroke();
-
-      if (joint.anchor_world_m) {
-        var anchor = camera(joint.anchor_world_m);
-        ctx.fillStyle = "#e6edf3";
+    if (!glMarkersActive) {
+      ctx.strokeStyle = "rgba(230, 237, 243, 0.35)";
+      ctx.lineWidth = 1.2;
+      for (var j = 0; j < scene.device.joints.length; j += 1) {
+        var joint = scene.device.joints[j];
+        var a = camera(bodies[joint.body_a].position_m);
+        var b = camera(bodies[joint.body_b].position_m);
         ctx.beginPath();
-        ctx.arc(anchor[0], anchor[1], 2.5, 0, 2 * Math.PI);
-        ctx.fill();
+        ctx.moveTo(a[0], a[1]);
+        ctx.lineTo(b[0], b[1]);
+        ctx.stroke();
+
+        if (joint.anchor_world_m) {
+          var anchor = camera(joint.anchor_world_m);
+          ctx.fillStyle = "#e6edf3";
+          ctx.beginPath();
+          ctx.arc(anchor[0], anchor[1], 2.5, 0, 2 * Math.PI);
+          ctx.fill();
+        }
       }
     }
 
@@ -1141,8 +1228,10 @@
     }
     var weights = layerWeights();
     var useGl = Boolean(renderer) && weights[0] > 0 && atomSpacingPx() >= 6;
+    glMarkersActive = useGl && weights[1] > 0;
     if (renderer) {
       if (useGl) {
+        renderer.setBonds(glMarkersActive ? deviceSegments() : new Float32Array(0));
         renderer.render(glState());
       } else {
         renderer.clear();

@@ -1600,3 +1600,11 @@ drive shaft.
   - Verification: `node site/render_atoms.test.js` -> 11 passed,
     `python3 site/check.py` -> all checks passed,
     `cargo test --workspace` -> 793 passed.
+
+## M21 — Linkage attachment and 3D device markers
+
+- [x] **M21-01** Attach the follower pin and the leaf spring to the assembly. <!-- result: the pin and the spring are their own bodies. A fixed joint joins each pin to its rod, and a fixed joint joins each spring to the rotor. The rotor scene is now 39 bodies and 37 joints. `sense_report` finds no floating and no split linkage body. The viewer moves the pin with its rod and the spring with the rotor. -->
+  - ADR-0076. `cargo test -p nanocad-jigs` -> 121 passed.
+  - `node site/render_atoms.test.js` -> 11 passed, `python3 site/check.py` -> passed.
+- [x] **M21-02** Draw the device markers in 3D. <!-- result: at high zoom the WebGL pass draws one line for each joint and a small 3D cross for each body centre, so the atoms occlude them. At low zoom the 2D layer still draws them. -->
+- [ ] **M21-03** Remove the 84 cross-body perceived bonds and the two split bodies (housing into 2 parts, rotor into 9). <!-- result: open. Reported by `sense_report` on the rotor scene. -->

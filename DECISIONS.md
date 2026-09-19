@@ -1772,3 +1772,31 @@ Limits. The audit threshold `MIN_SEPARATION_M` is 0.9e-10. A real hydrogen
 bond is near 0.74e-10, so the audit flags a clash that a relaxed structure
 could still tolerate. The finding is not yet traced to a single lattice
 function.
+
+## ADR-0076: The pin and the leaf spring are separate bodies on fixed joints
+
+Context. The user reported that the follower pin and the leaf spring are not
+attached to the rod. They are not bonds, and their atoms sit in the rod body.
+The pin hangs 0.74e-9 m below the rod, and the spring hangs 0.60e-9 m below it.
+No perceived bond joins them, so the pin cannot push the rod and the spring
+cannot return it.
+
+Finding. A bonded pin is not possible. The rotor bore is a radial cylinder with
+`y^2 + z^2 < ejection_bore_radius^2`. Its radius is 0.99e-9 m. The rotor
+half-thickness is 1.0e-9 m. The generator also refuses a bore radius at or above
+the pocket radius of 1.0e-9 m. So the bore cannot cut the bottom face, and a
+0.01e-9 m skin stays. A vertical pin at radius 2.75e-9 m must cross that skin.
+
+Decision. The pin and the leaf spring are their own bodies. A fixed joint
+attaches the pin to its rod, and a fixed joint attaches the spring to the rotor.
+The rotor scene holds 39 bodies and 37 joints.
+
+Consequence. The linkage is attached, and `sense_report` finds no floating body
+and no split linkage body. The joint is the attachment, not a lattice bond, so a
+small gap stays in the model. The viewer draws the joints and the body markers in
+the 3D pass at high zoom, so the atoms occlude them.
+
+Limits. The audit still reports 84 cross-body perceived bonds and two split
+bodies (the housing into 2 parts, the rotor into 9). These are older defects and
+they are not from this change. A real lattice bond needs a through-bore, a
+thinner rotor, or a counterbore.

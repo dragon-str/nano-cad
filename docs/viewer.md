@@ -13,7 +13,9 @@ The viewer draws the three layers of a `nanocad.scene` document.
 
 - **Atomistic (L1).** One dot for each atom, in colour by element.
 - **Device (L2).** One marker for each rigid body, and a line for each joint.
-  A fixed body shows a small white centre dot.
+  A fixed body shows a small white centre dot. At high zoom the WebGL pass draws
+  the joint links and the body markers in 3D, so the atoms hide the markers
+  behind them. At low zoom the 2D layer draws them instead.
 - **Coarse (handoff).** A dashed gear pitch circle for each gear and a bounding
   cylinder for each body.
 
@@ -163,11 +165,14 @@ outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
-The rotor scene holds 15 bodies and 13 joints: the housing, the rotor on a
+The rotor scene holds 39 bodies and 37 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for
 each pocket. Each rod lies along the radius of its pocket, sits in a radial bore
 in the rotor, and turns with the rotor, because it is captive in the rotor. Each
-rod carries a follower pin and one leaf spring.
+rod carries a follower pin and one leaf spring. The pin is its own body on a
+fixed joint to its rod. The leaf spring is its own body on a fixed joint to the
+rotor. The joints attach the pin and the spring to the assembly, so the pin
+pushes the rod and the spring returns it.
 
 The cam is a one-sided hub below the rotor, not a ring in the rotor plane. The
 hub is a profiled disc. Its radial face dwells at a base radius of 2.0 nm, and it
