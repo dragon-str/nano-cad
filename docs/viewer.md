@@ -165,13 +165,14 @@ outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
-The rotor scene holds 39 bodies and 37 joints: the housing, the rotor on a
+The rotor scene holds 27 bodies and 25 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for
 each pocket. Each rod lies along the radius of its pocket, sits in a radial bore
 in the rotor, and turns with the rotor, because it is captive in the rotor. Each
-rod carries a follower pin and one leaf spring. The pin is its own body on a
-fixed joint to its rod. The leaf spring is its own body on a fixed joint to the
-rotor. The joints attach the pin and the spring to the assembly, so the pin
+rod carries its follower pin as one lattice: the pin is machined into the rod
+inner end. The rotor carries a radial clearance slot at the pin orbit, so the pin
+passes through the rotor to the hub. The leaf spring is its own body on a fixed
+joint to the rotor. The joints attach the spring to the assembly, so the pin
 pushes the rod and the spring returns it.
 
 The cam is a one-sided hub below the rotor, not a ring in the rotor plane. The

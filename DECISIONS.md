@@ -1800,3 +1800,33 @@ Limits. The audit still reports 84 cross-body perceived bonds and two split
 bodies (the housing into 2 parts, the rotor into 9). These are older defects and
 they are not from this change. A real lattice bond needs a through-bore, a
 thinner rotor, or a counterbore.
+
+## ADR-0077: The pin is machined into the rod through a rotor clearance slot
+
+Context. ADR-0076 attached the follower pin to its rod with a fixed joint,
+because the rotor skin blocked a bond. The user asked for a real bond, not a
+joint. The ejection bore is a radial cylinder with a radius below the pocket
+radius of 1.0e-9 m. The rotor half-thickness is 1.0e-9 m. So the bore cannot cut
+the bottom face, and the pin cannot cross the skin (ADR-0076).
+
+Finding. A second void can cut the skin. The rotor generator now takes three
+parameters: `pin_clearance_orbit_m`, `pin_clearance_half_length_m` and
+`pin_clearance_half_width_m`. It cuts one radial `Box3` slot for each pocket,
+through the full thickness, at the pin orbit. The slot is not the bore.
+
+Decision. The sorting rotor cuts a pin clearance slot. The rod generator
+`EjectionRodGenerator::generate_with_follower_pin` machines the pin into the rod
+inner end from a `FollowerPinFeature`. The scene sets the orbit to
+`cam_retract + rise/2`, the half-length to `rise/2 + head_radius + margin`, and
+the half-width to `head_radius + margin`, with `margin = 3.5e-10 m`. The pin is
+now one lattice with the rod. The rotor scene holds 27 bodies and 25 joints.
+ADR-0076 is superseded.
+
+Consequence. The stroke test passes with no rod-to-rotor clash. `sense_report`
+shows no rod or spring body floating or split. The spring keeps its fixed joint
+to the rotor, because the rotor still blocks a bonded spring.
+
+Limits. The margin of 3.5e-10 m is large, because the pin cap extends about
+0.11e-9 m past the carbon surface. A margin of 1.5e-10 m left a 1.19e-10 m clash
+at rod 6. The scene still reports 84 cross-body perceived bonds and two split
+bodies (housing into 2 parts, rotor into 9). These are older defects.
