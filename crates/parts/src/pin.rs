@@ -109,7 +109,8 @@ impl FollowerPinGenerator {
         self.default_m("neck_length_m")
     }
 
-    fn head_length_m(&self) -> f64 {
+    /// Returns the length of the head, in metres.
+    pub fn head_length_m(&self) -> f64 {
         self.default_m("head_length_m")
     }
 

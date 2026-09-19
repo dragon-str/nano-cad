@@ -26,7 +26,7 @@ use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::pocket::charge_wall;
 use crate::port::{Dof, Port};
-use crate::shape::{Box3, Cylinder, Difference, RadialCylinder, Solid, Union};
+use crate::shape::{Box3, Cylinder, Difference, Placed, RadialCylinder, Solid, Union};
 
 /// The longest bond in diamond, in metres. A probe shorter than this stays
 /// inside the cell that owns the direction.
@@ -98,6 +98,33 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
         "radius of each radial ejection bore in metres, or zero for no bore",
     ),
     ParameterSpec::new(
+        "pin_clearance_orbit_m",
+        Some(Unit::Metre),
+        0.0,
+        0.0,
+        4.0e-8,
+        false,
+        "radius of the pin clearance slot centre circle in metres",
+    ),
+    ParameterSpec::new(
+        "pin_clearance_half_length_m",
+        Some(Unit::Metre),
+        0.0,
+        0.0,
+        5.0e-9,
+        false,
+        "radial half-length of each pin clearance slot in metres, or zero for no slot",
+    ),
+    ParameterSpec::new(
+        "pin_clearance_half_width_m",
+        Some(Unit::Metre),
+        0.0,
+        0.0,
+        5.0e-9,
+        false,
+        "tangential half-width of each pin clearance slot in metres",
+    ),
+    ParameterSpec::new(
         "wall_group",
         None,
         0.0,
@@ -136,6 +163,11 @@ static SORTING_ROTOR_PARAMETERS: &[ParameterSpec] = &[
 /// Each pocket also has a radial ejection bore, unless the bore radius is zero.
 /// The bore runs from the central bore out to the inner wall of the pocket, so a
 /// rod inside it can thrust a bound guest out of the pocket.
+///
+/// Each bore also has a radial pin clearance slot, unless the slot length is
+/// zero. The slot cuts the full thickness at the pin orbit, so a follower pin on
+/// the inner end of the rod can pass through the disk to the cam hub below as
+/// the rod strokes.
 ///
 /// The disk turns about `z`, so the axis port lies on that axis.
 #[derive(Clone, Copy, Debug, Default)]
@@ -241,6 +273,9 @@ impl PartGenerator for SortingRotorGenerator {
         let pocket_orbit_m = resolved.require("pocket_orbit_m")?;
         let bore_radius_m = resolved.require("bore_radius_m")?;
         let ejection_bore_radius_m = resolved.require("ejection_bore_radius_m")?;
+        let pin_clearance_orbit_m = resolved.require("pin_clearance_orbit_m")?;
+        let pin_clearance_half_length_m = resolved.require("pin_clearance_half_length_m")?;
+        let pin_clearance_half_width_m = resolved.require("pin_clearance_half_width_m")?;
         let keyway_width_m = resolved.require("keyway_width_m")?;
         let keyway_depth_m = resolved.require("keyway_depth_m")?;
         let wall_index = resolved.require("wall_group")?.round();
@@ -274,6 +309,36 @@ impl PartGenerator for SortingRotorGenerator {
                     "the inner pocket wall {} m is not outside the central bore {bore_radius_m} m, \
                      so an ejection bore has no length",
                     pocket_orbit_m - pocket_radius_m
+                )));
+            }
+        }
+        if pin_clearance_half_length_m > 0.0 {
+            if pin_clearance_half_width_m <= 0.0 {
+                return Err(PartError::InvalidGeometry(
+                    "the pin clearance slot has a length but no width".to_string(),
+                ));
+            }
+            if pin_clearance_orbit_m - pin_clearance_half_length_m <= bore_radius_m {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the pin clearance slot reaches {} m and would breach the central bore \
+                     {bore_radius_m} m",
+                    pin_clearance_orbit_m - pin_clearance_half_length_m
+                )));
+            }
+            if pin_clearance_orbit_m + pin_clearance_half_length_m
+                >= pocket_orbit_m - pocket_radius_m
+            {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the pin clearance slot reaches {} m and would breach a pocket wall {} m",
+                    pin_clearance_orbit_m + pin_clearance_half_length_m,
+                    pocket_orbit_m - pocket_radius_m
+                )));
+            }
+            if pin_clearance_orbit_m + pin_clearance_half_length_m >= disc_radius_m {
+                return Err(PartError::InvalidGeometry(format!(
+                    "the pin clearance slot reaches {} m and would leave no disk at the rim \
+                     {disc_radius_m} m",
+                    pin_clearance_orbit_m + pin_clearance_half_length_m
                 )));
             }
         }
@@ -344,6 +409,32 @@ impl PartGenerator for SortingRotorGenerator {
                 void = Box::new(Union {
                     a: void,
                     b: Box::new(bore),
+                });
+            }
+        }
+
+        if pin_clearance_half_length_m > 0.0 {
+            for index in 0..pocket_count {
+                let angle_rad = 2.0 * PI * index as f64 / pocket_count.max(1) as f64;
+                let slot = Box3 {
+                    min_m: [
+                        pin_clearance_orbit_m - pin_clearance_half_length_m,
+                        -pin_clearance_half_width_m,
+                        -0.5 * thickness_m,
+                    ],
+                    max_m: [
+                        pin_clearance_orbit_m + pin_clearance_half_length_m,
+                        pin_clearance_half_width_m,
+                        0.5 * thickness_m,
+                    ],
+                };
+                void = Box::new(Union {
+                    a: void,
+                    b: Box::new(Placed {
+                        inner: Box::new(slot),
+                        rotation_rad: angle_rad,
+                        offset_m: [0.0, 0.0, 0.0],
+                    }),
                 });
             }
         }
@@ -542,6 +633,63 @@ mod tests {
             bored.atom_count(),
             solid.atom_count()
         );
+    }
+
+    #[test]
+    fn the_pin_clearance_slot_is_void_and_removes_material() {
+        let slot_orbit_m = 3.5e-9;
+        let half_length_m = 1.0e-9;
+        let half_width_m = 6.0e-10;
+        let parameters = ParameterSet::new()
+            .with("pin_clearance_orbit_m", slot_orbit_m)
+            .with("pin_clearance_half_length_m", half_length_m)
+            .with("pin_clearance_half_width_m", half_width_m);
+        let slotted = SortingRotorGenerator
+            .generate(&parameters)
+            .expect("slotted");
+        let plain = rotor_with("pin_clearance_half_length_m", 0.0);
+        assert!(
+            slotted.atom_count() < plain.atom_count(),
+            "the pin clearance slots removed no atom: {} against {}",
+            slotted.atom_count(),
+            plain.atom_count()
+        );
+        let pocket_count = 12;
+        let mut occupied = 0;
+        for index in 0..pocket_count {
+            let angle_rad = 2.0 * PI * index as f64 / pocket_count as f64;
+            let (sin_rad, cos_rad) = angle_rad.sin_cos();
+            occupied += slotted
+                .topology
+                .atoms()
+                .filter(|atom| atom.element == Element::CARBON)
+                .filter(|atom| {
+                    let local_x_m = cos_rad * atom.position_m[0] + sin_rad * atom.position_m[1];
+                    let local_y_m = -sin_rad * atom.position_m[0] + cos_rad * atom.position_m[1];
+                    (local_x_m - slot_orbit_m).abs() < 0.5 * half_length_m
+                        && local_y_m.abs() < 0.5 * half_width_m
+                })
+                .count();
+        }
+        assert_eq!(occupied, 0, "a pin clearance slot holds a carbon");
+    }
+
+    #[test]
+    fn a_pin_slot_that_breaches_the_bore_is_refused() {
+        let parameters = ParameterSet::new()
+            .with("pin_clearance_orbit_m", 1.8e-9)
+            .with("pin_clearance_half_length_m", 5.0e-10)
+            .with("pin_clearance_half_width_m", 6.0e-10);
+        assert!(SortingRotorGenerator.generate(&parameters).is_err());
+    }
+
+    #[test]
+    fn a_pin_slot_that_breaches_a_pocket_is_refused() {
+        let parameters = ParameterSet::new()
+            .with("pin_clearance_orbit_m", 5.2e-9)
+            .with("pin_clearance_half_length_m", 5.0e-10)
+            .with("pin_clearance_half_width_m", 6.0e-10);
+        assert!(SortingRotorGenerator.generate(&parameters).is_err());
     }
 
     #[test]

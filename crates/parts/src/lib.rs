@@ -83,7 +83,7 @@ pub use respirocyte::{
     RespirocytePumpGenerator, RespirocyteRotor, RespirocyteRotorGenerator, RespirocyteTank,
     RespirocyteTankGenerator,
 };
-pub use rod::EjectionRodGenerator;
+pub use rod::{EjectionRodGenerator, FollowerPinFeature};
 pub use rotor::SortingRotorGenerator;
 pub use shaft::DriveShaftGenerator;
 pub use shape::{

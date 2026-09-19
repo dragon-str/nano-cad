@@ -137,8 +137,7 @@
      bodies 2..13 are rods, 14..25 are follower pins, 26..37 are leaf springs. */
   var ROTOR_ROD_FIRST = 2;
   var ROTOR_ROD_COUNT = 12;
-  var ROTOR_PIN_FIRST = ROTOR_ROD_FIRST + ROTOR_ROD_COUNT;
-  var ROTOR_SPRING_FIRST = ROTOR_PIN_FIRST + ROTOR_ROD_COUNT;
+  var ROTOR_SPRING_FIRST = ROTOR_ROD_FIRST + ROTOR_ROD_COUNT;
 
   var hoverAtom = -1;
   var measure = [];
@@ -481,11 +480,10 @@
           ox = x * cc - y * sc;
           oy = x * sc + y * cc;
         } else if (
-          (body >= ROTOR_ROD_FIRST && body - ROTOR_ROD_FIRST < motion.rods.length) ||
-          (body >= ROTOR_PIN_FIRST && body - ROTOR_PIN_FIRST < motion.rods.length)
+          body >= ROTOR_ROD_FIRST &&
+          body - ROTOR_ROD_FIRST < motion.rods.length
         ) {
-          var rodIndex =
-            body >= ROTOR_PIN_FIRST ? body - ROTOR_PIN_FIRST : body - ROTOR_ROD_FIRST;
+          var rodIndex = body - ROTOR_ROD_FIRST;
           var rod = motion.rods[rodIndex];
           var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
           var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
@@ -534,11 +532,10 @@
       return [x * cc - y * sc, x * sc + y * cc];
     }
     if (
-      (body >= ROTOR_ROD_FIRST && body - ROTOR_ROD_FIRST < motion.rods.length) ||
-      (body >= ROTOR_PIN_FIRST && body - ROTOR_PIN_FIRST < motion.rods.length)
+      body >= ROTOR_ROD_FIRST &&
+      body - ROTOR_ROD_FIRST < motion.rods.length
     ) {
-      var rodIndex =
-        body >= ROTOR_PIN_FIRST ? body - ROTOR_PIN_FIRST : body - ROTOR_ROD_FIRST;
+      var rodIndex = body - ROTOR_ROD_FIRST;
       var rod = motion.rods[rodIndex];
       var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
       var delta = rodAngle - ROTOR_CAM_LOBE_RAD;

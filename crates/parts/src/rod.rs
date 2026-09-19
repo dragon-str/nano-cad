@@ -24,7 +24,7 @@ use crate::generator::PartGenerator;
 use crate::lattice_fill::fill_solid;
 use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::port::{Dof, Port};
-use crate::shape::{Cylinder, Union};
+use crate::shape::{Cylinder, RadialCylinder, Solid, Union};
 
 /// The parameter specs of [`EjectionRodGenerator`], in a stable order.
 static EJECTION_ROD_PARAMETERS: &[ParameterSpec] = &[
@@ -65,6 +65,24 @@ static EJECTION_ROD_PARAMETERS: &[ParameterSpec] = &[
         "length of the ejection tip in metres",
     ),
 ];
+
+/// The follower pin that rides on the cam hub, cut as one solid with the rod.
+///
+/// The pin hangs from the cam end of the rod along the rod's local `+x`, which
+/// the scene maps to world `-z`. The neck runs from the rod axis to the head,
+/// so the fill is one continuous diamond body and the pin cannot detach from
+/// the rod.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FollowerPinFeature {
+    /// The length of the neck from the rod axis to the head, in metres.
+    pub neck_length_m: f64,
+    /// The radius of the neck, in metres.
+    pub neck_radius_m: f64,
+    /// The length of the head, in metres.
+    pub head_length_m: f64,
+    /// The radius of the head, in metres.
+    pub head_radius_m: f64,
+}
 
 /// The generator of the ejection rod.
 #[derive(Clone, Copy, Debug, Default)]
@@ -125,22 +143,17 @@ impl EjectionRodGenerator {
             .and_then(|resolved| resolved.get(name))
             .unwrap_or(0.0)
     }
-}
 
-impl PartGenerator for EjectionRodGenerator {
-    fn id(&self) -> &'static str {
-        "ejection_rod"
-    }
-
-    fn name(&self) -> &'static str {
-        "ejection rod"
-    }
-
-    fn parameters(&self) -> &'static [ParameterSpec] {
-        EJECTION_ROD_PARAMETERS
-    }
-
-    fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
+    /// Generates the rod, with an optional follower pin cut into its cam end.
+    ///
+    /// The neck runs from the rod axis to the head, so the pin is one diamond
+    /// fill with the rod and cannot detach. The scene maps the rod's local `+x`
+    /// to world `-z`, so the pin hangs below the rod.
+    pub fn generate_with_follower_pin(
+        &self,
+        parameters: &ParameterSet,
+        follower: Option<FollowerPinFeature>,
+    ) -> Result<Part, PartError> {
         let resolved = self.resolve(parameters)?;
         let shaft_radius_m = resolved.require("shaft_radius_m")?;
         let shaft_length_m = resolved.require("shaft_length_m")?;
@@ -164,12 +177,37 @@ impl PartGenerator for EjectionRodGenerator {
             radius_m: tip_radius_m,
             height_m: tip_length_m,
         };
-        let solid = Union {
+        let mut solid: Box<dyn Solid> = Box::new(Union {
             a: Box::new(shaft),
             b: Box::new(tip),
-        };
+        });
 
-        let sites_m = fill_solid(&solid);
+        if let Some(feature) = follower {
+            let cam_end_m = -0.5 * shaft_length_m;
+            let neck = RadialCylinder {
+                azimuth_rad: 0.0,
+                center_radius_m: 0.5 * feature.neck_length_m,
+                radius_m: feature.neck_radius_m,
+                half_length_m: 0.5 * feature.neck_length_m,
+                center_z_m: cam_end_m,
+            };
+            let head = RadialCylinder {
+                azimuth_rad: 0.0,
+                center_radius_m: feature.neck_length_m + 0.5 * feature.head_length_m,
+                radius_m: feature.head_radius_m,
+                half_length_m: 0.5 * feature.head_length_m,
+                center_z_m: cam_end_m,
+            };
+            solid = Box::new(Union {
+                a: Box::new(Union {
+                    a: solid,
+                    b: Box::new(neck),
+                }),
+                b: Box::new(head),
+            });
+        }
+
+        let sites_m = fill_solid(solid.as_ref());
         if sites_m.is_empty() {
             return Err(PartError::InvalidGeometry(
                 "the rod parameters leave no lattice site inside the rod".to_string(),
@@ -184,6 +222,24 @@ impl PartGenerator for EjectionRodGenerator {
         diamond_solid::bond_and_cap(&mut topology, &carbons)?;
 
         Ok(Part::new("ejection_rod", topology).with_material("diamond"))
+    }
+}
+
+impl PartGenerator for EjectionRodGenerator {
+    fn id(&self) -> &'static str {
+        "ejection_rod"
+    }
+
+    fn name(&self) -> &'static str {
+        "ejection rod"
+    }
+
+    fn parameters(&self) -> &'static [ParameterSpec] {
+        EJECTION_ROD_PARAMETERS
+    }
+
+    fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
+        self.generate_with_follower_pin(parameters, None)
     }
 }
 

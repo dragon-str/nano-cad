@@ -6,11 +6,12 @@
 //! ride body 1 and no joint is needed between them. Bodies 2 to 13 are the
 //! twelve ejection rods. Each rod sits in a radial ejection bore in the rotor,
 //! so it is captive in the rotor and its prismatic joint names the rotor as
-//! `body_a`. Bodies 14 to 25 are the follower pins, one for each rod. Every pin
-//! is a separate body with a fixed joint to its rod, at the rod inner end.
-//! Bodies 26 to 37 are the leaf springs, one for each rod. Every spring is a
+//! `body_a`. Each rod carries its follower pin as one lattice: the pin is
+//! machined into the rod inner end. The rotor carries a radial clearance slot
+//! at the pin orbit, so the pin passes through the rotor to the cam hub below.
+//! Bodies 14 to 25 are the leaf springs, one for each rod. Every spring is a
 //! separate body with a fixed joint to the rotor, so it holds the pin against
-//! the hub and returns the rod over the dwell. Body 38 is the cam hub, which is
+//! the hub and returns the rod over the dwell. Body 26 is the cam hub, which is
 //! fixed and shares the rotor axis.
 //!
 //! The cam hub lies below the rotor. Its outer surface dwells at the base
@@ -36,9 +37,9 @@ use std::f64::consts::PI;
 
 use nanocad_model::Part;
 use nanocad_parts::{
-    place, CamHubGenerator, DriveShaftGenerator, EjectionRodGenerator, FollowerPinGenerator,
-    LeafSpringGenerator, ParameterSet, PartError, PartGenerator, RotorHousingGenerator,
-    SortingRotorGenerator,
+    place, CamHubGenerator, DriveShaftGenerator, EjectionRodGenerator, FollowerPinFeature,
+    FollowerPinGenerator, LeafSpringGenerator, ParameterSet, PartError, PartGenerator,
+    RotorHousingGenerator, SortingRotorGenerator,
 };
 
 use crate::scene::{
@@ -54,10 +55,8 @@ pub const ROTOR_BODY: usize = 1;
 pub const ROD_BODY_FIRST: usize = 2;
 /// The number of ejection rods, which equals the number of pockets.
 pub const ROD_COUNT: usize = 12;
-/// The body index of the first follower pin.
-pub const PIN_BODY_FIRST: usize = ROD_BODY_FIRST + ROD_COUNT;
 /// The body index of the first leaf spring.
-pub const SPRING_BODY_FIRST: usize = PIN_BODY_FIRST + ROD_COUNT;
+pub const SPRING_BODY_FIRST: usize = ROD_BODY_FIRST + ROD_COUNT;
 /// The body index of the cam hub.
 pub const CAM_BODY: usize = SPRING_BODY_FIRST + ROD_COUNT;
 /// The role of the housing body.
@@ -66,16 +65,12 @@ pub const HOUSING_ROLE: &str = "housing";
 pub const ROTOR_ROLE: &str = "rotor";
 /// The role of an ejection rod body.
 pub const ROD_ROLE: &str = "ejection_rod";
-/// The role of a follower pin body.
-pub const PIN_ROLE: &str = "follower_pin";
 /// The role of a leaf spring body.
 pub const SPRING_ROLE: &str = "leaf_spring";
 /// The role of the cam hub body.
 pub const CAM_ROLE: &str = "cam_hub";
 /// The part id of the drive shaft.
 pub const SHAFT_PART_ID: &str = "drive_shaft";
-/// The part id of a follower pin.
-pub const PIN_PART_ID: &str = "follower_pin";
 /// The part id of a leaf spring.
 pub const SPRING_PART_ID: &str = "leaf_spring";
 
@@ -102,6 +97,14 @@ pub const INTERFACE_CLEARANCE_M: f64 = 4.0e-10;
 /// interface clearance. This value still leaves an atom gap above the clash
 /// threshold.
 pub const EJECTION_BORE_CLEARANCE_M: f64 = 3.9e-10;
+
+/// The extra room around a follower pin in the rotor pin clearance slot, in
+/// metres.
+///
+/// The pin sweeps radially by the cam rise as its rod strokes. The slot must
+/// hold the whole sweep, plus the hydrogen cap of the pin and a margin above
+/// the clash threshold.
+pub const PIN_CLEARANCE_MARGIN_M: f64 = 3.5e-10;
 
 /// The free length of one leaf spring, in metres.
 pub const SPRING_LENGTH_M: f64 = 6.0e-10;
@@ -202,31 +205,19 @@ fn scene_body(index: usize, role: &str, part_id: &str, fixed: bool) -> SceneBody
 /// Builds the sorting rotor scene.
 ///
 /// The scene holds the housing, the rotor with its keyed drive shaft, the
-/// twelve ejection rods with their follower pins and leaf springs, and the
-/// fixed cam hub with its flange.
+/// twelve ejection rods with their bonded follower pins, the twelve leaf
+/// springs, and the fixed cam hub with its flange.
 pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let rod_radius_m = default_m(&EjectionRodGenerator, "shaft_radius_m");
-    let rotor = SortingRotorGenerator.generate(&ParameterSet::new().with(
-        "ejection_bore_radius_m",
-        rod_radius_m + EJECTION_BORE_CLEARANCE_M,
-    ))?;
     let housing = RotorHousingGenerator
         .generate(&ParameterSet::new().with("thickness_m", HOUSING_THICKNESS_M))?;
     let shaft = DriveShaftGenerator.generate_with_defaults()?;
-    let pin = FollowerPinGenerator.generate_with_defaults()?;
     let spring = LeafSpringGenerator.generate(
         &ParameterSet::new()
             .with("leaf_length_m", SPRING_LENGTH_M)
             .with("leaf_width_m", SPRING_WIDTH_M)
             .with("leaf_thickness_m", SPRING_THICKNESS_M),
     )?;
-    let rotor = place(
-        rotor,
-        &SortingRotorGenerator.axis_port(),
-        &RotorHousingGenerator.chamber_port(),
-        0.0,
-    )
-    .transformed_part();
 
     let pocket_count = default_m(&SortingRotorGenerator, "pocket_count").round() as usize;
     let pocket_orbit_m = default_m(&SortingRotorGenerator, "pocket_orbit_m");
@@ -243,6 +234,30 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     let pin_head_radius_m = FollowerPinGenerator.head_radius_m();
     let pin_length_m = FollowerPinGenerator.length_m();
     let cam_retract_m = hub_base_m + pin_head_radius_m + INTERFACE_CLEARANCE_M;
+
+    // The follower pin crosses the rotor at its inner end, so the rotor needs a
+    // radial slot there. The pin sweeps radially by the cam rise as the rod
+    // strokes, so the slot spans the whole sweep plus the pin cap and a margin.
+    let pin_clearance_orbit_m = cam_retract_m + 0.5 * hub_rise_m;
+    let pin_clearance_half_length_m = 0.5 * hub_rise_m + pin_head_radius_m + PIN_CLEARANCE_MARGIN_M;
+    let pin_clearance_half_width_m = pin_head_radius_m + PIN_CLEARANCE_MARGIN_M;
+    let rotor = SortingRotorGenerator.generate(
+        &ParameterSet::new()
+            .with(
+                "ejection_bore_radius_m",
+                rod_radius_m + EJECTION_BORE_CLEARANCE_M,
+            )
+            .with("pin_clearance_orbit_m", pin_clearance_orbit_m)
+            .with("pin_clearance_half_length_m", pin_clearance_half_length_m)
+            .with("pin_clearance_half_width_m", pin_clearance_half_width_m),
+    )?;
+    let rotor = place(
+        rotor,
+        &SortingRotorGenerator.axis_port(),
+        &RotorHousingGenerator.chamber_port(),
+        0.0,
+    )
+    .transformed_part();
 
     let hub_top_m = -rotor_half_thickness_m - INTERFACE_CLEARANCE_M;
     let hub_bottom_m = -housing_half_thickness_m + INTERFACE_CLEARANCE_M;
@@ -277,8 +292,17 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             "the cam hub reaches the pocket inner wall, so no rod fits".to_string(),
         ));
     }
-    let rod = EjectionRodGenerator
-        .generate(&ParameterSet::new().with("shaft_length_m", shaft_length_m))?;
+    let follower = FollowerPinFeature {
+        neck_length_m: rotor_half_thickness_m + INTERFACE_CLEARANCE_M + pin_length_m
+            - FollowerPinGenerator.head_length_m(),
+        neck_radius_m: FollowerPinGenerator.neck_radius_m(),
+        head_length_m: FollowerPinGenerator.head_length_m(),
+        head_radius_m: pin_head_radius_m,
+    };
+    let rod = EjectionRodGenerator.generate_with_follower_pin(
+        &ParameterSet::new().with("shaft_length_m", shaft_length_m),
+        Some(follower),
+    )?;
     let half_shaft_m = 0.5 * shaft_length_m;
 
     let shaft_radius_m = default_m(&DriveShaftGenerator, "shaft_radius_m");
@@ -309,13 +333,10 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
     atoms.extend(rotor_atoms.iter().cloned());
 
     let mut rod_bodies = Vec::with_capacity(ROD_COUNT);
-    let mut pin_bodies = Vec::with_capacity(ROD_COUNT);
     let mut spring_bodies = Vec::with_capacity(ROD_COUNT);
     let mut rod_joints = Vec::with_capacity(ROD_COUNT);
-    let mut pin_joints = Vec::with_capacity(ROD_COUNT);
     let mut spring_joints = Vec::with_capacity(ROD_COUNT);
     let mut rod_coarse = Vec::with_capacity(ROD_COUNT);
-    let mut pin_coarse = Vec::with_capacity(ROD_COUNT);
     let mut spring_coarse = Vec::with_capacity(ROD_COUNT);
     for index in 0..ROD_COUNT {
         let angle_rad = 2.0 * PI * index as f64 / pocket_count.max(1) as f64;
@@ -324,7 +345,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         let pocket_center_m =
             SortingRotorGenerator::pocket_center_m(index, pocket_count, pocket_orbit_m);
         let rod_body = ROD_BODY_FIRST + index;
-        let pin_body = PIN_BODY_FIRST + index;
         let spring_body = SPRING_BODY_FIRST + index;
         let pin_center_m = CamHubGenerator.pin_center_radius_m(angle_rad, pin_head_radius_m)
             + INTERFACE_CLEARANCE_M;
@@ -337,13 +357,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
                 point_m[2] * cos_rad - point_m[1] * sin_rad + shaft_center_m * cos_rad,
                 point_m[2] * sin_rad + point_m[1] * cos_rad + shaft_center_m * sin_rad,
                 -point_m[0],
-            ]
-        });
-        let pin_atoms = scene_atoms_mapped(&pin, pin_body, PIN_ROLE, PIN_PART_ID, |point_m| {
-            [
-                pin_center_m * cos_rad + point_m[0],
-                pin_center_m * sin_rad + point_m[1],
-                pin_top_m + point_m[2],
             ]
         });
         let spring_atoms = scene_atoms_mapped(
@@ -368,13 +381,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             pitch_circle: None,
             bounding_cylinder: local_cylinder(&rod_atoms, radial_m),
         });
-        pin_coarse.push(CoarseBody {
-            index: pin_body,
-            name: format!("follower_pin_{index}"),
-            role: PIN_ROLE.to_string(),
-            pitch_circle: None,
-            bounding_cylinder: local_cylinder(&pin_atoms, [0.0, 0.0, 1.0]),
-        });
         spring_coarse.push(CoarseBody {
             index: spring_body,
             name: format!("leaf_spring_{index}"),
@@ -384,16 +390,11 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         });
 
         atoms.extend(rod_atoms.iter().cloned());
-        atoms.extend(pin_atoms.iter().cloned());
         atoms.extend(spring_atoms.iter().cloned());
 
         let mut rod_scene_body = scene_body(rod_body, ROD_ROLE, "ejection_rod", false);
         rod_scene_body.position_m = centroid_m(&rod_atoms);
         rod_bodies.push(rod_scene_body);
-
-        let mut pin_scene_body = scene_body(pin_body, PIN_ROLE, PIN_PART_ID, false);
-        pin_scene_body.position_m = centroid_m(&pin_atoms);
-        pin_bodies.push(pin_scene_body);
 
         let mut spring_scene_body = scene_body(spring_body, SPRING_ROLE, SPRING_PART_ID, false);
         spring_scene_body.position_m = centroid_m(&spring_atoms);
@@ -408,16 +409,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             axis_world: radial_m,
             axis_a_body: radial_m,
             axis_b_body: Some(radial_m),
-        });
-        pin_joints.push(SceneJoint {
-            name: format!("follower_pin_{index}"),
-            kind: "fixed".to_string(),
-            body_a: rod_body,
-            body_b: pin_body,
-            anchor_world_m: Some([pin_center_m * cos_rad, pin_center_m * sin_rad, 0.0]),
-            axis_world: [0.0, 0.0, 1.0],
-            axis_a_body: [0.0, 0.0, 1.0],
-            axis_b_body: Some([0.0, 0.0, 1.0]),
         });
         spring_joints.push(SceneJoint {
             name: format!("leaf_spring_{index}"),
@@ -446,11 +437,10 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         scene_body(ROTOR_BODY, ROTOR_ROLE, "sorting_rotor", false),
     ];
     bodies.extend(rod_bodies);
-    bodies.extend(pin_bodies);
     bodies.extend(spring_bodies);
     bodies.push(scene_body(CAM_BODY, CAM_ROLE, "cam_hub", true));
 
-    let mut joints = Vec::with_capacity(1 + 3 * ROD_COUNT);
+    let mut joints = Vec::with_capacity(1 + 2 * ROD_COUNT);
     joints.push(SceneJoint {
         name: "rotor_axis".to_string(),
         kind: "revolute".to_string(),
@@ -462,7 +452,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         axis_b_body: Some(axis),
     });
     joints.extend(rod_joints);
-    joints.extend(pin_joints);
     joints.extend(spring_joints);
 
     let mut coarse = vec![
@@ -482,7 +471,6 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
         },
     ];
     coarse.extend(rod_coarse);
-    coarse.extend(pin_coarse);
     coarse.extend(spring_coarse);
     coarse.push(CoarseBody {
         index: CAM_BODY,
@@ -641,12 +629,12 @@ mod tests {
     }
 
     #[test]
-    fn the_rotor_scene_has_thirty_nine_bodies_and_thirty_seven_joints() {
+    fn the_rotor_scene_has_twenty_seven_bodies_and_twenty_five_joints() {
         let scene = scene();
-        assert_eq!(scene.device.body_count, 39);
-        assert_eq!(scene.device.bodies.len(), 39);
-        assert_eq!(scene.device.joints.len(), 37);
-        assert_eq!(scene.coarse.body_count, 39);
+        assert_eq!(scene.device.body_count, 27);
+        assert_eq!(scene.device.bodies.len(), 27);
+        assert_eq!(scene.device.joints.len(), 25);
+        assert_eq!(scene.coarse.body_count, 27);
         let axis_joint = &scene.device.joints[0];
         assert_eq!(axis_joint.kind, "revolute");
         assert_eq!(axis_joint.body_a, HOUSING_BODY);
@@ -659,14 +647,6 @@ mod tests {
             assert!(joint.anchor_world_m.is_some());
         }
         for (index, joint) in scene.device.joints[1 + ROD_COUNT..1 + 2 * ROD_COUNT]
-            .iter()
-            .enumerate()
-        {
-            assert_eq!(joint.kind, "fixed");
-            assert_eq!(joint.body_a, ROD_BODY_FIRST + index);
-            assert_eq!(joint.body_b, PIN_BODY_FIRST + index);
-        }
-        for (index, joint) in scene.device.joints[1 + 2 * ROD_COUNT..1 + 3 * ROD_COUNT]
             .iter()
             .enumerate()
         {
@@ -724,21 +704,26 @@ mod tests {
     }
 
     #[test]
-    fn every_rod_carries_a_follower_pin_as_a_joined_body() {
+    fn every_rod_carries_its_pin_as_one_lattice() {
         let scene = scene();
         for index in 0..ROD_COUNT {
             let rod = ROD_BODY_FIRST + index;
-            let pin = PIN_BODY_FIRST + index;
-            assert_eq!(part_atoms(scene, pin, PIN_PART_ID), 64, "pin {index}");
-            assert_eq!(part_atoms(scene, rod, PIN_PART_ID), 0);
-            let joint = scene
-                .device
-                .joints
+            assert_eq!(
+                part_atoms(scene, rod, "ejection_rod"),
+                body_atoms(scene, rod),
+                "rod {index} has no pin welded into its part"
+            );
+            let lowest_m = scene
+                .atomistic
+                .atoms
                 .iter()
-                .find(|joint| joint.body_b == pin)
-                .expect("each pin has a joint");
-            assert_eq!(joint.kind, "fixed");
-            assert_eq!(joint.body_a, rod);
+                .filter(|atom| atom.body == rod)
+                .map(|atom| atom.position_m[2])
+                .fold(f64::INFINITY, f64::min);
+            assert!(
+                lowest_m < -1.0e-9,
+                "rod {index} does not reach past the rotor as a bonded pin"
+            );
         }
     }
 
@@ -764,34 +749,33 @@ mod tests {
     }
 
     #[test]
-    fn every_atom_belongs_to_one_of_the_thirty_nine_bodies() {
+    fn every_atom_belongs_to_one_of_the_twenty_seven_bodies() {
         let scene = scene();
         assert_eq!(scene.atomistic.atom_count, scene.atomistic.atoms.len());
         for atom in &scene.atomistic.atoms {
-            assert!(atom.body < 39);
+            assert!(atom.body < 27);
             assert!(atom.atomic_number > 0);
         }
-        assert_eq!(scene.atomistic.atom_count, 120_884);
         assert_eq!(body_atoms(scene, HOUSING_BODY), 71_624);
-        assert_eq!(body_atoms(scene, ROTOR_BODY), 38_740);
         assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
         for index in 0..ROD_COUNT {
-            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 678);
-            assert_eq!(body_atoms(scene, PIN_BODY_FIRST + index), 64);
+            assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 843);
             assert_eq!(body_atoms(scene, SPRING_BODY_FIRST + index), 36);
         }
+        let rotor = body_atoms(scene, ROTOR_BODY);
+        assert_eq!(rotor, 33_008);
+        assert_eq!(
+            scene.atomistic.atom_count,
+            body_atoms(scene, HOUSING_BODY) + rotor + body_atoms(scene, CAM_BODY) + 12 * (843 + 36)
+        );
     }
 
     #[test]
-    fn the_pins_and_the_springs_are_held_by_fixed_joints() {
+    fn the_rods_and_the_springs_are_held_by_fixed_joints() {
         let scene = scene();
         let report = crate::sense_report(scene);
         for index in 0..ROD_COUNT {
-            for body in [
-                ROD_BODY_FIRST + index,
-                PIN_BODY_FIRST + index,
-                SPRING_BODY_FIRST + index,
-            ] {
+            for body in [ROD_BODY_FIRST + index, SPRING_BODY_FIRST + index] {
                 assert!(!report.floating_bodies.contains(&body));
                 assert!(
                     !report
@@ -938,8 +922,17 @@ mod tests {
             grid.entry(cell).or_default().push(atom.position_m);
         }
         let stroke_m = CamHubGenerator.rise_m();
+        let pin_head_radius_m = FollowerPinGenerator.head_radius_m();
+        let cam_retract_m =
+            CamHubGenerator.base_radius_m() + pin_head_radius_m + INTERFACE_CLEARANCE_M;
         for index in 0..ROD_COUNT {
             let body = ROD_BODY_FIRST + index;
+            let angle_rad = 2.0 * PI * index as f64 / ROD_COUNT as f64;
+            let pin_center_m = CamHubGenerator.pin_center_radius_m(angle_rad, pin_head_radius_m)
+                + INTERFACE_CLEARANCE_M;
+            // The pin center sweeps from the dwell radius to the lobe radius,
+            // so a rod already placed at the lobe moves inward first.
+            let start_m = cam_retract_m - pin_center_m;
             let axis_world = scene
                 .device
                 .joints
@@ -955,7 +948,7 @@ mod tests {
                 .map(|atom| atom.position_m)
                 .collect();
             for step in 0..=4 {
-                let travel_m = stroke_m * step as f64 / 4.0;
+                let travel_m = start_m + stroke_m * step as f64 / 4.0;
                 let moved: Vec<[f64; 3]> = rod
                     .iter()
                     .map(|point| {
