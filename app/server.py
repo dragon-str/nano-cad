@@ -17,6 +17,7 @@ it is not reachable from another machine. Standard library only.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import os
 import shutil
@@ -42,6 +43,11 @@ CARGO_PROFILE = "--release"
 # sweep is expensive, and a page reload repeats the same request.
 _SCORE_CACHE = {}
 _SCORE_LOCK = threading.Lock()
+# The rotor scene is deterministic. Build it and pack it once, then serve the
+# same bytes. A page reload repeats the request, and the build costs seconds.
+_ROTOR_CACHE = None
+_ROTOR_CACHE_GZIP = None
+_ROTOR_LOCK = threading.Lock()
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -163,6 +169,30 @@ def rotor_result() -> dict:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def rotor_body() -> tuple[bytes, bytes]:
+    """Return the rotor response body, as raw bytes and as gzip bytes.
+
+    The payload is deterministic, so build it once and keep it. The raw bytes
+    serve a client without gzip support. The gzip bytes cut the transfer for a
+    gzip-capable browser.
+    """
+    global _ROTOR_CACHE, _ROTOR_CACHE_GZIP
+    with _ROTOR_LOCK:
+        if _ROTOR_CACHE is None:
+            body = json.dumps(rotor_result()).encode("utf-8")
+            _ROTOR_CACHE = body
+            _ROTOR_CACHE_GZIP = gzip.compress(body, compresslevel=1)
+    return _ROTOR_CACHE, _ROTOR_CACHE_GZIP
+
+
+def warm_rotor_cache() -> None:
+    """Build the rotor response off the request path, so the first load is quick."""
+    try:
+        rotor_body()
+    except (BuildError, subprocess.TimeoutExpired) as error:
+        sys.stderr.write(f"app: rotor warm-up failed: {error}\n")
+
+
 def scenes_result() -> dict:
     """List the machines and the library parts that the viewer can show."""
     result = _run_example("nanocad-jigs", "scenes_json", [])
@@ -225,6 +255,20 @@ def _params_from_query(query: str) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "nanocad-app/1.0"
+
+    def _send_bytes(
+        self, status: int, body: bytes, content_type: str, encoding: str = ""
+    ) -> None:
+        """Send a prepared body, optionally gzip-encoded."""
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        if encoding:
+            self.send_header("Content-Encoding", encoding)
+            self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -311,11 +355,17 @@ class Handler(BaseHTTPRequestHandler):
             return
         if route == "/api/rotor":
             try:
-                self._send_json(200, rotor_result())
+                raw, packed = rotor_body()
             except BuildError as error:
                 self._send_json(400, {"error": str(error)})
+                return
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the rotor run timed out"})
+                return
+            if "gzip" in self.headers.get("Accept-Encoding", ""):
+                self._send_bytes(200, packed, "application/json; charset=utf-8", "gzip")
+            else:
+                self._send_bytes(200, raw, "application/json; charset=utf-8")
             return
         if route == "/api/scenes":
             try:
@@ -419,6 +469,7 @@ def main() -> int:
     server = ThreadingHTTPServer((arguments.host, arguments.port), Handler)
     print(f"nano-cad app on http://{arguments.host}:{arguments.port}/ (Ctrl-C stops)")
     print(f"engine profile: {CARGO_PROFILE.lstrip('-')}")
+    threading.Thread(target=warm_rotor_cache, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

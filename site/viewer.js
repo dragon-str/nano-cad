@@ -572,7 +572,6 @@
       return new Float32Array(0);
     }
     var bodies = scene.device.bodies;
-    var arm = fit.r * 0.02;
     var out = [];
     function push(a, b) {
       out.push(a[0], a[1], a[2], b[0], b[1], b[2]);
@@ -581,12 +580,6 @@
       var joint = scene.device.joints[j];
       var pa = joint.anchor_world_m || bodies[joint.body_a].position_m;
       push(liveBodyPoint(joint.body_a, pa), liveBodyPoint(joint.body_b, bodies[joint.body_b].position_m));
-    }
-    for (var i = 0; i < bodies.length; i += 1) {
-      var c = liveBodyPoint(i, bodies[i].position_m);
-      push([c[0] - arm, c[1], c[2]], [c[0] + arm, c[1], c[2]]);
-      push([c[0], c[1] - arm, c[2]], [c[0], c[1] + arm, c[2]]);
-      push([c[0], c[1], c[2] - arm], [c[0], c[1], c[2] + arm]);
     }
     return new Float32Array(out);
   }
@@ -1154,10 +1147,6 @@
 
   function drawDevice(alpha) {
     var bodies = scene.device.bodies;
-    var coarseByIndex = new Map();
-    for (var k = 0; k < scene.coarse.bodies.length; k += 1) {
-      coarseByIndex.set(scene.coarse.bodies[k].index, scene.coarse.bodies[k]);
-    }
 
     ctx.globalAlpha = alpha;
 
@@ -1183,30 +1172,44 @@
       }
     }
 
+    var rect = canvas.getBoundingClientRect();
+    var px = pointerState.x - rect.left;
+    var py = pointerState.y - rect.top;
+    var points = [];
+    var hovered = -1;
+    var closest = 12 * 12;
+    for (var i = 0; i < bodies.length; i += 1) {
+      points.push(camera(bodies[i].position_m));
+      var dx = points[i][0] - px;
+      var dy = points[i][1] - py;
+      var distance = dx * dx + dy * dy;
+      if (distance < closest) {
+        closest = distance;
+        hovered = i;
+      }
+    }
+
     for (var i = 0; i < bodies.length; i += 1) {
       var body = bodies[i];
       var color = ROLE_COLORS[body.role] || "#8b949e";
-      var p = camera(body.position_m);
-      var coarse = coarseByIndex.get(body.index);
-      var radius = 4;
-      if (coarse && coarse.bounding_cylinder) {
-        radius = Math.max(3, pixRadius(coarse.bounding_cylinder.radius_m, p[3]));
-      }
+      var p = points[i];
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(p[0], p[1], radius, 0, 2 * Math.PI);
+      ctx.arc(p[0], p[1], 3, 0, 2 * Math.PI);
       ctx.stroke();
 
       if (body.fixed) {
         ctx.fillStyle = "#e6edf3";
         ctx.beginPath();
-        ctx.arc(p[0], p[1], 2, 0, 2 * Math.PI);
+        ctx.arc(p[0], p[1], 1.6, 0, 2 * Math.PI);
         ctx.fill();
       }
-      ctx.fillStyle = "rgba(230, 237, 243, 0.95)";
-      ctx.font = "11px ui-monospace, Menlo, monospace";
-      ctx.fillText(body.name, p[0] + radius + 3, p[1] - radius - 2);
+      if (i === hovered) {
+        ctx.fillStyle = "rgba(230, 237, 243, 0.95)";
+        ctx.font = "11px ui-monospace, Menlo, monospace";
+        ctx.fillText(body.name, p[0] + 6, p[1] - 6);
+      }
     }
     ctx.globalAlpha = 1;
   }
