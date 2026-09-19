@@ -8,6 +8,7 @@
 
 pub mod binding;
 pub mod bonded;
+pub mod cam_drive;
 pub mod capture;
 pub mod clearance;
 pub mod drive;
@@ -20,6 +21,7 @@ pub mod relaxed;
 pub mod slip;
 
 pub use binding::{binding_energy_j, selectivity_ratio, BindingReport, BindingTarget};
+pub use cam_drive::{cam_drive_report, CamDriveReport, CamDriveTarget, SMOOTH_PRESSURE_ANGLE_RAD};
 pub use capture::{capture_report, CaptureReport, CaptureTarget};
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
 pub use drive::{DriveReport, DriveTarget, SteeredDrive};

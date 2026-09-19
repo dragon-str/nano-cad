@@ -200,8 +200,14 @@ impl CamHubGenerator {
     /// Returns the dwell-and-ramp surface radius for the given parameters.
     ///
     /// `delta_rad` is the angle from the lobe azimuth. It is wrapped to
-    /// `(-PI, PI]`, so a caller may pass an unwrapped angle.
-    fn surface_radius_with(base_radius_m: f64, rise_m: f64, ramp_rad: f64, delta_rad: f64) -> f64 {
+    /// `(-PI, PI]`, so a caller may pass an unwrapped angle. This free form
+    /// lets a metric read the profile without a resolved generator.
+    pub fn surface_radius_with(
+        base_radius_m: f64,
+        rise_m: f64,
+        ramp_rad: f64,
+        delta_rad: f64,
+    ) -> f64 {
         let delta_rad = (delta_rad + PI).rem_euclid(2.0 * PI) - PI;
         if delta_rad.abs() >= ramp_rad {
             return base_radius_m;
