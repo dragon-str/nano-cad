@@ -26,6 +26,7 @@ mod part_scene;
 mod rotor;
 mod rotor_scene;
 mod scene;
+mod sense;
 mod spring;
 mod urdf;
 
@@ -64,6 +65,10 @@ pub use scene::{
     AtomisticLayer, CoarseBody, CoarseCircle, CoarseCylinder, CoarseLayer, DeviceLayer, Scene,
     SceneAtom, SceneBody, SceneDesign, SceneError, SceneGearConstraint, SceneGearCoupling,
     SceneGearTerm, SceneJoint, SCENE_SCHEMA, SCENE_VERSION,
+};
+pub use sense::{
+    sense_report, DisjointBody, OverlapBodies, SenseReport, BOND_CUTOFF_M, MIN_SEPARATION_M,
+    OVERLAP_M,
 };
 pub use spring::SpringJig;
 pub use urdf::{
