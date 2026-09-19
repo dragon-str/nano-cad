@@ -1867,3 +1867,35 @@ only. It models no friction, no spring preload, no contact force, and no
 materials. A smooth angle needs a much larger hub (near `2.0e-8 m`), a shorter
 stroke, a closed-groove cam, or fewer pockets. This ADR records the estimate; it
 does not claim a validated design.
+
+## ADR-0079: Face skins keep every rotor-scene body one piece
+
+Context. `sense_report` on the rotor scene found the housing split into two
+halves and the rotor split into 33 pieces. A body with more than one piece is
+not a physical part. The cause was the through cuts. The two housing channels
+ran through the full thickness, so they cut the ring into two arcs. The rotor
+ejection bores and pin clearance slots also ran through the full thickness, so
+they cut the disc into a hub and many sectors.
+
+Decision. Each functional cut stops at both faces, and a solid skin stays.
+
+- `housing.rs` keeps `CHANNEL_SKIN_M = 3.5e-10 m`. Each channel is a window in
+  the mid-plane. The ring keeps a top and a bottom skin, and the guest still
+  passes in the mid-plane.
+- `rotor.rs` keeps `TOP_SKIN_M = 1.5e-10 m`. The 12 ejection bores are clipped
+  under both faces. The 12 pin clearance slots are clipped under the top face
+  only, because the pin exits the bottom face. The central bore, the keyway and
+  the pockets stay through-thickness.
+
+The rotor skin is thin because the rod slides under it. The rod top sits at
+`z = 0.6e-9`, and the rotor half-thickness is `1.0e-9`. A `1.5e-10 m` skin puts
+the plate at `z = 0.85e-9..1.0e-9`, and the rod keeps a clearance above the
+`1.7e-10 m` clash threshold.
+
+Consequence. `sense_report` reports no disjoint body and no floating body for the
+rotor scene. Every one of the 27 bodies is one connected lattice. The rotor
+holds 38 472 atoms and the housing 73 208.
+
+Limits. The change does not remove the pre-existing `overlap_count` from
+sub-lattice H-H clashes (ADR-0075), and it does not remove the 84 cross-body
+perceived bonds. Those stay open under M21-03.

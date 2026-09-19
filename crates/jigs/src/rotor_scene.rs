@@ -756,14 +756,14 @@ mod tests {
             assert!(atom.body < 27);
             assert!(atom.atomic_number > 0);
         }
-        assert_eq!(body_atoms(scene, HOUSING_BODY), 71_624);
+        assert_eq!(body_atoms(scene, HOUSING_BODY), 73_208);
         assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
         for index in 0..ROD_COUNT {
             assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 843);
             assert_eq!(body_atoms(scene, SPRING_BODY_FIRST + index), 36);
         }
         let rotor = body_atoms(scene, ROTOR_BODY);
-        assert_eq!(rotor, 33_008);
+        assert_eq!(rotor, 38_472);
         assert_eq!(
             scene.atomistic.atom_count,
             body_atoms(scene, HOUSING_BODY) + rotor + body_atoms(scene, CAM_BODY) + 12 * (843 + 36)

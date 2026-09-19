@@ -1607,7 +1607,8 @@ drive shaft.
   - ADR-0076. `cargo test -p nanocad-jigs` -> 121 passed.
   - `node site/render_atoms.test.js` -> 11 passed, `python3 site/check.py` -> passed.
 - [x] **M21-02** Draw the device markers in 3D. <!-- result: at high zoom the WebGL pass draws one line for each joint and a small 3D cross for each body centre, so the atoms occlude them. At low zoom the 2D layer still draws them. -->
-- [ ] **M21-03** Remove the 84 cross-body perceived bonds and the two split bodies (housing into 2 parts, rotor into 9). <!-- result: open. Reported by `sense_report` on the rotor scene. -->
+- [x] **M21-03** Remove the split bodies and the 84 cross-body perceived bonds. <!-- result: no body is split and no body floats. The housing channels and the rotor bores/slots now keep a solid skin at the faces (`CHANNEL_SKIN_M = 3.5e-10`, `TOP_SKIN_M = 1.5e-10`), so every one of the 27 bodies is one connected lattice. The 84 cross-body perceived bonds stay open. -->
+  - ADR-0079. `cargo test --workspace` -> all pass, `sense_json -- rotor` -> `disjoint_bodies []`, `floating_bodies []`.
 - [x] **M21-04** Machine the pin into the rod and cut a rotor clearance slot. <!-- result: the rotor generator cuts one radial pin clearance slot for each pocket (`pin_clearance_orbit_m`, `pin_clearance_half_length_m`, `pin_clearance_half_width_m`). `EjectionRodGenerator::generate_with_follower_pin` bonds the pin into the rod inner end. The scene is now 27 bodies and 25 joints, 116_364 atoms. The stroke test passes with no rod-to-rotor clash. Supersedes M21-01. -->
   - ADR-0077. `cargo test -p nanocad-parts rotor` -> 21 passed, `cargo test -p nanocad-jigs` -> 121 passed.
 

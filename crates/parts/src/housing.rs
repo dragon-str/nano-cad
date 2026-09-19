@@ -23,6 +23,12 @@ use crate::parameter::{ParameterSet, ParameterSpec};
 use crate::port::{Dof, Port};
 use crate::shape::{Box3, Cylinder, Difference, Placed, Solid, Union};
 
+/// The thickness of the solid skin over each channel, in metres.
+///
+/// A channel is a window, not a full cut. It stops below the two faces, so the
+/// ring stays one piece of material and the guest still passes in the mid-plane.
+const CHANNEL_SKIN_M: f64 = 3.5e-10;
+
 /// The parameter specs of [`RotorHousingGenerator`], in a stable order.
 static ROTOR_HOUSING_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
@@ -213,8 +219,16 @@ impl PartGenerator for RotorHousingGenerator {
         let channel = |angle_rad: f64| -> Box<dyn Solid> {
             Box::new(Placed {
                 inner: Box::new(Box3 {
-                    min_m: [-reach_m, -0.5 * channel_width_m, -0.5 * thickness_m],
-                    max_m: [reach_m, 0.5 * channel_width_m, 0.5 * thickness_m],
+                    min_m: [
+                        -reach_m,
+                        -0.5 * channel_width_m,
+                        -0.5 * thickness_m + CHANNEL_SKIN_M,
+                    ],
+                    max_m: [
+                        reach_m,
+                        0.5 * channel_width_m,
+                        0.5 * thickness_m - CHANNEL_SKIN_M,
+                    ],
                 }),
                 rotation_rad: angle_rad,
                 offset_m: center_m,
@@ -324,7 +338,7 @@ mod tests {
                 let dy = atom.position_m[1] - center_m[1];
                 atom.element == Element::CARBON
                     && (dx * dx + dy * dy).sqrt() < half_m
-                    && atom.position_m[2].abs() < 0.5 * 2.4e-9
+                    && atom.position_m[2].abs() < 0.5 * 2.4e-9 - CHANNEL_SKIN_M
             });
             assert_eq!(
                 inside.count(),

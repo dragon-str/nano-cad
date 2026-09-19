@@ -28,6 +28,14 @@ use crate::pocket::charge_wall;
 use crate::port::{Dof, Port};
 use crate::shape::{Box3, Cylinder, Difference, Placed, RadialCylinder, Solid, Union};
 
+/// The thickness of the continuous top plate of the rotor, in metres.
+///
+/// The ejection bores and the pin clearance slots stop below this plate. The
+/// plate ties every sector and the hub into one body, so the rotor stays a
+/// single piece of material. It is thinner than the rod half-height, so the
+/// rods slide under it.
+const TOP_SKIN_M: f64 = 1.5e-10;
+
 /// The longest bond in diamond, in metres. A probe shorter than this stays
 /// inside the cell that owns the direction.
 const PROBE_STEP_M: f64 = 0.6 * 1.544e-10;
@@ -396,6 +404,7 @@ impl PartGenerator for SortingRotorGenerator {
             });
             pockets.push(pocket);
         }
+        let mut bores: Option<Box<dyn Solid>> = None;
         if ejection_bore_radius_m > 0.0 {
             for index in 0..pocket_count {
                 let bore = Self::ejection_bore(
@@ -406,13 +415,50 @@ impl PartGenerator for SortingRotorGenerator {
                     pocket_radius_m,
                     ejection_bore_radius_m,
                 );
-                void = Box::new(Union {
-                    a: void,
-                    b: Box::new(bore),
+                bores = Some(match bores {
+                    Some(existing) => Box::new(Union {
+                        a: existing,
+                        b: Box::new(bore),
+                    }),
+                    None => Box::new(bore),
                 });
             }
         }
 
+        // The ejection bores stay under both faces. They tie the top and the
+        // bottom plates to the sectors, so no island floats near the hub.
+        if let Some(bores) = bores {
+            let top_clip = Box3 {
+                min_m: [
+                    -disc_radius_m,
+                    -disc_radius_m,
+                    0.5 * thickness_m - TOP_SKIN_M,
+                ],
+                max_m: [disc_radius_m, disc_radius_m, 0.5 * thickness_m],
+            };
+            let bottom_clip = Box3 {
+                min_m: [-disc_radius_m, -disc_radius_m, -0.5 * thickness_m],
+                max_m: [
+                    disc_radius_m,
+                    disc_radius_m,
+                    -0.5 * thickness_m + TOP_SKIN_M,
+                ],
+            };
+            let clipped = Difference {
+                outer: bores,
+                inner: Box::new(top_clip),
+            };
+            let clipped = Difference {
+                outer: Box::new(clipped),
+                inner: Box::new(bottom_clip),
+            };
+            void = Box::new(Union {
+                a: void,
+                b: Box::new(clipped),
+            });
+        }
+
+        let mut slots: Option<Box<dyn Solid>> = None;
         if pin_clearance_half_length_m > 0.0 {
             for index in 0..pocket_count {
                 let angle_rad = 2.0 * PI * index as f64 / pocket_count.max(1) as f64;
@@ -428,15 +474,40 @@ impl PartGenerator for SortingRotorGenerator {
                         0.5 * thickness_m,
                     ],
                 };
-                void = Box::new(Union {
-                    a: void,
-                    b: Box::new(Placed {
-                        inner: Box::new(slot),
-                        rotation_rad: angle_rad,
-                        offset_m: [0.0, 0.0, 0.0],
+                let placed = Placed {
+                    inner: Box::new(slot),
+                    rotation_rad: angle_rad,
+                    offset_m: [0.0, 0.0, 0.0],
+                };
+                slots = Some(match slots {
+                    Some(existing) => Box::new(Union {
+                        a: existing,
+                        b: Box::new(placed),
                     }),
+                    None => Box::new(placed),
                 });
             }
+        }
+
+        // The pin slots cut the top plate so the pin can reach the cam. They
+        // stop below the top face, and the plate around each slot stays whole.
+        if let Some(slots) = slots {
+            let top_clip = Box3 {
+                min_m: [
+                    -disc_radius_m,
+                    -disc_radius_m,
+                    0.5 * thickness_m - TOP_SKIN_M,
+                ],
+                max_m: [disc_radius_m, disc_radius_m, 0.5 * thickness_m],
+            };
+            let clipped = Difference {
+                outer: slots,
+                inner: Box::new(top_clip),
+            };
+            void = Box::new(Union {
+                a: void,
+                b: Box::new(clipped),
+            });
         }
 
         let solid = Difference {
@@ -668,6 +739,7 @@ mod tests {
                     let local_y_m = -sin_rad * atom.position_m[0] + cos_rad * atom.position_m[1];
                     (local_x_m - slot_orbit_m).abs() < 0.5 * half_length_m
                         && local_y_m.abs() < 0.5 * half_width_m
+                        && atom.position_m[2].abs() < 0.5 * 2.0e-9 - TOP_SKIN_M
                 })
                 .count();
         }
