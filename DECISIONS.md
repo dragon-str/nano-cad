@@ -1742,3 +1742,33 @@ permanent test, `the_rods_clear_the_rotor_through_the_stroke`, holds the limit.
 Limits. The check covers the rod and the rotor only. It does not cover the
 guard, the leaf spring bond to the rotor, or a guest in the pocket. The capture
 margin for dimethyl ether is small.
+
+## ADR-0075: Surface clashes are fixed in the lattice, not in the cap
+
+Context. The physical-sense audit (`sense_report`) found hydrogen-hydrogen
+pairs 0.74e-10 apart on curved diamond surfaces, in every scene. Each pair is
+two hydrogen caps that point into the same missing lattice site. The site
+separates two surface carbons.
+
+Finding. A minimum-separation rule in `cap_free` removes every such pair. It
+also removes 11 750 hydrogen caps from the rotor scene. The carbon valence then
+falls below four. The parts tests `every_carbon_keeps_a_valid_valence` and
+`every_solid_gear_atom_has_a_valid_diamond_valence` then fail with carbon
+degrees of three, two and one. A degree-one carbon cannot come from a refused
+cap alone. The source lattice therefore contains isolated and under-coordinated
+surface sites.
+
+Decision. `cap_free` does not refuse a cap. A cap is always added, and a
+hydrogen-hydrogen clash stays visible. The audit reports the clash. The root
+cause is in lattice generation and surface reconstruction, not in capping.
+`spur_gear` has a known duplicate: the rim, the hub and the spokes are three
+independent atom sets, so coincident sites duplicate exactly.
+
+Consequence. The tree stays green, and both valence tests still pass. The audit
+tool `sense_report`, its unit tests and the `sense_json` example are merged. The
+open work is the lattice dedup and surface-reconstruction task.
+
+Limits. The audit threshold `MIN_SEPARATION_M` is 0.9e-10. A real hydrogen
+bond is near 0.74e-10, so the audit flags a clash that a relaxed structure
+could still tolerate. The finding is not yet traced to a single lattice
+function.
