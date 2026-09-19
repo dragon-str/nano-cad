@@ -1610,3 +1610,12 @@ drive shaft.
 - [ ] **M21-03** Remove the 84 cross-body perceived bonds and the two split bodies (housing into 2 parts, rotor into 9). <!-- result: open. Reported by `sense_report` on the rotor scene. -->
 - [x] **M21-04** Machine the pin into the rod and cut a rotor clearance slot. <!-- result: the rotor generator cuts one radial pin clearance slot for each pocket (`pin_clearance_orbit_m`, `pin_clearance_half_length_m`, `pin_clearance_half_width_m`). `EjectionRodGenerator::generate_with_follower_pin` bonds the pin into the rod inner end. The scene is now 27 bodies and 25 joints, 116_364 atoms. The stroke test passes with no rod-to-rotor clash. Supersedes M21-01. -->
   - ADR-0077. `cargo test -p nanocad-parts rotor` -> 21 passed, `cargo test -p nanocad-jigs` -> 121 passed.
+
+## M22 — Cam drive study
+
+- [x] **M22-01** Add the analytic `CamDrive` metric. <!-- result: `crates/meter/src/cam_drive.rs` samples one turn of the cam profile and reports the stroke, the maximum pressure angle and its position, the mechanical advantage, the side-load ratio, and the lift derivatives. `CamHubGenerator::surface_radius_with` is now public. The default cam measures a 74.99 deg pressure angle and a 0.26 mechanical advantage. Supersedes nothing; see ADR-0078. -->
+  - `cargo test -p nanocad-meter cam_drive` -> 6 passed.
+- [x] **M22-02** Add the `cam_drive_json` example. <!-- result: prints the report for the default cam and for a gentle ramp. The gentle ramp (ramp_half_angle_rad 1.5) is smooth at 27.58 deg. -->
+- [x] **M22-03** Add the CMA-ES cam search. <!-- result: `crates/opt/src/cam_drive.rs` holds `CamDriveSearch` over `base_radius_m`, `ramp_half_angle_rad` and `pin_radius_m`; the rise holds the stroke target. `optimize_cam` lowers the pressure angle from 74.99 deg to 63.50 deg at the hub limit (3.0e-9), the ramp limit (PI/12) and a pin radius of 0.80e-9, feasible but not smooth. -->
+  - `cargo test -p nanocad-opt cam_drive` -> 4 passed.
+- [ ] **M22-04** Lower the cam pressure angle by design. <!-- result: open. The metric shows the 12-pocket rotor cannot reach 30 deg with a 1.5 nm stroke on a 2-3 nm hub. Options: a larger hub near 20e-9 m, a shorter stroke, a closed-groove cam, or fewer pockets. -->

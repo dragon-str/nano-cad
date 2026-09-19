@@ -1830,3 +1830,40 @@ Limits. The margin of 3.5e-10 m is large, because the pin cap extends about
 0.11e-9 m past the carbon surface. A margin of 1.5e-10 m left a 1.19e-10 m clash
 at rod 6. The scene still reports 84 cross-body perceived bonds and two split
 bodies (housing into 2 parts, rotor into 9). These are older defects.
+
+## ADR-0078: The cam pressure angle governs the drive, and it is too steep
+
+Context. The user asked if the follower pin is angled enough to push the rod
+smoothly. The pin is vertical. The cam is a radial cam: a disc whose outer
+radius rises with azimuth (`cam_hub.rs`). The pin rides the outer wall as a
+roller follower, and the rod slides along its own radius. The push is radial, so
+the pin must not be angled. The governing angle is the pressure angle.
+
+Finding. For a translating radial follower, `tan(angle) = (dr/dtheta) / r`,
+where `r` is the follower-centre radius. The new `CamDrive` metric in
+`crates/meter` samples one turn and reports the pressure angle, its position,
+the mechanical advantage, the side-load ratio, and the lift derivatives. At the
+current defaults the maximum pressure angle is `74.99 deg`, and the mechanical
+advantage is `0.26`. A smooth cam wants at most `30 deg`. The ramp is capped at
+15 deg, because the 12 pockets are 30 deg apart and only one pin may ride the
+ramp. So the 12-pocket rotor cannot reach 30 deg with a 1.5 nm stroke on a
+2-3 nm hub.
+
+Decision. `crates/meter/src/cam_drive.rs` holds the `CamDrive` metric. It uses
+`CamHubGenerator::surface_radius_with`, which is now public. The example
+`cam_drive_json` prints the report. `crates/opt/src/cam_drive.rs` holds
+`CamDriveSearch`, a CMA-ES search over `base_radius_m`, `ramp_half_angle_rad`
+and `pin_radius_m`. The rise holds the stroke target, so every candidate is
+feasible. The hub base is limited to `3.0e-9 m`, because a larger lobe would
+breach the pocket inner radius. The objective is the maximum pressure angle plus
+a jerk penalty.
+
+Consequence. The search lowers the maximum pressure angle from `74.99 deg` to
+`63.50 deg` at the hub limit, the ramp limit and a pin radius of `0.80e-9 m`.
+The design stays feasible and not smooth.
+
+Limits. This is a model search. It reads the cam profile and the pin radius
+only. It models no friction, no spring preload, no contact force, and no
+materials. A smooth angle needs a much larger hub (near `2.0e-8 m`), a shorter
+stroke, a closed-groove cam, or fewer pockets. This ADR records the estimate; it
+does not claim a validated design.
