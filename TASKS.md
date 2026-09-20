@@ -1619,4 +1619,11 @@ drive shaft.
 - [x] **M22-02** Add the `cam_drive_json` example. <!-- result: prints the report for the default cam and for a gentle ramp. The gentle ramp (ramp_half_angle_rad 1.5) is smooth at 27.58 deg. -->
 - [x] **M22-03** Add the CMA-ES cam search. <!-- result: `crates/opt/src/cam_drive.rs` holds `CamDriveSearch` over `base_radius_m`, `ramp_half_angle_rad` and `pin_radius_m`; the rise holds the stroke target. `optimize_cam` lowers the pressure angle from 74.99 deg to 63.50 deg at the hub limit (3.0e-9), the ramp limit (PI/12) and a pin radius of 0.80e-9, feasible but not smooth. -->
   - `cargo test -p nanocad-opt cam_drive` -> 4 passed.
-- [ ] **M22-04** Lower the cam pressure angle by design. <!-- result: open. The metric shows the 12-pocket rotor cannot reach 30 deg with a 1.5 nm stroke on a 2-3 nm hub. Options: a larger hub near 20e-9 m, a shorter stroke, a closed-groove cam, or fewer pockets. -->
+- [x] **M22-04** Lower the cam pressure angle by design. <!-- result: the rotor scene now uses `CAM_RAMP_HALF_ANGLE_RAD = 1.4` rad, a wide ramp that spreads the 1.5 nm rise over 2.8 rad and holds the pressure angle near 29 deg (was 75 deg). The cam is generated with that ramp, and both pin-centre computations use `CamHubGenerator::surface_radius_with` to stay consistent. The cam body grew from 1 184 to 1 822 atoms. `site/viewer.js` `ROTOR_CAM_RAMP_RAD` matches. The trade-off: about five pins sit on the ramp at once, so several pockets open together. `cargo test --workspace` all pass. -->
+  - ADR-0080.
+
+## M23 — Mechanism refinements
+
+- [ ] **M23-01** Add a rod return spring. <!-- result: open. The cam only pushes the rod outward. Nothing pulls it back. The leaf spring is a separate body on a fixed joint to the rotor and never touches the rod. Give each rod a preloaded return spring. -->
+- [ ] **M23-02** Add a loading sector and stop re-entry at the outlet. <!-- result: open. The housing has one inlet slot and one outlet slot. Expose about 120 deg of the pockets as a loading sector so guests can attach in parallel. Make the outlet a one-way path (a slope, a valve, or a long throat) so an ejected ligand cannot diffuse back into the chamber. -->
+- [ ] **M23-03** Reconsider the cam profile. <!-- result: open. The wide 1.4 rad ramp makes several pins push at once. If one pocket at a time is required, use a shorter stroke, a closed-groove cam, or fewer pockets. -->

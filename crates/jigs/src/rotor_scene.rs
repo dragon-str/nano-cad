@@ -106,6 +106,16 @@ pub const EJECTION_BORE_CLEARANCE_M: f64 = 3.9e-10;
 /// the clash threshold.
 pub const PIN_CLEARANCE_MARGIN_M: f64 = 3.5e-10;
 
+/// The cam ramp half-angle, in radians.
+///
+/// The push must be gradual. A short ramp puts a large pressure angle on the
+/// pin, so the cam pushes the rod almost sideways. A `1.4` rad half-angle
+/// spreads the rise over `2.8` rad and holds the pressure angle near 29 deg.
+pub const CAM_RAMP_HALF_ANGLE_RAD: f64 = 1.4;
+
+/// The cam lobe azimuth, in radians.
+pub const CAM_LOBE_RAD: f64 = PI;
+
 /// The free length of one leaf spring, in metres.
 pub const SPRING_LENGTH_M: f64 = 6.0e-10;
 
@@ -268,8 +278,11 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
              for the cam hub below the rotor"
         )));
     }
-    let cam =
-        CamHubGenerator.generate(&ParameterSet::new().with("thickness_m", hub_thickness_m))?;
+    let cam = CamHubGenerator.generate(
+        &ParameterSet::new()
+            .with("thickness_m", hub_thickness_m)
+            .with("ramp_half_angle_rad", CAM_RAMP_HALF_ANGLE_RAD),
+    )?;
     let hub_offset_m = hub_top_m - 0.5 * hub_thickness_m;
 
     if cam_retract_m <= rotor_bore_m + rod_radius_m {
@@ -346,7 +359,12 @@ pub fn build_rotor_scene() -> Result<Scene, SceneError> {
             SortingRotorGenerator::pocket_center_m(index, pocket_count, pocket_orbit_m);
         let rod_body = ROD_BODY_FIRST + index;
         let spring_body = SPRING_BODY_FIRST + index;
-        let pin_center_m = CamHubGenerator.pin_center_radius_m(angle_rad, pin_head_radius_m)
+        let pin_center_m = CamHubGenerator::surface_radius_with(
+            hub_base_m,
+            hub_rise_m,
+            CAM_RAMP_HALF_ANGLE_RAD,
+            angle_rad - CAM_LOBE_RAD,
+        ) + pin_head_radius_m
             + INTERFACE_CLEARANCE_M;
         let shaft_center_m = pin_center_m + half_shaft_m;
         let spring_center_m =
@@ -757,7 +775,7 @@ mod tests {
             assert!(atom.atomic_number > 0);
         }
         assert_eq!(body_atoms(scene, HOUSING_BODY), 73_208);
-        assert_eq!(body_atoms(scene, CAM_BODY), 1_184);
+        assert_eq!(body_atoms(scene, CAM_BODY), 1_822);
         for index in 0..ROD_COUNT {
             assert_eq!(body_atoms(scene, ROD_BODY_FIRST + index), 843);
             assert_eq!(body_atoms(scene, SPRING_BODY_FIRST + index), 36);
@@ -928,7 +946,12 @@ mod tests {
         for index in 0..ROD_COUNT {
             let body = ROD_BODY_FIRST + index;
             let angle_rad = 2.0 * PI * index as f64 / ROD_COUNT as f64;
-            let pin_center_m = CamHubGenerator.pin_center_radius_m(angle_rad, pin_head_radius_m)
+            let pin_center_m = CamHubGenerator::surface_radius_with(
+                CamHubGenerator.base_radius_m(),
+                CamHubGenerator.rise_m(),
+                CAM_RAMP_HALF_ANGLE_RAD,
+                angle_rad - CAM_LOBE_RAD,
+            ) + pin_head_radius_m
                 + INTERFACE_CLEARANCE_M;
             // The pin center sweeps from the dwell radius to the lobe radius,
             // so a rod already placed at the lobe moves inward first.

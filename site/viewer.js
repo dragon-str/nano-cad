@@ -126,12 +126,12 @@
      in crates/parts/src/cam_hub.rs, which faces the housing outlet at PI. */
   var ROTOR_CAM_LOBE_RAD = Math.PI;
 
-  /* The half-angle of the hub ramp in radians. It matches the
-     ramp_half_angle_rad default in crates/parts/src/cam_hub.rs. Outside this
+  /* The half-angle of the hub ramp in radians. It matches
+     CAM_RAMP_HALF_ANGLE_RAD in crates/jigs/src/rotor_scene.rs. Outside this
      window the rod does not move. A leaf spring, one per rod, holds the pin
      against the hub and returns the rod over the dwell.
      See crates/parts/src/leaf_spring.rs. */
-  var ROTOR_CAM_RAMP_RAD = 0.21;
+  var ROTOR_CAM_RAMP_RAD = 1.4;
 
   /* The body-index ranges of the sorting rotor. They match rotor_scene.rs:
      bodies 2..13 are rods, 14..25 are follower pins, 26..37 are leaf springs. */

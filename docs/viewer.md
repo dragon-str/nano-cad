@@ -177,14 +177,14 @@ pushes the rod and the spring returns it.
 
 The cam is a one-sided hub below the rotor, not a ring in the rotor plane. The
 hub is a profiled disc. Its radial face dwells at a base radius of 2.0 nm, and it
-rises to 3.5 nm over a short ramp at the outlet azimuth. The rise is a raised
-cosine over a half-angle of 0.21 rad, about 12 degrees, and the stroke is 1.5 nm.
-The follower pin of each rod rides the hub surface. The hub pushes a rod outward
-on the ramp. It cannot pull the rod back, so the leaf spring holds the pin against
-the hub and returns the rod over the dwell. The ramp holds the stroke to a short
-arc, so a rod pushes the guest out only as its pocket meets the outlet, and the
-other eleven rods stay retracted. A fully extended rod stops at the rotor rim and
-cannot cross the housing.
+rises to 3.5 nm over a wide ramp at the outlet azimuth. The rise is a raised
+cosine over a half-angle of 1.4 rad, about 80 degrees, and the stroke is 1.5 nm.
+The wide ramp holds the pressure angle near 29 degrees, so the hub pushes each
+pin gradually instead of striking it. About five pins ride the ramp at once. The
+follower pin of each rod rides the hub surface. The hub pushes a rod outward on
+the ramp. It cannot pull the rod back. The return spring is not built yet (task
+M23-01), so the scene shows the outward push only. A fully extended rod stops at
+the rotor rim and cannot cross the housing.
 
 The hub sits in the gap below the rotor, and the housing holds it from below and
 around its rim. The rotor is turned by a drive shaft on the rotor axis. A key on

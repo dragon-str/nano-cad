@@ -1899,3 +1899,24 @@ holds 38 472 atoms and the housing 73 208.
 Limits. The change does not remove the pre-existing `overlap_count` from
 sub-lattice H-H clashes (ADR-0075), and it does not remove the 84 cross-body
 perceived bonds. Those stay open under M21-03.
+
+## ADR-0080: A wide cam ramp gives a gradual push
+
+Context. The user said the cam lobe is too abrupt. It looks like a straight
+bump, and the pin seems to crash instead of being pushed. The pressure angle
+at the default ramp of `0.21 rad` is `75 deg`. The pin then has a mechanical
+advantage of `0.26`, and the side load is four times the useful force.
+
+Decision. The rotor scene uses `CAM_RAMP_HALF_ANGLE_RAD = 1.4`. The cam is
+generated with that ramp, and both pin-centre computations call
+`CamHubGenerator::surface_radius_with` with the same value, so the scene and
+the pin geometry agree. `site/viewer.js` sets `ROTOR_CAM_RAMP_RAD = 1.4`.
+
+Consequence. The pressure angle is near `29 deg`, and the push is gradual. The
+cam surface grows from 1 184 to 1 822 atoms. The stroke stays at `1.5 nm`.
+
+Trade-off. A ramp of `1.4 rad` covers `2.8 rad` of the turn, so about five pins
+sit on the ramp at once, and several pockets open together. If the machine
+must open one pocket at a time, then the ramp must be short, and the stroke
+must fall to about `0.45 nm`, or the hub must grow to about `20 nm`. This ADR
+keeps the full stroke and accepts the wide window. M23-03 records the choice.
