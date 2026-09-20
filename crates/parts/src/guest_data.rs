@@ -11,6 +11,12 @@
 //! The charges are a model. They are not computed for the pocket, and they are
 //! not validated against experiment. Treat every result that uses them as a
 //! model result. See ADR-0063.
+//!
+//! Two entries are exceptions. Oxygen (`o2`) is homonuclear, so its partial
+//! charges are zero. Carbon dioxide (`co2`) uses the rigid point-charge model of
+//! TraPPE (Potoff and Siepmann, 2001), `q_C = +0.70 e` and `q_O = -0.35 e`,
+//! because a linear gas has no Gasteiger geometry in this table. The two gases
+//! are model entries. See ADR-0081.
 
 use nanocad_model::Element;
 
@@ -644,6 +650,74 @@ pub(crate) const GUEST_DATA: &[Guest] = &[
                 i: 5,
                 j: 17,
                 order: 1,
+            },
+        ],
+    },
+    // Oxygen. Homonuclear and symmetric, so its partial charges are zero. The
+    // O=O bond length is 1.208e-10 m. See ADR-0081.
+    Guest {
+        id: "o2",
+        label: "Oxygen",
+        formula: "O2",
+        molar_mass_kg_per_mol: 3.199800e-2,
+        atoms: &[
+            GuestAtom {
+                element: Element::OXYGEN,
+                position_m: [-6.04e-11, 0.0, 0.0],
+                charge_c: 0.0,
+                atom_type: "O_2",
+            },
+            GuestAtom {
+                element: Element::OXYGEN,
+                position_m: [6.04e-11, 0.0, 0.0],
+                charge_c: 0.0,
+                atom_type: "O_2",
+            },
+        ],
+        bonds: &[GuestBond {
+            i: 0,
+            j: 1,
+            order: 2,
+        }],
+    },
+    // Carbon dioxide. Linear O=C=O with a 1.16e-10 m bond. The charges are the
+    // TraPPE rigid point-charge model (Potoff and Siepmann, 2001), not Gasteiger.
+    // The molecule is neutral. See ADR-0081.
+    Guest {
+        id: "co2",
+        label: "Carbon dioxide",
+        formula: "CO2",
+        molar_mass_kg_per_mol: 4.400900e-2,
+        atoms: &[
+            GuestAtom {
+                element: Element::CARBON,
+                position_m: [0.0, 0.0, 0.0],
+                charge_c: 1.121523644e-19,
+                atom_type: "C_sp",
+            },
+            GuestAtom {
+                element: Element::OXYGEN,
+                position_m: [-1.16e-10, 0.0, 0.0],
+                charge_c: -5.607618219e-20,
+                atom_type: "O_co2",
+            },
+            GuestAtom {
+                element: Element::OXYGEN,
+                position_m: [1.16e-10, 0.0, 0.0],
+                charge_c: -5.607618219e-20,
+                atom_type: "O_co2",
+            },
+        ],
+        bonds: &[
+            GuestBond {
+                i: 0,
+                j: 1,
+                order: 2,
+            },
+            GuestBond {
+                i: 0,
+                j: 2,
+                order: 2,
             },
         ],
     },

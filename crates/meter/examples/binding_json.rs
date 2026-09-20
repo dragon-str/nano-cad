@@ -16,7 +16,7 @@ fn number(value: f64) -> String {
     }
 }
 use nanocad_parts::{
-    guests, BindingPocketGenerator, ParameterSet, PartGenerator, FUNCTIONAL_GROUPS,
+    guest, guests, BindingPocketGenerator, ParameterSet, PartGenerator, FUNCTIONAL_GROUPS,
 };
 
 fn main() {
@@ -62,12 +62,17 @@ fn main() {
         }
         let ethanol_j = binding_energy_j(&pocket, centre_m, &guests()[1], &target).minimum_energy_j;
         let ether_j = binding_energy_j(&pocket, centre_m, &guests()[2], &target).minimum_energy_j;
+        let o2_j =
+            binding_energy_j(&pocket, centre_m, guest("o2").unwrap(), &target).minimum_energy_j;
+        let co2_j =
+            binding_energy_j(&pocket, centre_m, guest("co2").unwrap(), &target).minimum_energy_j;
         groups.push(format!(
             "{{\"wall_group\":\"{}\",\"pocket_atoms\":{},\"isomer_ratio\":{:.4},\
-             \"guests\":[{}]}}",
+             \"gas_ratio\":{:.4},\"guests\":[{}]}}",
             group.label(),
             pocket.atom_count(),
             selectivity_ratio(ethanol_j, ether_j),
+            selectivity_ratio(o2_j, co2_j),
             rows.join(",")
         ));
     }

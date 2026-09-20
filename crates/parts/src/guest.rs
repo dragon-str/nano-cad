@@ -208,8 +208,8 @@ mod tests {
     const ELEMENTARY_CHARGE_C: f64 = 1.602_176_634e-19;
 
     #[test]
-    fn the_table_holds_five_molecules() {
-        assert_eq!(guests().len(), 5);
+    fn the_table_holds_seven_molecules() {
+        assert_eq!(guests().len(), 7);
     }
 
     #[test]
@@ -298,6 +298,48 @@ mod tests {
             "the ring is planar, out-of-plane {spread}"
         );
         assert!(guest("cyclohexane").unwrap().extent_m() > benzene.extent_m());
+    }
+
+    #[test]
+    fn the_two_gases_are_linear() {
+        for id in ["o2", "co2"] {
+            let entry = guest(id).unwrap();
+            let first = entry.atoms[0].position_m;
+            let axis = subtract(entry.atoms[1].position_m, first);
+            let length = dot(axis, axis).sqrt();
+            assert!(length > 0.0);
+            for atom in entry.atoms {
+                let perpendicular = cross(axis, subtract(atom.position_m, first));
+                let distance = dot(perpendicular, perpendicular).sqrt() / length;
+                assert!(
+                    distance < 1.0e-13,
+                    "{id} has an atom off-axis by {distance}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_gases_carry_the_stated_charges() {
+        let oxygen = guest("o2").unwrap();
+        assert_eq!(oxygen.atom_count(), 2);
+        assert!(oxygen.total_charge_c().abs() < 1.0e-30);
+        let carbon_dioxide = guest("co2").unwrap();
+        assert_eq!(carbon_dioxide.atom_count(), 3);
+        assert!(carbon_dioxide.total_charge_c().abs() < 1.0e-4 * ELEMENTARY_CHARGE_C);
+        let carbon = carbon_dioxide
+            .atoms
+            .iter()
+            .find(|atom| atom.element.symbol() == Some("C"))
+            .unwrap();
+        assert!(carbon.charge_c > 0.0, "the carbon is positive");
+        for atom in carbon_dioxide
+            .atoms
+            .iter()
+            .filter(|atom| atom.element.symbol() == Some("O"))
+        {
+            assert!(atom.charge_c < 0.0, "each oxygen is negative");
+        }
     }
 
     fn subtract(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {

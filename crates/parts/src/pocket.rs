@@ -485,7 +485,11 @@ mod tests {
         for large in [benzene, cyclohexane] {
             assert!(large.extent_m() > radius_m, "{} does not fit", large.id);
         }
-        assert_eq!(guests().len(), 5, "the five guests cover both size classes");
+        assert_eq!(
+            guests().len(),
+            7,
+            "the seven guests cover both size classes"
+        );
     }
 
     #[test]

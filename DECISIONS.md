@@ -1920,3 +1920,47 @@ sit on the ramp at once, and several pockets open together. If the machine
 must open one pocket at a time, then the ramp must be short, and the stroke
 must fall to about `0.45 nm`, or the hub must grow to about `20 nm`. This ADR
 keeps the full stroke and accepts the wide window. M23-03 records the choice.
+
+## ADR-0081: The gas guests use point charges, and the loading model is kinetic
+
+Context. The user asked for a binding site that distinguishes oxygen from
+carbon dioxide, and for the binding dynamics at physiological concentrations.
+The guest table held five organic molecules. It held no gas.
+
+Decision. The guest table gains `o2` and `co2`. The RDKit emitter cannot run
+here, so both entries are hand-authored from published force-field parameters,
+not from a conformer search:
+
+- `o2` is a rigid linear molecule with a `1.208e-10` bond, a molar mass of
+  `3.199800e-2`, and zero atom charges. The neutral charge is correct for the
+  ground-state triplet at the point-charge level.
+- `co2` is a rigid linear molecule with a `1.16e-10` bond, a molar mass of
+  `4.400900e-2`, a carbon charge of `+0.70e`, and an oxygen charge of `-0.35e`.
+  These are the TraPPE charges of Potoff and Siepmann (2001).
+
+The header of `guest_data.rs` states the source and the limits.
+
+A new `nanocad-meter` module, `loading.rs`, estimates the loading time. The
+arrival rate is the gas kinetic flux onto the pocket mouth, `n * v / 4`, times
+the mouth area and a sticking probability. The loading angle is the rotor
+angle that the saturation time spans, `omega * t`.
+
+Consequence. The binding metric holds the carbon dioxide far more strongly
+than the oxygen in every wall group. The gas ratio runs from `0.022` (amino)
+to `0.071` (chloro). The carbon dioxide is worth `14` to `36 kT`, and the
+oxygen is worth `0.5` to `1.2 kT`.
+
+At alveolar partial pressures (`O2 1.33e4 Pa`, `CO2 5.33e3 Pa`), `310.15 K`, a
+`0.6 nm` mouth and a `1e6 rad/s` rotor, one pocket fills from oxygen in
+`1.58e-9 s` and from carbon dioxide in `4.63e-9 s`. The carbon dioxide sets the
+loading angle at `0.266 deg`. One pocket spacing `30 deg` takes `524e-9 s`, so
+the gas arrival is not the limit.
+
+Trade-off. This ADR does `not` deliver an oxygen-selective site. The model
+holds a neutral oxygen and a charged carbon dioxide, so the Coulomb term
+always favors the carbon dioxide. An oxygen-selective site needs a model that
+this metric does not have: a magnetic or charge-transfer center, or an
+explicit quadrupole. The result is stated as a limit, not as a success. The
+loading model states no liquid diffusion, no crowding, and a rigid pocket.
+
+The gas guests carry no independent validation. Every value is a model value.

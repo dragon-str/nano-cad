@@ -421,6 +421,31 @@ mod tests {
     }
 
     #[test]
+    fn a_pocket_binds_carbon_dioxide_more_strongly_than_oxygen() {
+        let ratios: Vec<f64> = FUNCTIONAL_GROUPS
+            .iter()
+            .map(|group| {
+                selectivity_ratio(
+                    measured(*group, "o2").minimum_energy_j,
+                    measured(*group, "co2").minimum_energy_j,
+                )
+            })
+            .collect();
+        for (group, ratio) in FUNCTIONAL_GROUPS.iter().zip(ratios.iter()) {
+            assert!(
+                *ratio < 1.0,
+                "{} must hold the carbon dioxide more strongly: {ratio}",
+                group.label()
+            );
+        }
+        let smallest = ratios.iter().fold(f64::INFINITY, |a, b| a.min(*b));
+        assert!(
+            smallest < 0.1,
+            "the carbon dioxide must win by an order of magnitude: {smallest}"
+        );
+    }
+
+    #[test]
     fn the_selectivity_ratio_is_the_quotient() {
         assert!((selectivity_ratio(-8.0e-21, -4.0e-21) - 2.0).abs() < 1.0e-12);
         assert_eq!(selectivity_ratio(-8.0e-21, 0.0), 0.0);

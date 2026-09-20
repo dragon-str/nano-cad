@@ -1627,3 +1627,13 @@ drive shaft.
 - [ ] **M23-01** Add a rod return spring. <!-- result: open. The cam only pushes the rod outward. Nothing pulls it back. The leaf spring is a separate body on a fixed joint to the rotor and never touches the rod. Give each rod a preloaded return spring. -->
 - [ ] **M23-02** Add a loading sector and stop re-entry at the outlet. <!-- result: open. The housing has one inlet slot and one outlet slot. Expose about 120 deg of the pockets as a loading sector so guests can attach in parallel. Make the outlet a one-way path (a slope, a valve, or a long throat) so an ejected ligand cannot diffuse back into the chamber. -->
 - [ ] **M23-03** Reconsider the cam profile. <!-- result: open. The wide 1.4 rad ramp makes several pins push at once. If one pocket at a time is required, use a shorter stroke, a closed-groove cam, or fewer pockets. -->
+
+## M24 — Gas selectivity and loading
+
+- [x] **M24-01** Add the oxygen and carbon dioxide guests. <!-- result: `guest_data.rs` gains `o2` and `co2`, hand-authored from published parameters because the RDKit emitter cannot run here. The `o2` molecule is neutral. The `co2` molecule uses the TraPPE point charges (+0.70e on carbon, -0.35e on each oxygen). The guest count tests now expect seven molecules. `cargo test -p nanocad-parts guest` -> 19 passed. -->
+  - ADR-0081.
+- [x] **M24-02** Measure the oxygen and carbon dioxide selectivity. <!-- result: `binding_json` now prints a `gas_ratio` beside the `isomer_ratio`. The carbon dioxide wins in every wall group; the ratio runs from 0.022 (amino) to 0.071 (chloro). The carbon dioxide is worth 14 to 36 kT and the oxygen 0.5 to 1.2 kT. The neutral oxygen and the charged carbon dioxide in the point-charge model explain the result. See M24-04. `cargo test -p nanocad-meter binding` -> all pass. -->
+  - `crates/meter/src/binding.rs` test `a_pocket_binds_carbon_dioxide_more_strongly_than_oxygen`.
+- [x] **M24-03** Add the loading-sector estimate. <!-- result: `crates/meter/src/loading.rs` and the `loading_json` example estimate the fill time from the gas kinetic flux. At alveolar partial pressures, 310.15 K, a 0.6 nm mouth and a 1e6 rad/s rotor, one pocket fills from oxygen in 1.58e-9 s and from carbon dioxide in 4.63e-9 s. The carbon dioxide sets the loading angle at 0.266 deg, far inside one 30 deg pocket spacing (524e-9 s). The gas arrival is not the limit. `cargo test -p nanocad-meter loading` -> 5 passed. -->
+  - ADR-0081.
+- [ ] **M24-04** Find an oxygen-selective site. <!-- result: open. The point-charge model always favors the carbon dioxide. A site that prefers the oxygen needs a magnetic or charge-transfer center, or an explicit quadrupole term. Do not report an oxygen-selective site until a model supports it. -->
