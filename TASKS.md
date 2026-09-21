@@ -1637,3 +1637,14 @@ drive shaft.
 - [x] **M24-03** Add the loading-sector estimate. <!-- result: `crates/meter/src/loading.rs` and the `loading_json` example estimate the fill time from the gas kinetic flux. At alveolar partial pressures, 310.15 K, a 0.6 nm mouth and a 1e6 rad/s rotor, one pocket fills from oxygen in 1.58e-9 s and from carbon dioxide in 4.63e-9 s. The carbon dioxide sets the loading angle at 0.266 deg, far inside one 30 deg pocket spacing (524e-9 s). The gas arrival is not the limit. `cargo test -p nanocad-meter loading` -> 5 passed. -->
   - ADR-0081.
 - [ ] **M24-04** Find an oxygen-selective site. <!-- result: open. The point-charge model always favors the carbon dioxide. A site that prefers the oxygen needs a magnetic or charge-transfer center, or an explicit quadrupole term. Do not report an oxygen-selective site until a model supports it. -->
+
+## M25 — Per-molecule rotors and delivery
+
+One rotor for each target molecule, each with a fixed binding site. The binding
+site is the selective part and the rotor mechanics are shared.
+
+- [x] **M25-01** Add the delivered-fraction model. <!-- result: `crates/meter/src/delivery.rs` and the `delivery_json` example model the fraction of a pocket that leaves over one concentration swing. A site follows the Hill curve. The best P50 is the geometric mean of the two pressures. Oxygen at 13.3 to 5.3 kPa delivers 0.226 flat; at 13.3 to 3.0 kPa it delivers 0.356 flat and 0.779 with a Hill coefficient of 2.8. Carbon dioxide at 6.1 to 5.3 kPa delivers 0.035. `cargo test -p nanocad-meter delivery` -> 8 passed. -->
+  - ADR-0082.
+- [ ] **M25-02** Tune one oxygen rotor. <!-- result: open. Choose the site chemistry and the binding energy for the 13.3 to 3.0 kPa swing. The target is P50 near 6.3 kPa and a binding energy near -7.1 kJ/mol against one bar. The current binding metric cannot prefer oxygen, so this task depends on the metal-ligand term. Set the pocket count, the loading sector and the ejection force against the delivered fraction. -->
+- [ ] **M25-03** Study one carbon-dioxide rotor. <!-- result: open. A free-gas pump delivers under 0.06 of its capacity per cycle. Move a larger pool instead: bicarbonate (about 24 mM against dissolved CO2 of about 1.2 mM), or use carbamate chemistry on an amine wall. State the charge balance and the release trigger. -->
+- [ ] **M25-04** Define the rotor library. <!-- result: open. Each rotor has a fixed binding site for one target molecule. The rotor frame, the cam and the ejection stay the same. Record the parameters that change per molecule and the parameters that stay fixed. -->

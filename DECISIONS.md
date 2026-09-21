@@ -1964,3 +1964,42 @@ explicit quadrupole. The result is stated as a limit, not as a success. The
 loading model states no liquid diffusion, no crowding, and a rigid pocket.
 
 The gas guests carry no independent validation. Every value is a model value.
+
+## ADR-0082: One rotor per target, and the delivered fraction sets the design
+
+Context. The user asked for the optimal rotor for oxygen and for carbon dioxide
+in blood. The user then clarified the architecture: the device uses one rotor
+for each target molecule, and each rotor has a fixed binding site. A single
+site does not switch between molecules. A pH-sensitive site is useful but
+optional.
+
+Decision. `crates/meter/src/delivery.rs` models the delivered fraction of one
+site over one concentration swing. A site follows the Hill curve
+`theta(P) = P^n / (P50^n + P^n)`. The delivered fraction is the occupancy at
+the loading pressure minus the occupancy at the unloading pressure. The `P50`
+that maximises the fraction is the geometric mean of the two pressures, for
+every Hill coefficient.
+
+The binding energy and the `P50` are the same statement:
+`P50 = P0 * exp(dG / kT)`, where `P0` is one bar. A design names one of the two.
+
+Consequence. The model sets the design target for each rotor:
+
+- Oxygen, 13.3 kPa to 5.3 kPa: a flat site delivers `0.226` of its capacity
+  per cycle, at `P50 = 8.40 kPa` and `dG = -6.39 kJ/mol`.
+- Oxygen, 13.3 kPa to 3.0 kPa: a flat site delivers `0.356`. A cooperative
+  site with a Hill coefficient of `2.8` delivers `0.779`, at `P50 = 6.32 kPa`.
+- Carbon dioxide, 6.1 kPa to 5.3 kPa: a flat site delivers `0.035`. At the
+  tissue swing of 6.7 kPa to 5.3 kPa it delivers `0.059`.
+
+So the oxygen rotor is feasible with a fixed site and a large pressure swing.
+The carbon dioxide rotor is not efficient as a free-gas pump, because the
+physiological pressure swing is small. The carbon dioxide rotor must move a
+larger pool (bicarbonate, about `24 mM`, against dissolved CO2 of about
+`1.2 mM`) or use a chemical reaction (carbamate on an amine).
+
+Trade-off. The model is a single equilibrium site. It states no kinetics, no
+hysteresis, no competing ligand and no crowding. The delivered fraction is an
+upper bound for a real site. The `P50` values are model targets, not measured
+affinities. ADR-0081 still holds: the current point-charge binding metric
+cannot prefer oxygen, so the oxygen site needs the metal-ligand term of M25-02.
