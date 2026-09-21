@@ -2003,3 +2003,45 @@ hysteresis, no competing ligand and no crowding. The delivered fraction is an
 upper bound for a real site. The `P50` values are model targets, not measured
 affinities. ADR-0081 still holds: the current point-charge binding metric
 cannot prefer oxygen, so the oxygen site needs the metal-ligand term of M25-02.
+
+## ADR-0083: The oxygen site gets a metal-ligand coordination term
+
+Context. ADR-0081 measured that a wall of Lennard-Jones plus point charges
+binds carbon dioxide more strongly than oxygen in every functional group. The
+cause is physical: carbon dioxide is larger and more polarizable, and it carries
+the TraPPE charges. Oxygen cannot win on dispersion. Its advantage is
+electronic, because it has two unpaired electrons and empty pi-star orbitals
+that back-donate to a metal. A point-charge model cannot see that term. Task
+M24-04 asks for an oxygen-selective site.
+
+Decision. `crates/engine/src/metal_ligand.rs` adds a Morse coordination term
+between a metal atom and a ligand atom:
+`U(r) = D * (1 - exp(-a * (r - r0)))^2`.
+The term is zero at the equilibrium distance `r0` and equals `D` at infinite
+separation. `MetalLigandParams::from_force_constant(D, r0, k)` sets
+`a = sqrt(k / (2 D))`. A gradient test with a central finite difference passes
+to one part in `1e7`.
+
+The term is ligand-specific. Oxygen gets one coordination well at a metal
+center. Carbon dioxide gets none, because its dispersion and electrostatics are
+already in the classical pocket term. The site is a metal macrocycle with one
+open axial position and a distal hydrogen-bond donor, in the spirit of a heme.
+
+An example `crates/engine/examples/metal_ligand_json.rs` uses one iron-oxygen
+contact at `1.90e-10 m`, a well depth of `6.642e-20 J` (`40 kJ/mol`, `15.5 kT`)
+and a force constant of `200 N/m`. The largest attractive force is `1.29 nN`.
+The average force over a `1.5 nm` ejection stroke is `44 pN`.
+
+Consequence. A `40 kJ/mol` oxygen bond is larger than a typical physisorption
+well, so a metal site can prefer oxygen over a bare cavity. The same number is
+comparable to the carbon-dioxide binding that the charged pocket already
+reported (14 to 36 kT), so the two models must be reconciled. Published heme
+oxygen enthalpies are about `-40` to `-60 kJ/mol`, which supports the chosen
+depth as a starting value.
+
+Trade-off. The well depth is a zero-Kelvin potential energy. The delivery model
+of ADR-0082 states a free energy near `-7 kJ/mol` against one bar, because gas
+binding loses translational and rotational entropy. The reconciliation between
+the two is open (M25-06). The depth here is an assigned starting value, not a
+measured affinity. The term is not yet integrated into the binding search
+(M25-02). The engine has no carbon-dioxide coordination term, by design.

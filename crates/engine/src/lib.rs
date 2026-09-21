@@ -15,6 +15,7 @@ mod hessian;
 mod integrator;
 mod langevin;
 mod lennard_jones;
+mod metal_ligand;
 mod minimize;
 mod neighbor;
 mod nonbonded;
@@ -41,6 +42,7 @@ pub use hessian::{
 pub use integrator::VelocityVerlet;
 pub use langevin::LangevinThermostat;
 pub use lennard_jones::{LennardJonesTerm, LjParams};
+pub use metal_ligand::{MetalLigandInfo, MetalLigandParams, MetalLigandTerm};
 pub use minimize::{minimize, minimize_with, MinimizeMethod, MinimizeOptions, MinimizeResult};
 pub use neighbor::VerletList;
 pub use nonbonded::{Cutoff, PeriodicBox};

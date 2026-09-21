@@ -29,6 +29,10 @@ pub enum EngineError {
     BondParameterCountMismatch { provided: usize, expected: usize },
     #[error("bond {bond} has coincident atoms, so its direction is undefined")]
     CoincidentBondAtoms { bond: usize },
+    #[error("metal-ligand parameters for pair {pair} are invalid")]
+    InvalidMetalLigandParameters { pair: usize },
+    #[error("metal-ligand pair {pair} has coincident atoms, so its direction is undefined")]
+    CoincidentMetalLigandAtoms { pair: usize },
     #[error("angle parameters for angle {angle} are invalid")]
     InvalidAngleParameters { angle: usize },
     #[error("angle parameter count {provided} does not match {expected} angles")]
