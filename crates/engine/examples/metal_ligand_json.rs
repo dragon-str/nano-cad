@@ -5,13 +5,14 @@
 //! pocket term already covers. So this example gives the iron-oxygen contact a
 //! well depth, and it gives carbon dioxide no coordination term.
 //!
-//! The well depth is assigned from the binding enthalpy of an oxygen carrier,
-//! about `-40 kJ/mol`. This is an estimate, not a measurement.
+//! The well depth is calibrated against a small quantum-chemistry model of a
+//! metal site, about `-80 kJ/mol`. This is an estimate, not a measurement.
 //!
 //! The free energy that sets `P50` is smaller than the well depth, because
-//! binding removes the translational and rotational entropy of the gas. A
-//! static potential well does not carry that entropy. The reconciliation of the
-//! well depth with the delivery model is open. See ADR-0083.
+//! binding removes the translational and rotational entropy of the gas, about
+//! `78 kJ/mol` at body temperature. A static potential well does not carry that
+//! entropy. The reconciliation of the well depth with the delivery model is
+//! therefore approximate. See ADR-0083 and ADR-0084.
 
 use nanocad_engine::{MetalLigandParams, MetalLigandTerm};
 
@@ -30,8 +31,13 @@ const IRON_OXYGEN_M: f64 = 1.90e-10;
 /// reciprocal centimetres. This is a model value.
 const IRON_OXYGEN_K_N_PER_M: f64 = 2.0e2;
 
-/// The iron-oxygen well depth in joules. About `-40 kJ/mol`, an estimate.
-const IRON_OXYGEN_WELL_DEPTH_J: f64 = 6.642e-20;
+/// The iron-oxygen well depth in joules. About `-80 kJ/mol`, an estimate.
+///
+/// A PBE/def2-svp model of an iron centre with four ammonia ligands binds
+/// oxygen by `80` to `115 kJ/mol`. That value is overstated, because the model
+/// has no counterpoise correction and no porphyrin. A calibrated well depth of
+/// about `80 kJ/mol` is the midpoint of the corrected estimate.
+const IRON_OXYGEN_WELL_DEPTH_J: f64 = 1.328_4e-19;
 
 /// The stroke of the ejector rod, in metres. It matches the rotor scene.
 const EJECTION_STROKE_M: f64 = 1.5e-9;
@@ -69,7 +75,7 @@ fn main() {
          \"well_depth_kj_per_mol\":{:.2},\"well_depth_over_kt\":{:.1},\
          \"force_constant_n_per_m\":{:.4e},\"maximum_attractive_force_n\":{:.4e},\
          \"average_ejection_force_n\":{:.4e},\"ejection_stroke_m\":{:.4e},\
-         \"note\":\"assigned well depth, no carbon dioxide coordination term, entropy reconciliation open\"}}",
+         \"note\":\"quantum-chemistry calibrated well depth, no carbon dioxide coordination term, entropy reconciliation approximate\"}}",
         params.equilibrium_m,
         params.well_depth_j,
         params.well_depth_j * 6.022_140_76e23 / 1000.0,

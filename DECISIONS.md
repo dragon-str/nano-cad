@@ -2045,3 +2045,45 @@ binding loses translational and rotational entropy. The reconciliation between
 the two is open (M25-06). The depth here is an assigned starting value, not a
 measured affinity. The term is not yet integrated into the binding search
 (M25-02). The engine has no carbon-dioxide coordination term, by design.
+
+## ADR-0084: Quantum chemistry calibrates the oxygen well depth
+
+Context. ADR-0083 added a metal-ligand Morse term and assigned a `40 kJ/mol`
+well depth from the literature. Task M25-06 asks for a calibration and a
+reconciliation with the delivery model of ADR-0082.
+
+Decision. Run a small quantum-chemistry calibration with pyscf 2.14.0 (PBE,
+`def2-svp`, grid level 1) on a tractable proxy for the heme metal site: a
+ferrous iron with four square-planar ammonia ligands at
+`Fe-N = 2.15e-10 m`. The full iron-porphine model did not converge in a
+reasonable time, so the ammonia proxy stands in. The ammonia ligands are pure
+sigma donors, so the model likely understates oxygen back-donation.
+
+Results. Oxygen approaching the iron axially, in the triplet state, gives
+binding energies of `-115.7 kJ/mol` at `1.9e-10 m`, `-95.6 kJ/mol` at
+`2.3e-10 m` (converged) and `-78.3 kJ/mol` at `2.5e-10 m`. Carbon dioxide, with
+its oxygen nearest the iron, gives `+0.6 kJ/mol` at `3.4e-10 m` (essentially no
+binding) and `+9.4 kJ/mol` at `3.0e-10 m` (repulsive). The singlet
+iron-ammonia ground state is `-1488.878981` hartree.
+
+Consequence. The metal center binds oxygen and rejects carbon dioxide. This is
+the electronic selectivity that the classical point-charge metric of ADR-0081
+cannot produce. The example now uses a well depth of `1.3284e-19 J`
+(`80 kJ/mol`), the midpoint of the corrected estimate, in place of `40 kJ/mol`.
+
+Reconciliation. Binding an oxygen molecule from the gas removes its
+translational and rotational entropy, about `78 kJ/mol` at `310 K`
+(`205.1` plus `46.0 J/mol/K`). The free energy is therefore
+`dG = dH + 64..78 kJ/mol`. The delivery model wants `dG` near `-7.25 kJ/mol`
+for a target `P50` of `6 kPa`, which needs `dH` near `-71` to `-85 kJ/mol`. The
+calibrated well depth sits in that window. The reconciliation is approximate.
+
+Trade-off and limits. The quantum chemistry has no dispersion module, so carbon
+dioxide physisorption is absent from it. The classical metric gives `14` to
+`36 kT` for that wall term, so the true comparison is oxygen coordination
+against carbon-dioxide physisorption, and oxygen still wins by a factor. There
+is no counterpoise correction, several open-shell states did not converge, and
+only one functional, one basis and one model were used. Every number here is an
+estimate, not a measurement. The rotor remains a simulated design, and no
+medical claim is made. The term is still not integrated into the binding search
+(M25-02).
