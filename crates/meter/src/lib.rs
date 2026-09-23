@@ -11,6 +11,7 @@ pub mod bonded;
 pub mod cam_drive;
 pub mod capture;
 pub mod clearance;
+pub mod competition;
 pub mod delivery;
 pub mod drive;
 pub mod ejection;
@@ -26,6 +27,9 @@ pub use binding::{binding_energy_j, selectivity_ratio, BindingReport, BindingTar
 pub use cam_drive::{cam_drive_report, CamDriveReport, CamDriveTarget, SMOOTH_PRESSURE_ANGLE_RAD};
 pub use capture::{capture_report, CaptureReport, CaptureTarget};
 pub use clearance::{BodyMotion, Clearance, ClearanceReport, ClearanceTarget, MovingAtoms};
+pub use competition::{
+    competition_report, CompetitionReport, Competitor, CompetitorOccupancy, AVOGADRO_PER_MOL,
+};
 pub use delivery::{
     binding_energy_from_p50, delivery_report, occupancy, optimal_p50_pa, p50_from_binding_energy,
     DeliveryReport, DeliveryTarget, STANDARD_PRESSURE_PA,

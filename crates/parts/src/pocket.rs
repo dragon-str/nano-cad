@@ -487,8 +487,8 @@ mod tests {
         }
         assert_eq!(
             guests().len(),
-            7,
-            "the seven guests cover both size classes"
+            8,
+            "the eight guests cover both size classes"
         );
     }
 

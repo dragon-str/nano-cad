@@ -1663,3 +1663,13 @@ pointer, and draws a solid CAD-style model when the atoms get too small.
 - [x] **M26-03** Draw a solid model when zoomed out. <!-- result: `site/solid_mesh.js` builds one closed surface-nets mesh per body from its atoms; `site/render_atoms.js` draws the meshes with outline, crease and depth edges, in a shaded or an edges-only style. Auto mode switches to the solid below six pixels of carbon-carbon spacing. The meshes follow the rotor and gear motion, the section plane and the rotor cutaway. Rotor: 27 meshes, about 0.3 s build. `node site/solid_mesh.test.js` -> 7 passed. ADR-0085. -->
 - [ ] **M26-04** Measure the mesh upload on a hardware GPU. <!-- result: open. The headless software renderer takes about 4.6 s to upload the gearbox meshes. The build itself takes about 0.2 s. -->
 - [ ] **M26-05** Fix the readout for a single part. <!-- result: open. A single part (for example the binding pocket) still shows the rotor mechanism text in the assistant readout. -->
+
+## M27 — Selective gear pump
+
+The minimum membrane transporter: two meshing gears in a figure-eight housing.
+Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
+
+- [x] **M27-01** Run the water kill test. <!-- result: `crates/meter/src/competition.rs` and the `competition_json` example compute multi-component Langmuir occupancy with water at its vapour pressure. QM (Fe(NH3)4 proxy, ADR-0084 method) binds water by -10.3 kJ/mol against -95.6 for oxygen. The metal site holds oxygen 0.99997 of the time and water 1.5e-14. A bare methyl pocket stays dry but prefers water 20 to 1, so the metal site is mandatory. The `water` guest (SPC/E) is in `guest_data.rs`. `cargo test -p nanocad-meter competition` -> 5 passed. -->
+- [ ] **M27-02** Add the gear-pump parts and scene. <!-- result: open. A pair of spur gears with one-molecule tooth gaps and a figure-eight housing with a suction port and a discharge port. Three bodies, two revolute joints, one gear coupling. -->
+- [ ] **M27-03** Measure the pump. <!-- result: open. Swept volume per turn, seal gaps against the water size (sense audit), mesh ejection force and backlash. -->
+- [ ] **M27-04** Put the metal site in the tooth root. <!-- result: open. Integrate the metal-ligand term into the binding search (was M25-02) for a tooth-gap pocket. -->

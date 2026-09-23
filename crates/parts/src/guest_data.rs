@@ -17,6 +17,11 @@
 //! TraPPE (Potoff and Siepmann, 2001), `q_C = +0.70 e` and `q_O = -0.35 e`,
 //! because a linear gas has no Gasteiger geometry in this table. The two gases
 //! are model entries. See ADR-0081.
+//!
+//! Water (`water`) uses the rigid SPC/E model (Berendsen, Grigera and
+//! Straatsma, 1987): O-H `1.0e-10 m`, H-O-H `109.47 deg`, `q_O = -0.8476 e`
+//! and `q_H = +0.4238 e`. It is the competitor that every site in a liquid
+//! must reject. See ADR-0086.
 
 use nanocad_model::Element;
 
@@ -718,6 +723,44 @@ pub(crate) const GUEST_DATA: &[Guest] = &[
                 i: 0,
                 j: 2,
                 order: 2,
+            },
+        ],
+    },
+    Guest {
+        id: "water",
+        label: "Water",
+        formula: "H2O",
+        molar_mass_kg_per_mol: 1.801528e-2,
+        atoms: &[
+            GuestAtom {
+                element: Element::OXYGEN,
+                position_m: [0.0, 0.0, 0.0],
+                charge_c: -1.358004915e-19,
+                atom_type: "O_spce",
+            },
+            GuestAtom {
+                element: Element::HYDROGEN,
+                position_m: [8.1650e-11, 5.7735e-11, 0.0],
+                charge_c: 6.790024575e-20,
+                atom_type: "H_spce",
+            },
+            GuestAtom {
+                element: Element::HYDROGEN,
+                position_m: [-8.1650e-11, 5.7735e-11, 0.0],
+                charge_c: 6.790024575e-20,
+                atom_type: "H_spce",
+            },
+        ],
+        bonds: &[
+            GuestBond {
+                i: 0,
+                j: 1,
+                order: 1,
+            },
+            GuestBond {
+                i: 0,
+                j: 2,
+                order: 1,
             },
         ],
     },

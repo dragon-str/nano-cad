@@ -2114,3 +2114,51 @@ Trade-off and limits. The mesh is rebuilt once for each scene, from the rest
 positions. A body that deforms would need a rebuild. The upload took about 4.6 s
 for the gearbox in the headless software renderer; it is not measured on a
 hardware GPU (M26-04).
+
+## ADR-0086: A selective gear pump replaces the rod rotor
+
+Status: accepted. Supersedes the rod rotor as the target design (ADR-0078 to
+ADR-0080 stay as the Freitas reference). Corrects the entropy bound in ADR-0084.
+
+Context. The user asked for the minimum machine that binds one molecule on one
+side of a membrane and releases it on the other side. The rod rotor has faults.
+Its pocket (radius `1.0e-9 m`, depth `2.0e-9 m`) holds about `5 nm^3`, which is
+150 to 200 water molecules. Its rim is one long sliding seal between the inlet
+and the outlet. Its twelve rod bores leak. An empty pocket returns open. It
+needs 27 bodies, 25 joints, a cam with a `2.8 rad` ramp, and a rod return that
+does not exist.
+
+Decision. The target design is a selective gear pump: two meshing spur gears in
+a figure-eight housing, and the housing is the membrane. Each tooth gap is a
+one-molecule pocket with a metal site at the tooth root. A gap loads at the
+suction port, carries its guest along the sealed casing arc, and the mating
+tooth fills the gap at the mesh. That is forced release by positive
+displacement. The meshed gap has no volume, so nothing returns. The machine has
+three bodies and two revolute joints with one gear coupling.
+
+Kill test. Water is smaller than oxygen (`2.65e-10` against `3.46e-10 m` kinetic
+diameter), so size cannot exclude it. The test compares binding free energies
+with each guest at its partial pressure; water enters at its vapour pressure
+(`6.28 kPa` at `310 K`), which is exact for a site in the liquid.
+`crates/meter/src/competition.rs` computes the multi-component Langmuir
+occupancy. The same quantum-chemistry model as ADR-0084 (pyscf PBE/def2-svp,
+Fe(NH3)4 proxy) binds water by `-10.3 kJ/mol` at `2.7e-10 m`, against `-95.6`
+for oxygen. At alveolar pressures the metal site holds oxygen `0.99997` of the
+time, water `1.5e-14` and carbon dioxide `9e-18`. A bare methyl pocket of radius
+`4.5e-10 m` without a metal stays empty (`1 - 2e-8`) and prefers water to oxygen
+20 to 1. So the metal site is mandatory, and it passes the kill test by about
+`14` orders of magnitude. A +-30 kJ/mol error leaves more than `1e8`.
+
+Entropy correction. The standard entropy of oxygen gas, `205.2 J/(mol K)`, is
+the total of translation, rotation and electronic terms. ADR-0084 added rotation
+twice for its upper bound of `78 kJ/mol`. The correct cost at `310 K` is about
+`64 kJ/mol`, so a passive site with `P50` near `6 kPa` needs `dH` near
+`-71 kJ/mol`. The gear pump does not need that compromise: its site can bind
+strongly (`dG` near `-32 kJ/mol`, `P50` well under `1 Pa`), because the mesh
+forces the release.
+
+Trade-off and limits. The kill test assumes the guest loses all gas entropy, no
+dispersion, no counterpoise correction, one functional, one basis and one small
+model. The seal gaps (backlash, tip, face) must be smaller than a water
+molecule, and tooth stiffness at a module near `3e-10 m` is unproven. Every
+number here is an estimate from a simulated design. No medical claim is made.

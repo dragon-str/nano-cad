@@ -208,8 +208,8 @@ mod tests {
     const ELEMENTARY_CHARGE_C: f64 = 1.602_176_634e-19;
 
     #[test]
-    fn the_table_holds_seven_molecules() {
-        assert_eq!(guests().len(), 7);
+    fn the_table_holds_eight_molecules() {
+        assert_eq!(guests().len(), 8);
     }
 
     #[test]
@@ -340,6 +340,22 @@ mod tests {
         {
             assert!(atom.charge_c < 0.0, "each oxygen is negative");
         }
+    }
+
+    #[test]
+    fn water_is_neutral_and_bent() {
+        let water = guest("water").unwrap();
+        assert_eq!(water.atom_count(), 3);
+        assert!(water.total_charge_c().abs() < 1.0e-6 * ELEMENTARY_CHARGE_C);
+        let oxygen = water.atoms[0].position_m;
+        let first = subtract(water.atoms[1].position_m, oxygen);
+        let second = subtract(water.atoms[2].position_m, oxygen);
+        for arm in [first, second] {
+            assert!((dot(arm, arm).sqrt() - 1.0e-10).abs() < 1.0e-14);
+        }
+        let cosine = dot(first, second) / dot(first, first);
+        let angle_deg = cosine.acos().to_degrees();
+        assert!((angle_deg - 109.47).abs() < 0.05, "angle {angle_deg}");
     }
 
     fn subtract(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
