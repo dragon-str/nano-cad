@@ -37,6 +37,15 @@ depth-shaded dots when WebGL2 is absent). Below six pixels it draws the exact
 involute schematic instead. Both use one profile function and one world fit, so
 the switch does not move the geometry.
 
+With WebGL2, the viewer can also draw a **solid (CAD) model**. Each rigid body
+gets one closed surface mesh, built in the browser from its atoms (a smooth
+field around each atom, then surface nets). The mesh is drawn in the component
+colour with outline and crease edges. In the **Auto** model mode, the viewer
+shows atoms when the carbon-carbon spacing is six pixels or more, and the solid
+model below that. So a zoom-out replaces the atoms with the component shapes,
+not with an empty view. The mesh is an envelope of the atoms. It is a display
+shape and not a measured surface.
+
 ## Controls
 
 The panel groups the controls.
@@ -46,14 +55,23 @@ The panel groups the controls.
   carrier, the ring stays fixed. The Motion speed slider scales it. Turntable
   orbits the camera. Fullscreen expands the view. Save PNG writes a composite
   image.
-- **Display.** Ambient occlusion turns the SSAO pass on and off. Atom size
-  scales the sphere radius from space-filling (1.0) to ball (0.4). Section z
-  clips the atoms above a plane, so you can see inside the solid gear.
+- **Components.** One checkbox for each major component, grouped by role (for
+  example Housing, Rotor, Ejection rod, Leaf spring, Cam hub). A group with more
+  than one body has an **each** list with one checkbox per body. Show all and
+  Hide all set every component. A hidden component hides its atoms, its solid
+  mesh and its device marker.
+- **Display.** Model selects Auto, Atoms or Solid. Style selects Shaded with
+  edges or Edges only for the solid model. Ambient occlusion turns the SSAO pass
+  on and off. Atom size scales the sphere radius from space-filling (1.0) to
+  ball (0.4). Section z clips the atoms and the solid above a plane, so you can
+  see inside the solid gear.
 - **Elements.** One checkbox for each element in the scene. Clear the
   Hydrogen box to see the carbon lattice alone.
 - **Readout.** Move the pointer over an atom to read its element, index, body
-  and position. Click one atom, then a second, to measure the distance between
-  them.
+  and position. The pick takes the nearest visible atom whose drawn sphere is
+  under the pointer, so a surface atom is not confused with an atom behind it.
+  In the solid model, the readout names the component. Click one atom, then a
+  second, to measure the distance between them.
 
 The scale bar shows the length of a segment at the middle of the view. The
 triad shows the world x, y and z axes. Each atom sphere has a dark silhouette

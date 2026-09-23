@@ -68,6 +68,15 @@
         <div id="measure"></div>
         <div id="message"></div>
 
+        <details class="group" open>
+          <summary>Components</summary>
+          <div id="components"></div>
+          <div class="button-row">
+            <button id="components-all" type="button">Show all</button>
+            <button id="components-none" type="button">Hide all</button>
+          </div>
+        </details>
+
         <details class="group">
           <summary>Layers</summary>
           <div class="layer-row">
@@ -123,6 +132,21 @@
 
         <details class="group">
           <summary>Display</summary>
+          <label class="param-row"
+            ><span>Model</span
+            ><select id="model-mode">
+              <option value="auto" selected>Auto (atoms near, solid far)</option>
+              <option value="atoms">Atoms</option>
+              <option value="solid">Solid</option>
+            </select></label
+          >
+          <label class="param-row"
+            ><span>Solid style</span
+            ><select id="solid-style">
+              <option value="shaded" selected>Shaded with edges</option>
+              <option value="edges">Edges only</option>
+            </select></label
+          >
           <div class="layer-row">
             <input type="checkbox" id="toggle-ao" checked />
             <label for="toggle-ao">Ambient occlusion</label>
@@ -219,6 +243,7 @@
     </div>
 
     <script src="render_atoms.js"></script>
+    <script src="solid_mesh.js"></script>
     <script src="viewer.js"></script>
   </body>
 </html>

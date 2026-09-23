@@ -2087,3 +2087,30 @@ only one functional, one basis and one model were used. Every number here is an
 estimate, not a measurement. The rotor remains a simulated design, and no
 medical claim is made. The term is still not integrated into the binding search
 (M25-02).
+
+## ADR-0085: The viewer builds a solid model from the atoms
+
+Status: accepted.
+
+Context. At low zoom, the atoms became too small to draw, and the viewer showed
+nothing for the rotor. The user wants each component to look like a 3D CAD part
+at that scale, and wants to show or hide each component.
+
+Decision. The browser builds one surface mesh for each rigid body from the
+atoms of that body. `site/solid_mesh.js` sums a smooth field around each atom
+(radius `3.2e-10 m`, hydrogen weight `0.6`) and extracts the surface with
+surface nets on a grid of `0.6e-10` to `1.6e-10 m`. A lone carbon gives a
+closed sphere of `1.73e-10 m`. `site/render_atoms.js` draws the meshes with the
+same projection as the atoms, writes a normal and a body id to a second target,
+and draws outline, crease and depth edges in the composite pass. Each body moves
+as a rotation about z and a shift, the same as the atom motion. The scene schema
+does not change.
+
+Consequence. The Auto model mode shows atoms near and the solid model far. The
+Components panel hides bodies in both modes. The mesh is an envelope of the
+atoms for display. It is not a measured surface and carries no physical result.
+
+Trade-off and limits. The mesh is rebuilt once for each scene, from the rest
+positions. A body that deforms would need a rebuild. The upload took about 4.6 s
+for the gearbox in the headless software renderer; it is not measured on a
+hardware GPU (M26-04).

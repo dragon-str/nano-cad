@@ -226,6 +226,92 @@
     "}",
   ].join("\n");
 
+  /*
+   * Solid meshes. Each body is one mesh with a rigid in-plane motion
+   * (rotation about z, then a shift), matching the kinematic animation.
+   * Location 1 stores the view normal and a body id for the edge pass.
+   */
+  var MESH_VS = [
+    "#version 300 es",
+    "layout(location = 0) in vec3 aPos;",
+    "layout(location = 1) in vec3 aNormal;",
+    "uniform vec3 uCenter;",
+    "uniform float uInvR;",
+    "uniform vec2 uYaw;",
+    "uniform vec2 uTilt;",
+    "uniform float uCamDist;",
+    "uniform float uPerspK;",
+    "uniform float uScale;",
+    "uniform vec2 uViewport;",
+    "uniform vec2 uPan;",
+    "uniform float uNear;",
+    "uniform float uFar;",
+    "uniform vec2 uRot;",
+    "uniform vec2 uShift;",
+    "out vec3 vNormal;",
+    "out float vWorldZ;",
+    "out float vViewDepth;",
+    "vec3 toView(vec3 v) {",
+    "  float x1 = v.x * uYaw.x - v.y * uYaw.y;",
+    "  float y1 = v.x * uYaw.y + v.y * uYaw.x;",
+    "  float y2 = y1 * uTilt.x - v.z * uTilt.y;",
+    "  float d = y1 * uTilt.y + v.z * uTilt.x;",
+    "  return vec3(x1, y2, d);",
+    "}",
+    "void main() {",
+    "  vec3 p = vec3(aPos.x * uRot.x - aPos.y * uRot.y + uShift.x,",
+    "                aPos.x * uRot.y + aPos.y * uRot.x + uShift.y, aPos.z);",
+    "  vec3 nw = vec3(aNormal.x * uRot.x - aNormal.y * uRot.y,",
+    "                 aNormal.x * uRot.y + aNormal.y * uRot.x, aNormal.z);",
+    "  vec3 v = toView((p - uCenter) * uInvR);",
+    "  float viewDepth = uCamDist - v.z * uPerspK;",
+    "  float persp = uCamDist / viewDepth;",
+    "  vec2 screen = vec2(uViewport.x * 0.5, uViewport.y * 0.5)",
+    "    + v.xy * uScale * persp + uPan;",
+    "  vec2 ndc = vec2(screen.x / uViewport.x * 2.0 - 1.0,",
+    "                  1.0 - screen.y / uViewport.y * 2.0);",
+    "  float dn = (viewDepth - uNear) / (uFar - uNear);",
+    "  gl_Position = vec4(ndc, dn * 2.0 - 1.0, 1.0);",
+    "  vec3 nv = toView(nw);",
+    "  vNormal = vec3(nv.x, -nv.y, nv.z);",
+    "  vWorldZ = p.z;",
+    "  vViewDepth = viewDepth;",
+    "}",
+  ].join("\n");
+
+  var MESH_FS = [
+    "#version 300 es",
+    "precision highp float;",
+    "in vec3 vNormal;",
+    "in float vWorldZ;",
+    "in float vViewDepth;",
+    "uniform vec3 uColor;",
+    "uniform vec3 uKeyDir;",
+    "uniform float uClipZ;",
+    "uniform float uId;",
+    "layout(location = 0) out vec4 fragColor;",
+    "layout(location = 1) out vec4 fragInfo;",
+    "void main() {",
+    "  if (vWorldZ > uClipZ) { discard; }",
+    "  vec3 nrm = normalize(vNormal);",
+    "  float facing = 1.0;",
+    // A back face shows through a section cut: shade it as the cut interior.
+    "  if (!gl_FrontFacing) { nrm = -nrm; facing = 0.0; }",
+    "  vec3 key = normalize(uKeyDir);",
+    "  float diff = max(dot(nrm, key), 0.0);",
+    "  vec3 fillDir = normalize(vec3(0.7, -0.4, 0.55));",
+    "  float fill = max(dot(nrm, fillDir), 0.0) * 0.22;",
+    "  float ambient = 0.30 + 0.20 * nrm.z;",
+    "  vec3 halfV = normalize(key + vec3(0.0, 0.0, 1.0));",
+    "  float spec = pow(max(dot(nrm, halfV), 0.0), 40.0) * 0.18;",
+    "  vec3 col = uColor * (ambient + 0.85 * diff + fill) + vec3(spec);",
+    "  col = mix(uColor * 0.28, col, facing);",
+    "  float fogFrac = clamp((vViewDepth - 2.6) / 1.2, 0.0, 1.0);",
+    "  fragColor = vec4(col * mix(1.0, 0.7, fogFrac), 1.0);",
+    "  fragInfo = vec4(nrm * 0.5 + 0.5, uId / 255.0);",
+    "}",
+  ].join("\n");
+
   var AO_FS = [
     "#version 300 es",
     "precision highp float;",
@@ -297,16 +383,78 @@
     "in vec2 vUv;",
     "uniform sampler2D uColor;",
     "uniform sampler2D uAo;",
+    "uniform sampler2D uInfo;",
+    "uniform sampler2D uDepth;",
     "uniform float uAoOn;",
     "uniform float uVignette;",
+    "uniform float uSolid;",
+    "uniform float uEdgeOnly;",
+    "uniform vec2 uTexel;",
     "out vec4 fragColor;",
+    "float bodyId(vec2 uv) { return floor(texture(uInfo, uv).a * 255.0 + 0.5); }",
     "void main() {",
     "  vec4 c = texture(uColor, vUv);",
     "  float ao = mix(1.0, texture(uAo, vUv).r, uAoOn);",
     "  vec3 col = c.rgb * ao;",
+    "  float alpha = c.a;",
+    "  if (uSolid > 0.5) {",
+    // Feature edges: a change of body, a crease in the normal, or a jump in depth.
+    "    vec4 info = texture(uInfo, vUv);",
+    "    float id = bodyId(vUv);",
+    "    vec3 n = info.rgb * 2.0 - 1.0;",
+    "    float d = texture(uDepth, vUv).r;",
+    "    vec2 offs[8] = vec2[8](vec2(1.0, 0.0), vec2(-1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, -1.0),",
+    "      vec2(1.0, 1.0), vec2(-1.0, -1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0));",
+    // Edges-only lines are drawn thicker, because they carry the whole shape.
+    "    float reach = uEdgeOnly > 0.5 ? 1.5 : 1.0;",
+    "    float edge = 0.0;",
+    "    float outline = 0.0;",
+    "    vec3 edgeColor = c.rgb;",
+    "    for (int i = 0; i < 8; i++) {",
+    "      vec2 uv = vUv + offs[i] * uTexel * reach;",
+    "      float nid = bodyId(uv);",
+    "      if (nid != id) {",
+    "        if (id < 0.5) { outline = 1.0; edgeColor = texture(uColor, uv).rgb; }",
+    "        else if (nid > id || nid < 0.5) { edge = 1.0; }",
+    "        continue;",
+    "      }",
+    "      if (id < 0.5) { continue; }",
+    "      vec3 nn = texture(uInfo, uv).rgb * 2.0 - 1.0;",
+    "      if (dot(n, nn) < (uEdgeOnly > 0.5 ? 0.9 : 0.82)) { edge = max(edge, 0.8); }",
+    "    }",
+    "    if (id > 0.5) {",
+    "      float dl = texture(uDepth, vUv - vec2(uTexel.x, 0.0)).r;",
+    "      float dr = texture(uDepth, vUv + vec2(uTexel.x, 0.0)).r;",
+    "      float du = texture(uDepth, vUv - vec2(0.0, uTexel.y)).r;",
+    "      float dd = texture(uDepth, vUv + vec2(0.0, uTexel.y)).r;",
+    "      float lap = max(abs(dl + dr - 2.0 * d), abs(du + dd - 2.0 * d));",
+    "      edge = max(edge, smoothstep(0.0015, 0.004, lap));",
+    "    }",
+    "    if (uEdgeOnly > 0.5) {",
+    // The lit colour carries the body hue; lift it to full brightness for the line.
+    "      vec3 hue = c.rgb / max(max(c.r, c.g), max(c.b, 0.001));",
+    "      if (id > 0.5) {",
+    "        float facing = clamp(n.z, 0.0, 1.0);",
+    "        vec3 fill = hue * (0.06 + 0.10 * facing);",
+    "        col = mix(fill, min(hue * 0.9 + 0.12, vec3(1.0)), edge);",
+    "        alpha = mix(0.8, 1.0, edge);",
+    "      } else if (outline > 0.5) {",
+    "        vec3 outHue = edgeColor / max(max(edgeColor.r, edgeColor.g), max(edgeColor.b, 0.001));",
+    "        col = min(outHue * 0.9 + 0.12, vec3(1.0));",
+    "        alpha = 1.0;",
+    "      }",
+    "    } else {",
+    "      if (id > 0.5) {",
+    "        col = mix(col, vec3(0.04, 0.05, 0.07), edge * 0.85);",
+    "      } else if (outline > 0.5) {",
+    "        col = min(edgeColor * 0.6 + 0.35, vec3(1.0));",
+    "        alpha = 1.0;",
+    "      }",
+    "    }",
+    "  }",
     "  vec2 q = (vUv - 0.5) * vec2(1.1, 1.02);",
     "  col *= 1.0 - uVignette * dot(q, q);",
-    "  fragColor = vec4(col * c.a, c.a);",
+    "  fragColor = vec4(col * alpha, alpha);",
     "}",
   ].join("\n");
 
@@ -375,6 +523,7 @@
         ao: program(gl, QUAD_VS, AO_FS),
         blur: program(gl, QUAD_VS, BLUR_FS),
         composite: program(gl, QUAD_VS, COMPOSITE_FS),
+        mesh: program(gl, MESH_VS, MESH_FS),
       };
     } catch (error) {
       console.error("NanoCadAtoms: renderer unavailable: " + error.message);
@@ -410,7 +559,8 @@
     var count = 0;
     var lineCount = 0;
 
-    var targets = { color: null, depth: null, ao: null, blur: null };
+    var meshes = {};
+    var targets = { color: null, info: null, depth: null, ao: null, blur: null };
     var fbo = { scene: gl.createFramebuffer(), ao: gl.createFramebuffer(), blur: gl.createFramebuffer() };
     var size = { w: 0, h: 0 };
     var kernel = hemisphereKernel(16);
@@ -445,7 +595,7 @@
       }
       size.w = w;
       size.h = h;
-      ["color", "depth", "ao", "blur"].forEach(function (name) {
+      ["color", "info", "depth", "ao", "blur"].forEach(function (name) {
         if (targets[name]) {
           gl.deleteTexture(targets[name]);
         }
@@ -453,12 +603,19 @@
       var half = Math.max(1, Math.round(w * 0.5));
       var halfH = Math.max(1, Math.round(h * 0.5));
       targets.color = makeTexture(gl, gl.NEAREST);
+      targets.info = makeTexture(gl, gl.NEAREST);
       targets.depth = makeTexture(gl, gl.NEAREST);
       targets.ao = makeTexture(gl, gl.LINEAR);
       targets.blur = makeTexture(gl, gl.LINEAR);
       attach(
         { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE },
         targets.color,
+        w,
+        h
+      );
+      attach(
+        { internal: gl.RGBA8, format: gl.RGBA, type: gl.UNSIGNED_BYTE },
+        targets.info,
         w,
         h
       );
@@ -473,6 +630,7 @@
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.scene);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targets.color, 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, targets.info, 0);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, targets.depth, 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.ao);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, targets.ao, 0);
@@ -514,6 +672,59 @@
       gl.bindVertexArray(null);
     }
 
+    /*
+     * Upload solid meshes. `list` holds { key, positions, normals, indices }.
+     * Meshes whose key is absent from the list are freed.
+     */
+    function setMeshes(list) {
+      var keep = {};
+      list.forEach(function (item) {
+        keep[item.key] = true;
+        var old = meshes[item.key];
+        if (old && old.source === item.positions) {
+          return;
+        }
+        if (old) {
+          freeMesh(old);
+        }
+        var vao = gl.createVertexArray();
+        var position = gl.createBuffer();
+        var normal = gl.createBuffer();
+        var index = gl.createBuffer();
+        gl.bindVertexArray(vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, position);
+        gl.bufferData(gl.ARRAY_BUFFER, item.positions, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, normal);
+        gl.bufferData(gl.ARRAY_BUFFER, item.normals, gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, item.indices, gl.STATIC_DRAW);
+        gl.bindVertexArray(null);
+        meshes[item.key] = {
+          vao: vao,
+          buffers: [position, normal, index],
+          count: item.indices.length,
+          source: item.positions,
+        };
+      });
+      Object.keys(meshes).forEach(function (key) {
+        if (!keep[key]) {
+          freeMesh(meshes[key]);
+          delete meshes[key];
+        }
+      });
+    }
+
+    function freeMesh(mesh) {
+      gl.deleteVertexArray(mesh.vao);
+      mesh.buffers.forEach(function (buffer) {
+        gl.deleteBuffer(buffer);
+      });
+    }
+
     /* Re-upload positions only, for the kinematic animation. */
     function updatePositions(positions) {
       if (positions.length / 3 !== count) {
@@ -544,7 +755,8 @@
     }
 
     function render(state) {
-      if (!count) {
+      var solid = state.solid && state.solid.draws ? state.solid : null;
+      if (!count && !solid) {
         return;
       }
       gl.viewport(0, 0, size.w, size.h);
@@ -556,8 +768,54 @@
       gl.depthFunc(gl.LESS);
       gl.disable(gl.BLEND);
       gl.disable(gl.CULL_FACE);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+      if (solid) {
+        drawMeshes(state, solid);
+      } else {
+        drawAtoms(state);
+      }
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
+
+      if (state.showBonds && lineCount) {
+        gl.disable(gl.CULL_FACE);
+        gl.useProgram(programs.lines);
+        setUniforms(locations.lines, state);
+        gl.bindVertexArray(lineVao);
+        gl.drawArrays(gl.LINES, 0, lineCount);
+      }
+      postProcess(state, solid);
+    }
+
+    function drawMeshes(state, solid) {
+      var loc = locations.mesh;
+      gl.useProgram(programs.mesh);
+      setUniforms(loc, state);
+      gl.uniform3fv(loc.uKeyDir, normalize3(state.keyDir));
+      // The screen mapping flips y, which mirrors the winding of an outward face.
+      gl.frontFace(gl.CW);
+      solid.draws.forEach(function (draw, index) {
+        var mesh = meshes[draw.key];
+        if (!mesh || !mesh.count) {
+          return;
+        }
+        gl.uniform2f(loc.uRot, draw.rot[0], draw.rot[1]);
+        gl.uniform2f(loc.uShift, draw.shift[0], draw.shift[1]);
+        gl.uniform3fv(loc.uColor, draw.color);
+        gl.uniform1f(loc.uClipZ, draw.clipZ === null || draw.clipZ === undefined ? 1e30 : draw.clipZ);
+        gl.uniform1f(loc.uId, (index % 254) + 1);
+        gl.bindVertexArray(mesh.vao);
+        gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_INT, 0);
+      });
+      gl.frontFace(gl.CCW);
+    }
+
+    function drawAtoms(state) {
+      if (!count) {
+        return;
+      }
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
       var atomLoc = locations.atoms;
       gl.useProgram(programs.atoms);
       setUniforms(atomLoc, state);
@@ -568,15 +826,9 @@
       gl.uniform1f(atomLoc.uClipOn, state.clipOn ? 1 : 0);
       gl.bindVertexArray(atomVao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+    }
 
-      if (state.showBonds && lineCount) {
-        gl.disable(gl.CULL_FACE);
-        gl.useProgram(programs.lines);
-        setUniforms(locations.lines, state);
-        gl.bindVertexArray(lineVao);
-        gl.drawArrays(gl.LINES, 0, lineCount);
-      }
-
+    function postProcess(state, solid) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.ao);
       gl.disable(gl.DEPTH_TEST);
       gl.viewport(0, 0, Math.round(size.w * 0.5), Math.round(size.h * 0.5));
@@ -617,7 +869,17 @@
       gl.uniform1i(locations.composite.uAo, 1);
       gl.uniform1f(locations.composite.uAoOn, state.ao ? 1 : 0);
       gl.uniform1f(locations.composite.uVignette, 0.55);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, targets.info);
+      gl.uniform1i(locations.composite.uInfo, 2);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, targets.depth);
+      gl.uniform1i(locations.composite.uDepth, 3);
+      gl.uniform1f(locations.composite.uSolid, solid ? 1 : 0);
+      gl.uniform1f(locations.composite.uEdgeOnly, solid && solid.style === "edges" ? 1 : 0);
+      gl.uniform2f(locations.composite.uTexel, 1 / size.w, 1 / size.h);
       drawQuad();
+      gl.activeTexture(gl.TEXTURE0);
       gl.bindVertexArray(null);
     }
 
@@ -632,11 +894,12 @@
       resize: resize,
       setAtoms: setAtoms,
       setBonds: setBonds,
+      setMeshes: setMeshes,
       updatePositions: updatePositions,
       render: render,
       clear: clear,
       stats: function () {
-        return { count: count, lineCount: lineCount };
+        return { count: count, lineCount: lineCount, meshCount: Object.keys(meshes).length };
       },
     };
   }

@@ -22,6 +22,9 @@
   var pickEl = document.getElementById("pick");
   var measureEl = document.getElementById("measure");
   var legendEl = document.getElementById("legend");
+  var componentsEl = document.getElementById("components");
+  var modelModeInput = document.getElementById("model-mode");
+  var solidStyleInput = document.getElementById("solid-style");
   var aoToggle = document.getElementById("toggle-ao");
   var atomSizeInput = document.getElementById("atom-size");
   var clipInput = document.getElementById("clip");
@@ -107,7 +110,11 @@
     atomSize: 1,
     clip: 1,
     hiddenElements: {},
+    hiddenBodies: {},
     hideRotorTop: false,
+    /* "auto" draws atoms up close and solid outlines when zoomed out. */
+    modelMode: "auto",
+    solidStyle: "shaded",
   };
   var atomCache = null;
   var motion = { playing: false, turntable: false, time: 0, speed: 1, last: 0, kind: "gears" };
@@ -390,9 +397,18 @@
     uploadAtoms();
   }
 
+  function isBodyHidden(body) {
+    return Boolean(display.hiddenBodies[body]);
+  }
+
   function hasHiddenElements() {
     if (display.hideRotorTop) {
       return true;
+    }
+    for (var body in display.hiddenBodies) {
+      if (display.hiddenBodies[body]) {
+        return true;
+      }
     }
     for (var key in display.hiddenElements) {
       if (display.hiddenElements[key]) {
@@ -421,13 +437,9 @@
     }
     var kept = [];
     for (var i = 0; i < cache.atoms.length; i += 1) {
-      if (display.hiddenElements[cache.atoms[i].element]) {
-        continue;
+      if (isAtomVisible(cache.atoms[i], 0, null)) {
+        kept.push(i);
       }
-      if (isHiddenByCutaway(cache.atoms[i])) {
-        continue;
-      }
-      kept.push(i);
     }
     var position = new Float32Array(kept.length * 3);
     var radii = new Float32Array(kept.length);
@@ -446,77 +458,85 @@
     livePositions = position;
   }
 
-  /* Advance the planetary kinematics. The ring is fixed. */
+  /* The rigid motion of one body at the current time: a rotation about z by
+     (c, s), then a shift (tx, ty). Atoms and solid meshes share it. */
+  function bodyMotion(body) {
+    var t = motion.time;
+    var cc = Math.cos(motion.w_sun * t);
+    var sc = Math.sin(motion.w_sun * t);
+    if (motion.kind === "rotor") {
+      var rotorAngle = motion.w_sun * t;
+      if (
+        body === 1 ||
+        (body >= ROTOR_SPRING_FIRST && body - ROTOR_SPRING_FIRST < motion.rods.length)
+      ) {
+        return { c: cc, s: sc, tx: 0, ty: 0 };
+      }
+      if (body >= ROTOR_ROD_FIRST && body - ROTOR_ROD_FIRST < motion.rods.length) {
+        var rod = motion.rods[body - ROTOR_ROD_FIRST];
+        var rodAngle = rod.angle_rad + rotorAngle;
+        var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
+        delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+        var ratio =
+          Math.abs(delta) < ROTOR_CAM_RAMP_RAD
+            ? 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_CAM_RAMP_RAD))
+            : 0;
+        var offset = motion.rod_stroke_m * ratio;
+        return {
+          c: cc,
+          s: sc,
+          tx: Math.cos(rodAngle) * offset,
+          ty: Math.sin(rodAngle) * offset,
+        };
+      }
+      return { c: 1, s: 0, tx: 0, ty: 0 };
+    }
+    if (body === 1) {
+      return { c: cc, s: sc, tx: 0, ty: 0 };
+    }
+    var ca = Math.cos(motion.w_carrier * t);
+    var sa = Math.sin(motion.w_carrier * t);
+    if (body >= 2 && body <= 4 && scene.device.bodies[body]) {
+      var cb = Math.cos(motion.w_planet * t);
+      var sb = Math.sin(motion.w_planet * t);
+      var center = scene.device.bodies[body].position_m;
+      return {
+        c: cb,
+        s: sb,
+        tx: center[0] * ca - center[1] * sa - (center[0] * cb - center[1] * sb),
+        ty: center[0] * sa + center[1] * ca - (center[0] * sb + center[1] * cb),
+      };
+    }
+    if (body === 6) {
+      return { c: ca, s: sa, tx: 0, ty: 0 };
+    }
+    return { c: 1, s: 0, tx: 0, ty: 0 };
+  }
+
+  /* Advance the kinematics. The ring and the housing are fixed. */
   function updateAnimation(dt) {
     if (!atomCache) {
       return;
     }
     motion.time += dt;
-    var t = motion.time;
     if (motion.kind === "rotor") {
-      motion.rotor_angle_rad = motion.w_sun * t;
+      motion.rotor_angle_rad = motion.w_sun * motion.time;
     }
-    var ca = Math.cos(motion.w_carrier * t);
-    var sa = Math.sin(motion.w_carrier * t);
-    var cb = Math.cos(motion.w_planet * t);
-    var sb = Math.sin(motion.w_planet * t);
-    var cc = Math.cos(motion.w_sun * t);
-    var sc = Math.sin(motion.w_sun * t);
     var base = atomCache.base;
     var live = atomCache.position;
     var atoms = atomCache.atoms;
-    var bodies = scene.device.bodies;
+    var motions = {};
     for (var i = 0; i < atoms.length; i += 1) {
       var body = atoms[i].body;
+      var m = motions[body];
+      if (!m) {
+        m = bodyMotion(body);
+        motions[body] = m;
+      }
       var x = base[i * 3];
       var y = base[i * 3 + 1];
-      var ox;
-      var oy;
-      if (motion.kind === "rotor") {
-        if (
-          body === 1 ||
-          (body >= ROTOR_SPRING_FIRST && body - ROTOR_SPRING_FIRST < motion.rods.length)
-        ) {
-          ox = x * cc - y * sc;
-          oy = x * sc + y * cc;
-        } else if (
-          body >= ROTOR_ROD_FIRST &&
-          body - ROTOR_ROD_FIRST < motion.rods.length
-        ) {
-          var rodIndex = body - ROTOR_ROD_FIRST;
-          var rod = motion.rods[rodIndex];
-          var rodAngle = rod.angle_rad + motion.rotor_angle_rad;
-          var delta = rodAngle - ROTOR_CAM_LOBE_RAD;
-          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-          var ratio =
-            Math.abs(delta) < ROTOR_CAM_RAMP_RAD
-              ? 0.5 * (1 + Math.cos((Math.PI * delta) / ROTOR_CAM_RAMP_RAD))
-              : 0;
-          var offset = motion.rod_stroke_m * ratio;
-          ox = x * cc - y * sc + Math.cos(rodAngle) * offset;
-          oy = x * sc + y * cc + Math.sin(rodAngle) * offset;
-        } else {
-          ox = x;
-          oy = y;
-        }
-      } else if (body === 1) {
-        ox = x * cc - y * sc;
-        oy = x * sc + y * cc;
-      } else if (body >= 2 && body <= 4) {
-        var center = bodies[body].position_m;
-        var dx = x - center[0];
-        var dy = y - center[1];
-        ox = center[0] * ca - center[1] * sa + (dx * cb - dy * sb);
-        oy = center[0] * sa + center[1] * ca + (dx * sb + dy * cb);
-      } else if (body === 6) {
-        ox = x * ca - y * sa;
-        oy = x * sa + y * ca;
-      } else {
-        ox = x;
-        oy = y;
-      }
-      live[i * 3] = ox;
-      live[i * 3 + 1] = oy;
+      live[i * 3] = x * m.c - y * m.s + m.tx;
+      live[i * 3 + 1] = x * m.s + y * m.c + m.ty;
     }
   }
 
@@ -616,6 +636,139 @@
     });
   }
 
+  /* ---------- Components ---------- */
+
+  function prettyRole(role) {
+    var text = String(role || "part").replace(/_/g, " ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  /* Group the bodies by role, so the twelve rods form one layer that the user
+     can open to reach each rod. A body with no atoms has nothing to hide. */
+  function componentGroups() {
+    var counts = {};
+    scene.atomistic.atoms.forEach(function (atom) {
+      counts[atom.body] = (counts[atom.body] || 0) + 1;
+    });
+    var bodies = (scene.device && scene.device.bodies) || [];
+    var groups = [];
+    var byKey = {};
+    Object.keys(counts)
+      .map(Number)
+      .sort(function (a, b) {
+        return a - b;
+      })
+      .forEach(function (index) {
+        var body = bodies[index] || {};
+        var key = body.role || body.name || "body " + index;
+        if (!byKey[key]) {
+          byKey[key] = {
+            key: key,
+            label: prettyRole(body.role || body.name || "body " + index),
+            color: ROLE_COLORS[body.role] || "#8b949e",
+            bodies: [],
+            atoms: 0,
+          };
+          groups.push(byKey[key]);
+        }
+        byKey[key].bodies.push(index);
+        byKey[key].atoms += counts[index];
+      });
+    return groups;
+  }
+
+  function applyBodyVisibility() {
+    hoverAtom = -1;
+    uploadAtoms();
+    draw();
+  }
+
+  function syncGroupBox(box, group) {
+    var hidden = group.bodies.filter(isBodyHidden).length;
+    box.checked = hidden < group.bodies.length;
+    box.indeterminate = hidden > 0 && hidden < group.bodies.length;
+  }
+
+  function buildComponents() {
+    componentsEl.textContent = "";
+    display.hiddenBodies = {};
+    componentGroups().forEach(function (group) {
+      var wrap = document.createElement("div");
+      wrap.className = "component";
+      var row = document.createElement("label");
+      row.className = "legend-row";
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = true;
+      box.setAttribute("data-component", group.key);
+      var swatch = document.createElement("span");
+      swatch.className = "swatch";
+      swatch.style.background = group.color;
+      var text = document.createElement("span");
+      text.textContent =
+        group.label + (group.bodies.length > 1 ? " (" + group.bodies.length + ")" : "");
+      text.title = group.atoms + " atoms";
+      row.appendChild(box);
+      row.appendChild(swatch);
+      row.appendChild(text);
+      wrap.appendChild(row);
+      var bodyBoxes = [];
+      if (group.bodies.length > 1) {
+        var list = document.createElement("details");
+        list.className = "component-bodies";
+        var summary = document.createElement("summary");
+        summary.textContent = "each";
+        list.appendChild(summary);
+        group.bodies.forEach(function (index, n) {
+          var bodyRow = document.createElement("label");
+          bodyRow.className = "legend-row";
+          var bodyBox = document.createElement("input");
+          bodyBox.type = "checkbox";
+          bodyBox.checked = true;
+          bodyBox.setAttribute("data-body", String(index));
+          bodyBox.addEventListener("change", function () {
+            display.hiddenBodies[index] = !bodyBox.checked;
+            syncGroupBox(box, group);
+            applyBodyVisibility();
+          });
+          var bodyText = document.createElement("span");
+          bodyText.textContent = group.label + " " + (n + 1);
+          bodyRow.appendChild(bodyBox);
+          bodyRow.appendChild(bodyText);
+          list.appendChild(bodyRow);
+          bodyBoxes.push(bodyBox);
+        });
+        wrap.appendChild(list);
+      }
+      box.addEventListener("change", function () {
+        group.bodies.forEach(function (index) {
+          display.hiddenBodies[index] = !box.checked;
+        });
+        bodyBoxes.forEach(function (bodyBox) {
+          bodyBox.checked = box.checked;
+        });
+        box.indeterminate = false;
+        applyBodyVisibility();
+      });
+      componentsEl.appendChild(wrap);
+    });
+  }
+
+  function setAllComponents(visible) {
+    var boxes = componentsEl.querySelectorAll("input[type=checkbox]");
+    for (var i = 0; i < boxes.length; i += 1) {
+      boxes[i].checked = visible;
+      boxes[i].indeterminate = false;
+    }
+    display.hiddenBodies = {};
+    if (!visible) {
+      scene.atomistic.atoms.forEach(function (atom) {
+        display.hiddenBodies[atom.body] = true;
+      });
+    }
+    applyBodyVisibility();
+  }
+
   /* ---------- Overlays ---------- */
 
   function updateTriad() {
@@ -652,18 +805,42 @@
       (nmNice >= 1 ? nmNice.toFixed(0) : nmNice.toFixed(2)) + " nm";
   }
 
+  /* The GPU buffer drops hidden atoms, so its indices differ from the scene's.
+     Every lookup by scene index reads the full cache instead. */
   function atomPoint(index) {
-    var p = livePositions || (atomCache && atomCache.position);
+    var p = atomCache && atomCache.position;
     if (!p) {
       return [0, 0, 0];
     }
     return [p[index * 3], p[index * 3 + 1], p[index * 3 + 2]];
   }
 
+  function sectionClipZ() {
+    if (display.clip >= 0.999) {
+      return null;
+    }
+    return fitMin[2] + display.clip * (fitMax[2] - fitMin[2]);
+  }
+
+  function isAtomVisible(atom, z, clipZ) {
+    if (display.hiddenElements[atom.element] || isHiddenByCutaway(atom)) {
+      return false;
+    }
+    if (isBodyHidden(atom.body)) {
+      return false;
+    }
+    return clipZ === null || z <= clipZ;
+  }
+
+  /* Return the front-most visible atom whose drawn disc covers the cursor.
+     A nearest-centre pick ignores depth, so it can report an atom that sits
+     behind the one the user sees. */
   function pickAtom(mx, my) {
     if (!atomCache) {
       return -1;
     }
+    var clipZ = sectionClipZ();
+    var radiusFactor = display.atomSize * pixelSize() / Math.max(fit.r, 1e-30);
     var cy = Math.cos(view.yaw);
     var sy = Math.sin(view.yaw);
     var ct = Math.cos(view.tilt);
@@ -676,10 +853,17 @@
     var c0 = fit.c[0];
     var c1 = fit.c[1];
     var c2 = fit.c[2];
-    var p = livePositions || atomCache.position;
+    var p = atomCache.position;
+    var atoms = atomCache.atoms;
+    var radii = atomCache.radii;
+    var front = -1;
+    var frontDepth = -Infinity;
     var best = -1;
-    var bestDistance = 14 * 14;
-    for (var i = 0; i < atomCache.atoms.length; i += 1) {
+    var bestDistance = 8 * 8;
+    for (var i = 0; i < atoms.length; i += 1) {
+      if (!isAtomVisible(atoms[i], p[i * 3 + 2], clipZ)) {
+        continue;
+      }
       var nx = (p[i * 3] - c0) * invR;
       var ny = (p[i * 3 + 1] - c1) * invR;
       var nz = (p[i * 3 + 2] - c2) * invR;
@@ -693,18 +877,26 @@
       var dx = sx - mx;
       var dy = sy2 - my;
       var d = dx * dx + dy * dy;
+      var discPx = Math.max(2, radii[i] * radiusFactor * persp);
+      if (d <= discPx * discPx && depth > frontDepth) {
+        frontDepth = depth;
+        front = i;
+      }
       if (d < bestDistance) {
         bestDistance = d;
         best = i;
       }
     }
-    return best;
+    return front >= 0 ? front : best;
   }
 
   function describeAtom(index) {
     var atom = atomCache.atoms[index];
     var p = atomPoint(index);
     var role = (scene.device.bodies[atom.body] || {}).name || "?";
+    if (solidActive()) {
+      return role + "  (component, " + bodyAtomCount(atom.body) + " atoms)";
+    }
     return (
       atom.element +
       " #" +
@@ -1051,17 +1243,11 @@
     var atoms = scene.atomistic.atoms;
     var spacing = atomSpacingPx();
     var radius = Math.max(0.6, spacing * 0.30 * display.atomSize);
-    var clipZ = null;
-    if (display.clip < 0.999) {
-      clipZ = fitMin[2] + display.clip * (fitMax[2] - fitMin[2]);
-    }
+    var clipZ = sectionClipZ();
     var groups = new Map();
     for (var i = 0; i < atoms.length; i += 1) {
-      if (display.hiddenElements[atoms[i].element] || isHiddenByCutaway(atoms[i])) {
-        continue;
-      }
       var world = atomPoint(i);
-      if (clipZ !== null && world[2] > clipZ) {
+      if (!isAtomVisible(atoms[i], world[2], clipZ)) {
         continue;
       }
       var p = camera(world);
@@ -1092,7 +1278,101 @@
     ctx.globalAlpha = 1;
   }
 
+  /* ---------- Solid (CAD) model ---------- */
+
+  /* Below this atom spacing the atoms are too small to read, so the auto mode
+     draws each component as a solid surface instead. */
+  var SOLID_SWITCH_PX = 6;
+  var solidCache = { scene: null, meshes: null, counts: null, buildMs: 0, uploadMs: 0 };
+
+  function solidActive() {
+    if (!renderer || !renderer.setMeshes || !window.NanoCadSolid || !atomCache) {
+      return false;
+    }
+    if (!toggles.atomistic.checked) {
+      return false;
+    }
+    if (display.modelMode === "solid") {
+      return true;
+    }
+    return display.modelMode === "auto" && atomSpacingPx() < SOLID_SWITCH_PX;
+  }
+
+  function bodyAtomCount(body) {
+    ensureSolidCounts();
+    return solidCache.counts[body] || 0;
+  }
+
+  function ensureSolidCounts() {
+    if (solidCache.counts && solidCache.scene === scene) {
+      return;
+    }
+    var counts = {};
+    var atoms = atomCache.atoms;
+    for (var i = 0; i < atoms.length; i += 1) {
+      counts[atoms[i].body] = (counts[atoms[i].body] || 0) + 1;
+    }
+    solidCache.counts = counts;
+  }
+
+  /* Build the component surfaces once per scene, from the rest positions. */
+  function ensureSolidMeshes() {
+    if (solidCache.meshes && solidCache.scene === scene) {
+      return;
+    }
+    var start = performance.now();
+    var meshes = window.NanoCadSolid.buildBodyMeshes(atomCache.atoms);
+    var list = [];
+    Object.keys(meshes).forEach(function (key) {
+      var mesh = meshes[key];
+      if (mesh.triangleCount > 0) {
+        list.push({
+          key: key,
+          positions: mesh.positions,
+          normals: mesh.normals,
+          indices: mesh.indices,
+        });
+      }
+    });
+    var built = performance.now();
+    renderer.setMeshes(list);
+    solidCache.scene = scene;
+    solidCache.meshes = meshes;
+    solidCache.counts = null;
+    solidCache.buildMs = built - start;
+    solidCache.uploadMs = performance.now() - built;
+  }
+
+  function solidState() {
+    ensureSolidMeshes();
+    var sectionZ = sectionClipZ();
+    var draws = [];
+    Object.keys(solidCache.meshes).forEach(function (key) {
+      var body = Number(key);
+      if (isBodyHidden(body) || solidCache.meshes[key].triangleCount === 0) {
+        return;
+      }
+      var info = scene.device.bodies[body] || {};
+      var clipZ = sectionZ;
+      if (display.hideRotorTop && body === 1) {
+        clipZ = clipZ === null ? 0 : Math.min(clipZ, 0);
+      }
+      var m = bodyMotion(body);
+      draws.push({
+        key: key,
+        rot: [m.c, m.s],
+        shift: [m.tx, m.ty],
+        color: hexToRgb(ROLE_COLORS[info.role] || "#8b949e"),
+        clipZ: clipZ,
+      });
+    });
+    return { draws: draws, style: display.solidStyle };
+  }
+
   function drawAtomistic(alpha) {
+    if (solidActive()) {
+      return;
+    }
     if (renderer && atomSpacingPx() >= 6) {
       return;
     }
@@ -1188,6 +1468,9 @@
 
     for (var i = 0; i < bodies.length; i += 1) {
       var body = bodies[i];
+      if (isBodyHidden(i)) {
+        continue;
+      }
       var color = ROLE_COLORS[body.role] || "#8b949e";
       var p = points[i];
       ctx.strokeStyle = color;
@@ -1227,12 +1510,17 @@
       return;
     }
     var weights = layerWeights();
-    var useGl = Boolean(renderer) && weights[0] > 0 && atomSpacingPx() >= 6;
+    var solid = solidActive();
+    var useGl = Boolean(renderer) && weights[0] > 0 && (solid || atomSpacingPx() >= 6);
     glMarkersActive = useGl && weights[1] > 0;
     if (renderer) {
       if (useGl) {
         renderer.setBonds(glMarkersActive ? deviceSegments() : new Float32Array(0));
-        renderer.render(glState());
+        var state = glState();
+        if (solid) {
+          state.solid = solidState();
+        }
+        renderer.render(state);
       } else {
         renderer.clear();
       }
@@ -1317,6 +1605,7 @@
     computeFit();
     buildAtomBuffers();
     buildLegend();
+    buildComponents();
     hoverAtom = -1;
     measure = [];
     pickEl.textContent = "";
@@ -1749,6 +2038,20 @@
   rotorTopToggle.addEventListener("change", function () {
     display.hideRotorTop = rotorTopToggle.checked;
     uploadAtoms();
+    draw();
+  });
+  document.getElementById("components-all").addEventListener("click", function () {
+    setAllComponents(true);
+  });
+  document.getElementById("components-none").addEventListener("click", function () {
+    setAllComponents(false);
+  });
+  modelModeInput.addEventListener("change", function () {
+    display.modelMode = modelModeInput.value;
+    draw();
+  });
+  solidStyleInput.addEventListener("change", function () {
+    display.solidStyle = solidStyleInput.value;
     draw();
   });
   speedInput.addEventListener("input", function () {
@@ -2470,6 +2773,21 @@
     hasRenderer: function () {
       return !!renderer;
     },
+    loadPart: function (id) {
+      return loadPart(id).then(function () {
+        return true;
+      });
+    },
+    loadRotor: function () {
+      return loadRotor().then(function () {
+        return true;
+      });
+    },
+    loadGearbox: function () {
+      return loadGearbox().then(function () {
+        return true;
+      });
+    },
     runOptimize: function (options) {
       return runOptimize(options);
     },
@@ -2489,14 +2807,19 @@
       return motion.kind;
     },
     atomPosition: function (index) {
-      if (!livePositions || index * 3 + 2 >= livePositions.length) {
+      if (!atomCache || index < 0 || index >= atomCache.atoms.length) {
         return null;
       }
-      return [
-        livePositions[index * 3],
-        livePositions[index * 3 + 1],
-        livePositions[index * 3 + 2],
-      ];
+      return atomPoint(index);
+    },
+    pickAt: function (x, y) {
+      return pickAtom(x, y);
+    },
+    atomElement: function (index) {
+      return atomCache && atomCache.atoms[index] ? atomCache.atoms[index].element : null;
+    },
+    projectAtom: function (index) {
+      return camera(atomPoint(index));
     },
     sceneAtomCount: function () {
       return scene ? scene.atomistic.atom_count : 0;
@@ -2533,6 +2856,16 @@
     },
     spacingPx: function () {
       return atomSpacingPx();
+    },
+    solidActive: function () {
+      return solidActive();
+    },
+    solidInfo: function () {
+      return {
+        buildMs: solidCache.buildMs,
+        uploadMs: solidCache.uploadMs,
+        bodies: solidCache.meshes ? Object.keys(solidCache.meshes).length : 0,
+      };
     },
     zoom: function () {
       return view.zoom;

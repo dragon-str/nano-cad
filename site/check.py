@@ -74,15 +74,17 @@ def check_scene(path: Path) -> str:
 
 
 def check_viewer() -> str:
-    for name in ("index.html", "viewer.js", "style.css", "render_atoms.js"):
+    names = ("index.html", "viewer.js", "style.css", "render_atoms.js", "solid_mesh.js")
+    for name in names:
         if not (SITE_DIR / name).is_file():
             fail("missing viewer file: site/%s" % name)
     page = (SITE_DIR / "index.html").read_text(encoding="utf-8")
     if "simulated / schematic" not in page:
         fail("site/index.html does not carry the 'simulated / schematic' label")
-    if "render_atoms.js" not in page:
-        fail("site/index.html does not load render_atoms.js")
-    return "viewer ok: index.html, viewer.js, style.css, render_atoms.js present"
+    for script in ("render_atoms.js", "solid_mesh.js"):
+        if script not in page:
+            fail("site/index.html does not load %s" % script)
+    return "viewer ok: %s present" % ", ".join(names)
 
 
 def check_docs() -> str:

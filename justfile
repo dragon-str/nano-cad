@@ -36,6 +36,8 @@ js-test:
     node --check site/render_atoms.js
     node --check site/viewer.js
     node site/render_atoms.test.js
+    node --check site/solid_mesh.js
+    node site/solid_mesh.test.js
 
 # Run timing benchmarks. Not a gate.
 bench:

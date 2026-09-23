@@ -1652,3 +1652,14 @@ site is the selective part and the rotor mechanics are shared.
 - [x] **M25-06** Calibrate the metal well depth and reconcile it with the delivery model. <!-- result: a pyscf PBE/def2-svp model of an iron centre with four ammonia ligands binds oxygen by 80 to 115 kJ/mol and binds carbon dioxide not at all (+0.6 kJ/mol at 3.4e-10 m, repulsive closer). The example well depth is now 80 kJ/mol (1.3284e-19 J). The gas-binding entropy (about 78 kJ/mol at 310 K) reconciles the zero-Kelvin well with the delivery free energy (about -7 kJ/mol, P50 6 kPa). ADR-0084. No counterpoise correction, no dispersion, one functional and one model, so every number is an estimate. Integrating the term into the binding search remains open (M25-02). -->
 - [ ] **M25-07** Assess a rotor cascade. <!-- result: open. A series of rotors with even modest per-stage specificity can purify a stream. Estimate the number of stages that the respirocyte needs for oxygen, and state whether a cascade works for bicarbonate or whether a different strategy is preferred. -->
 
+
+## M26 — Viewer components and solid model
+
+The viewer shows each major component as a layer, picks the atom under the
+pointer, and draws a solid CAD-style model when the atoms get too small.
+
+- [x] **M26-01** Fix the atom pick. <!-- result: `pickAtom` now skips hidden atoms and takes the nearest atom whose drawn sphere is under the pointer, with source-index positions. On the binding pocket, 51 of 53 red oxygen pixels pick oxygen; the other 2 are edge pixels that pick hydrogen. Before, the pick took the nearest projected centre and often named a carbon behind the wall. -->
+- [x] **M26-02** Add one visibility layer per component. <!-- result: a Components panel groups the bodies by role, with one checkbox per group and one per body. The rotor shows Housing, Rotor, Ejection rod (12), Leaf spring (12) and Cam hub; the gearbox shows Sun, Planet (3) and Ring. A hidden body hides its atoms, its mesh and its marker. -->
+- [x] **M26-03** Draw a solid model when zoomed out. <!-- result: `site/solid_mesh.js` builds one closed surface-nets mesh per body from its atoms; `site/render_atoms.js` draws the meshes with outline, crease and depth edges, in a shaded or an edges-only style. Auto mode switches to the solid below six pixels of carbon-carbon spacing. The meshes follow the rotor and gear motion, the section plane and the rotor cutaway. Rotor: 27 meshes, about 0.3 s build. `node site/solid_mesh.test.js` -> 7 passed. ADR-0085. -->
+- [ ] **M26-04** Measure the mesh upload on a hardware GPU. <!-- result: open. The headless software renderer takes about 4.6 s to upload the gearbox meshes. The build itself takes about 0.2 s. -->
+- [ ] **M26-05** Fix the readout for a single part. <!-- result: open. A single part (for example the binding pocket) still shows the rotor mechanism text in the assistant readout. -->
