@@ -2271,8 +2271,11 @@ Results (`pump_site_json`, gap 3 of gear A, rigid, no solvent). Oxygen binds
 at -82.6 kJ/mol (-79.5 coordination, -3.1 wall), water at -13.3 and carbon
 dioxide at -5.5 (wall only). At alveolar pressures and 310 K the site holds
 oxygen 0.995 of the time, water 7e-12 and carbon dioxide 1.4e-14. During the
-mesh the nearest carbon of the other gear comes within 5.46e-10 m of the iron,
-inside the 3.1e-10 m reach of a bound oxygen, so the mesh forces the release.
+mesh the nearest carbon of the other gear comes no closer than 5.46e-10 m to
+the iron. A bound oxygen reaches only about 3.1e-10 m from the iron, and a
+carbon excludes about 1.7e-10 m around itself, so the space in front of the
+iron stays free. The mesh does not release the oxygen. (An earlier text of
+this ADR said the reverse; that was wrong, see ADR-0090.)
 
 Finding. The free volume of one gap, from the root to the housing bore and
 outside every Bondi sphere, is 3.05e-27 m^3: about 100 molecules of liquid
@@ -2286,3 +2289,43 @@ Limits. The wells come from a proxy, not from the diamond root site. The
 search is rigid, has no solvent and ignores the entropy of the bound pose.
 The free volume uses zero probe radius, so the water count is an upper-range
 estimate.
+
+## ADR-0090: The site-blocking rod pocket: the block works, the pocket is wet
+
+Context. ADR-0089 showed that the gear mesh never touches a bound oxygen and
+that a gear gap carries about 100 water molecules. The replacement idea is a
+rotor pocket with an iron in the bore wall and a rod that slides past the iron.
+The rod fills the space in front of the iron, so no bound oxygen fits there.
+Two tests could reject it: the rod must block the site (test 1), and the loaded
+pocket must stay dry in liquid water (test 2).
+
+Test 1 (`rod_pocket` part, `rod_block_json`). The iron replaces a bore-wall
+carbon, so it keeps three lattice bonds and sits level with the wall, not
+standing out. `metal_site_binding` now takes the open side from all the iron
+bonds and searches tilted donor positions too. With a 4.5e-10 m rod-to-wall gap
+the rod does not block the site: a bound oxygen fits between the rod caps at
+-74 to -80 kJ/mol. Pressing on it costs only a few kJ/mol. A 3.6e-10 m gap with
+a 2.6e-10 m rod blocks the site, but the narrow bore crowds the loaded iron to
+-40 kJ/mol, too weak to load. A 3.5e-10 m rod in a 7.1e-10 m bore (gap
+3.6e-10 m) does both. Rod pulled back: oxygen -81 kJ/mol, water -15. Face
+1.5e-10 m below the iron: oxygen -6. Face at or past the iron: no bound pose.
+Quasi-static peak push 2.5e-9 N (estimate). The rod stays at least 2.5e-10 m
+from the block.
+
+Test 2 (`scripts/pocket_water_md.py`, OpenMM 8.6, SPC/E water, frozen solid,
+UFF with Lorentz-Berthelot mixing, iron-water Morse from the proxy, 310 K,
+1 ns after 50 ps). The pocket (the bore above the pulled-back rod, 1.37 nm^3
+cylinder) holds 20.3 water molecules on average from a wet start and 19.7
+from a dry start, 25 at most, and is never empty. A water touches the iron
+49 to 66 percent of the time. Test 2 fails.
+
+Finding. A pocket wide enough for a rod to slide into is too wide to stay
+dry. Water fills a 14e-10 m open bore; a hydrophobic wall does not hold it
+out at that size. The carried water per oxygen is the water that fits in the
+pocket, so the pocket volume must be about one bound oxygen (about 5e-11 m^3
+scale). The blocker must then be thin enough to enter a pocket of that size,
+for example a carbon spike on a pin wheel, not a 3.5e-10 m rod.
+
+Limits. Rigid, frozen solid; no polarization; mixing differs from UFF; the
+iron-water and iron-oxygen wells come from the Fe(NH3)4 proxy. The results
+are simulated estimates.

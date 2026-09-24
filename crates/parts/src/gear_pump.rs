@@ -901,9 +901,10 @@ mod tests {
                 .collect();
             worst = worst.min(min_distance_m(&a_now, &b_now));
         }
-        // Measured 5.46e-10 m. A bound O2 reaches about 3.1e-10 m from the
-        // iron, so the mating tooth sweeps through the bound guest: that is
-        // the forced release at the mesh.
+        // Measured 5.46e-10 m. A bound O2 reaches only about 3.1e-10 m from
+        // the iron, so the mating tooth never touches it: the mesh does not
+        // release the guest (ADR-0089, ADR-0090). The test only checks that
+        // the iron does not collide with the other gear.
         assert!(worst > 3.0e-10, "iron to mating carbon {worst:e} m");
     }
 

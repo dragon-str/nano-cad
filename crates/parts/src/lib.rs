@@ -37,6 +37,7 @@ pub mod port;
 pub mod registry;
 pub mod respirocyte;
 pub mod rod;
+pub mod rod_pocket;
 pub mod rotor;
 pub mod shaft;
 pub mod shape;
@@ -86,6 +87,7 @@ pub use respirocyte::{
     RespirocyteTankGenerator,
 };
 pub use rod::{EjectionRodGenerator, FollowerPinFeature};
+pub use rod_pocket::{RodPocketGenerator, RodPocketSet};
 pub use rotor::SortingRotorGenerator;
 pub use shaft::DriveShaftGenerator;
 pub use shape::{

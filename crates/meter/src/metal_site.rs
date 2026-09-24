@@ -1,8 +1,8 @@
 //! The binding search at a metal site (M27-04, was M25-02).
 //!
-//! A tooth-gap pocket of the gear pump carries one iron atom at its root. A
-//! guest binds when one of its donor atoms (oxygen) coordinates the iron. The
-//! search places the donor on the open side of the iron, turns the guest over
+//! A pocket carries one iron atom. A guest binds when one of its donor atoms
+//! (oxygen) coordinates the iron. The search places the donor on the open
+//! side of the iron, on the site axis and optionally on cones about it, turns the guest over
 //! a sphere of directions and a spin, and keeps the lowest energy.
 //!
 //! The energy of a pose is the classical wall term of
@@ -93,6 +93,12 @@ pub struct MetalSiteTarget {
     pub spins: usize,
     /// A pair closer than this fraction of sigma blocks the pose.
     pub overlap_ratio: f64,
+    /// The number of tilted cones of donor positions about the site axis.
+    pub donor_tilts: usize,
+    /// The largest donor tilt from the site axis, in radians.
+    pub max_tilt_rad: f64,
+    /// The donor positions on each cone.
+    pub tilt_azimuths: usize,
 }
 
 impl Default for MetalSiteTarget {
@@ -105,6 +111,9 @@ impl Default for MetalSiteTarget {
             directions: 48,
             spins: 8,
             overlap_ratio: 0.85,
+            donor_tilts: 0,
+            max_tilt_rad: 0.7,
+            tilt_azimuths: 6,
         }
     }
 }
@@ -149,17 +158,41 @@ pub fn metal_site_binding(
     target: &MetalSiteTarget,
 ) -> Option<MetalSiteReport> {
     let iron_m = part.topology.position_m(iron)?;
-    let host = part.topology.bonds().find_map(|bond| {
-        if bond.u as usize == iron {
-            Some(bond.v as usize)
+    // The open side of the iron points away from its bonded atoms. For one
+    // bond this is the bond axis; for an iron that replaces a lattice carbon
+    // it is the direction of the missing fourth bond.
+    let mut inward = [0.0; 3];
+    for bond in part.topology.bonds() {
+        let other = if bond.u as usize == iron {
+            bond.v as usize
         } else if bond.v as usize == iron {
-            Some(bond.u as usize)
+            bond.u as usize
         } else {
-            None
+            continue;
+        };
+        let other_m = part.topology.position_m(other)?;
+        inward = add(inward, unit(sub(other_m, iron_m))?);
+    }
+    let axis = unit(scale(inward, -1.0))?;
+    // Donor positions: on the axis, and on cones about it.
+    let helper = if axis[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let side = unit(cross(axis, helper))?;
+    let mut donor_directions = vec![axis];
+    for tilt in 1..=target.donor_tilts {
+        let tilt_rad = target.max_tilt_rad * tilt as f64 / target.donor_tilts as f64;
+        for turn in 0..target.tilt_azimuths.max(1) {
+            let about = axis_angle(
+                axis,
+                std::f64::consts::TAU * turn as f64 / target.tilt_azimuths.max(1) as f64,
+            );
+            let tilted = apply(&axis_angle(apply(&about, side), tilt_rad), axis);
+            donor_directions.push(tilted);
         }
-    })?;
-    let host_m = part.topology.position_m(host)?;
-    let axis = unit(sub(iron_m, host_m))?;
+    }
 
     let reach_m = target.cutoff_m + target.distance_max_m + guest.extent_m();
     let mut wall = Vec::new();
@@ -215,57 +248,60 @@ pub fn metal_site_binding(
                 + (target.distance_max_m - target.distance_min_m) * step as f64
                     / (target.distances - 1) as f64
         };
-        let donor_at = add(iron_m, scale(axis, r_m));
-        for direction in &directions {
-            let align = rotation_between(body, *direction);
-            for spin in 0..target.spins.max(1) {
-                let angle = std::f64::consts::TAU * spin as f64 / target.spins.max(1) as f64;
-                let turn = axis_angle(*direction, angle);
-                report.poses += 1;
-                let mut wall_j = 0.0;
-                let mut blocked = false;
-                let mut coordination_j = 0.0;
-                'atoms: for (index, atom) in guest.atoms.iter().enumerate() {
-                    let local = sub(atom.position_m, donor_m);
-                    let p = add(donor_at, apply(&turn, apply(&align, local)));
-                    for &(wall_m, wall_charge_c, wall_element, is_iron) in &wall {
-                        let d = sub(wall_m, p);
-                        let r_sq = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-                        if r_sq >= cutoff_sq || r_sq <= 0.0 {
-                            continue;
-                        }
-                        if is_iron && index == donor {
-                            if let Some(c) = coordination {
-                                coordination_j = c.energy_j(r_sq.sqrt());
+        for donor_direction in &donor_directions {
+            let donor_at = add(iron_m, scale(*donor_direction, r_m));
+            for direction in &directions {
+                let align = rotation_between(body, *direction);
+                for spin in 0..target.spins.max(1) {
+                    let angle = std::f64::consts::TAU * spin as f64 / target.spins.max(1) as f64;
+                    let turn = axis_angle(*direction, angle);
+                    report.poses += 1;
+                    let mut wall_j = 0.0;
+                    let mut blocked = false;
+                    let mut coordination_j = 0.0;
+                    'atoms: for (index, atom) in guest.atoms.iter().enumerate() {
+                        let local = sub(atom.position_m, donor_m);
+                        let p = add(donor_at, apply(&turn, apply(&align, local)));
+                        for &(wall_m, wall_charge_c, wall_element, is_iron) in &wall {
+                            let d = sub(wall_m, p);
+                            let r_sq = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+                            if r_sq >= cutoff_sq || r_sq <= 0.0 {
                                 continue;
                             }
+                            if is_iron && index == donor {
+                                if let Some(c) = coordination {
+                                    coordination_j = c.energy_j(r_sq.sqrt());
+                                    continue;
+                                }
+                            }
+                            let Some((epsilon_j, sigma_m)) =
+                                pair_params(atom.element, wall_element)
+                            else {
+                                continue;
+                            };
+                            let floor_m = target.overlap_ratio * sigma_m;
+                            if r_sq < floor_m * floor_m {
+                                blocked = true;
+                                break 'atoms;
+                            }
+                            let ratio_sq = sigma_m * sigma_m / r_sq;
+                            let inverse_6 = ratio_sq * ratio_sq * ratio_sq;
+                            wall_j += 4.0 * epsilon_j * (inverse_6 * inverse_6 - inverse_6);
+                            wall_j += COULOMB_CONSTANT_N_M2_PER_C2 * atom.charge_c * wall_charge_c
+                                / r_sq.sqrt();
                         }
-                        let Some((epsilon_j, sigma_m)) = pair_params(atom.element, wall_element)
-                        else {
-                            continue;
-                        };
-                        let floor_m = target.overlap_ratio * sigma_m;
-                        if r_sq < floor_m * floor_m {
-                            blocked = true;
-                            break 'atoms;
-                        }
-                        let ratio_sq = sigma_m * sigma_m / r_sq;
-                        let inverse_6 = ratio_sq * ratio_sq * ratio_sq;
-                        wall_j += 4.0 * epsilon_j * (inverse_6 * inverse_6 - inverse_6);
-                        wall_j += COULOMB_CONSTANT_N_M2_PER_C2 * atom.charge_c * wall_charge_c
-                            / r_sq.sqrt();
                     }
-                }
-                if blocked {
-                    report.blocked += 1;
-                    continue;
-                }
-                let total_j = wall_j + coordination_j;
-                if total_j < report.minimum_energy_j {
-                    report.minimum_energy_j = total_j;
-                    report.coordination_energy_j = coordination_j;
-                    report.wall_energy_j = wall_j;
-                    report.donor_distance_m = r_m;
+                    if blocked {
+                        report.blocked += 1;
+                        continue;
+                    }
+                    let total_j = wall_j + coordination_j;
+                    if total_j < report.minimum_energy_j {
+                        report.minimum_energy_j = total_j;
+                        report.coordination_energy_j = coordination_j;
+                        report.wall_energy_j = wall_j;
+                        report.donor_distance_m = r_m;
+                    }
                 }
             }
         }
