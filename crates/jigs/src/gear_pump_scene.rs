@@ -13,6 +13,7 @@
 //! Scope limits. The scene holds no binding site, guest or solvent. It models
 //! no drive torque and no contact force.
 
+use nanocad_meter::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 use nanocad_model::Part;
 use nanocad_parts::{GearPumpGenerator, GearPumpSet, ParameterSet};
 use std::ops::Range;
@@ -103,6 +104,64 @@ fn revolute(name: &str, gear_body: usize, center_m: [f64; 2]) -> SceneJoint {
 pub fn build_gear_pump_scene() -> Result<Scene, SceneError> {
     let set = GearPumpGenerator.build(&ParameterSet::new())?;
     Ok(gear_pump_scene(&set))
+}
+
+/// Builds the relaxed gear-pump scene from the default pump parameters.
+///
+/// Gear A and the housing each relax under the valence force field of
+/// [`nanocad_meter::relax_valence`]. Gear B is the same body as gear A, so it
+/// takes the relaxed gear A shape through its rigid placement. The housing
+/// relaxation takes about a minute in a release build.
+pub fn build_relaxed_gear_pump_scene() -> Result<(Scene, Vec<ValenceRelaxReport>), SceneError> {
+    let set = GearPumpGenerator.build(&ParameterSet::new())?;
+    relaxed_gear_pump_scene(&set, &ValenceRelaxOptions::default())
+}
+
+/// Relaxes the bodies of a generated pump and builds the scene.
+///
+/// Returns the scene and the reports of gear A and the housing.
+pub fn relaxed_gear_pump_scene(
+    set: &GearPumpSet,
+    options: &ValenceRelaxOptions,
+) -> Result<(Scene, Vec<ValenceRelaxReport>), SceneError> {
+    let mut relaxed = set.clone();
+    let gear = relax_valence(&set.part.topology, set.gear_a_atoms.clone(), options)
+        .map_err(|error| SceneError::Part(format!("the gear did not relax: {error}")))?;
+    let housing = relax_valence(&set.part.topology, set.housing_atoms.clone(), options)
+        .map_err(|error| SceneError::Part(format!("the housing did not relax: {error}")))?;
+
+    let design = &set.design;
+    let a_center_m = design.gear_a_center_m();
+    let b_center_m = design.gear_b_center_m();
+    let (sin_b, cos_b) = design.gear_b_phase_rad().sin_cos();
+    for (offset, position_m) in gear.positions_m.iter().enumerate() {
+        relaxed
+            .part
+            .topology
+            .set_position_m(set.gear_a_atoms.start + offset, *position_m)
+            .map_err(|error| SceneError::Part(error.to_string()))?;
+        // Gear B is gear A turned by its phase about its own centre.
+        let x_m = position_m[0] - a_center_m[0];
+        let y_m = position_m[1] - a_center_m[1];
+        let b_m = [
+            b_center_m[0] + x_m * cos_b - y_m * sin_b,
+            b_center_m[1] + x_m * sin_b + y_m * cos_b,
+            position_m[2],
+        ];
+        relaxed
+            .part
+            .topology
+            .set_position_m(set.gear_b_atoms.start + offset, b_m)
+            .map_err(|error| SceneError::Part(error.to_string()))?;
+    }
+    for (offset, position_m) in housing.positions_m.iter().enumerate() {
+        relaxed
+            .part
+            .topology
+            .set_position_m(set.housing_atoms.start + offset, *position_m)
+            .map_err(|error| SceneError::Part(error.to_string()))?;
+    }
+    Ok((gear_pump_scene(&relaxed), vec![gear, housing]))
 }
 
 /// Builds the gear-pump scene from a generated pump.
@@ -227,10 +286,16 @@ pub fn gear_pump_scene(set: &GearPumpSet) -> Scene {
 mod tests {
     use super::*;
     use crate::sense::sense_report;
+    use std::sync::OnceLock;
+
+    fn scene() -> &'static Scene {
+        static SCENE: OnceLock<Scene> = OnceLock::new();
+        SCENE.get_or_init(|| build_gear_pump_scene().expect("the pump scene builds"))
+    }
 
     #[test]
     fn the_pump_has_three_bodies_two_joints_and_one_coupling() {
-        let scene = build_gear_pump_scene().expect("the pump scene builds");
+        let scene = scene();
         assert_eq!(scene.device.body_count, 3);
         assert_eq!(scene.device.joints.len(), 2);
         assert_eq!(scene.device.gear_couplings.len(), 1);
@@ -244,26 +309,17 @@ mod tests {
 
     #[test]
     fn the_pump_bodies_are_whole_held_and_apart() {
-        let scene = build_gear_pump_scene().expect("the pump scene builds");
-        let report = sense_report(&scene);
-        assert!(report.floating_bodies.is_empty(), "{report:?}");
-        assert!(report.disjoint_bodies.is_empty(), "{report:?}");
-        assert_eq!(report.cross_body_bonds, 0);
-        // Only same-body pairs may overlap. Those are the known hydrogen cap
-        // clash at a shared missing lattice site (ADR-0075), not a gear fault.
-        assert!(
-            report
-                .overlap_bodies
-                .iter()
-                .all(|pair| pair.body_a == pair.body_b),
-            "{report:?}"
-        );
+        let scene = scene();
+        let report = sense_report(scene);
+        // The 2x1 reconstruction (ADR-0088) removes the cap clash, so the
+        // unrelaxed pump obeys every rule.
+        assert!(report.is_clean(), "{report:?}");
     }
 
     #[test]
     fn the_pump_scene_survives_json() {
-        let scene = build_gear_pump_scene().expect("the pump scene builds");
-        let json = crate::scene::scene_to_json(&scene).expect("json");
+        let scene = scene();
+        let json = crate::scene::scene_to_json(scene).expect("json");
         let back = crate::scene::scene_from_json(&json).expect("parse");
         assert_eq!(back.device.gear_couplings, scene.device.gear_couplings);
     }

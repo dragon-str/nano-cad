@@ -46,8 +46,9 @@ pub use device::{
 };
 pub use error::JigError;
 pub use gear_pump_scene::{
-    build_gear_pump_scene, gear_pump_scene, GEAR_PUMP_FRAME, GEAR_PUMP_SCENE_ID, PUMP_GEAR_A_BODY,
-    PUMP_GEAR_B_BODY, PUMP_GEAR_ROLE, PUMP_HOUSING_BODY, PUMP_HOUSING_ROLE,
+    build_gear_pump_scene, build_relaxed_gear_pump_scene, gear_pump_scene, relaxed_gear_pump_scene,
+    GEAR_PUMP_FRAME, GEAR_PUMP_SCENE_ID, PUMP_GEAR_A_BODY, PUMP_GEAR_B_BODY, PUMP_GEAR_ROLE,
+    PUMP_HOUSING_BODY, PUMP_HOUSING_ROLE,
 };
 pub use jig::{Jig, JigKind};
 pub use motor::MotorJig;
@@ -73,8 +74,8 @@ pub use scene::{
     SceneGearTerm, SceneJoint, SCENE_SCHEMA, SCENE_VERSION,
 };
 pub use sense::{
-    sense_report, DisjointBody, OverlapBodies, SenseReport, BOND_CUTOFF_M, MIN_SEPARATION_M,
-    OVERLAP_M,
+    sense_report, DisjointBody, OverlapBodies, SenseReport, BOND_CUTOFF_M, BOND_RADIUS_FACTOR,
+    MIN_SEPARATION_M, OVERLAP_M,
 };
 pub use spring::SpringJig;
 pub use urdf::{

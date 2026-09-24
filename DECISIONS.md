@@ -2204,3 +2204,49 @@ clash at a shared missing site (ADR-0075), which is in every scene. The scene
 has 53 366 atoms, 48 206 of them in the housing. The part holds no binding site
 (M27-04). No drive torque, contact force or solvent is modelled. The gaps are
 from the rigid lattice, not from a relaxed structure.
+
+## ADR-0088: 2x1 surface dimers remove the cap clash; a valence field checks it
+
+Context. ADR-0075 left a defect in every scene: two hydrogen caps 0.74e-10 m
+apart in one missing lattice site. On a (001)-like face each missing site sits
+one bond from two surface carbons. The gear pump had 7 026 such pairs.
+
+Decision. `diamond_solid::bond_and_cap` now reconstructs the surface before it
+caps it, as real diamond C(100)-(2x1):H does. `plan_dimers` builds a graph of
+carbons that share a site and takes a leaf-first matching. `apply_dimers` bonds
+each pair, drops the two directions into the shared site, and re-aims the last
+cap of each dimer carbon to complete its tetrahedron. A pair moves together to
+the target dimer length `1.60e-10 m` (Furthmuller et al. 1996), as far as its
+back bonds stay under `1.615e-10 m`. At a step, one back bond lies along the
+pair axis (it would reach 1.94e-10 m), so that pair stays strained, up to
+`2.6e-10 m`, until a relaxation. A site that three or more caps share is filled
+with carbon (at most four rounds). Filling a two-cap site grew each face one
+row per round and put carbon 5e-10 m into a gear, so it is not done.
+
+Results. Gear pump: 7 026 overlaps to 0, clean audit before relaxation. Rotor:
+13 649 overlaps to 6 053. The rest of the rotor overlaps are older defects in the
+rotor body (5 466 pairs, worst 0.2e-10 m) and its cross-body contacts.
+
+Relaxation. `nanocad_meter::relax_valence` is a harmonic valence field on the
+topology bonds: MM3-scale bond and angle constants, tetrahedral rest angle,
+diamond C-C rest length, and UFF Lennard-Jones on every pair that is not 1-2,
+1-3 or 1-4. It has no torsion term. The pump gear converges in 605 iterations
+(1 s). Its RMS displacement is 1.0e-10 m and its largest carbon moves
+3.0e-10 m. The thin gear warps as a whole. The housing does not converge in 300
+iterations (55 s). In the relaxed scene the housing comes within 0.71e-10 m of
+a gear at 8 pairs. So the rigid 4.6e-10 m clearance does not survive this
+relaxation. Without a torsion term the bending stiffness is uncertain, so the
+size of the warp is an estimate.
+
+Other changes. The sense audit perceives a bond below `1.62e-10 m` or below
+`1.15` times the sum of the covalent radii (C-C 1.75e-10 m), so a strained
+relaxed bond still counts. The rod bore clearance is `4.5e-10 m` and the rod
+radius `0.54e-9 m` (bore still 0.99e-9 m): re-aimed caps point straight
+across the gap, and the old `3.9e-10 m` left 1.44e-10 m between hydrogen atoms.
+The rotor rod-and-hub check uses `relax_valence`. The old bond-only
+`relax_subassembly` has no angle stiffness, so it folds a strained surface.
+
+Limits. A carbon with one lattice bond (a corner group) is not paired. The
+gear pump prunes such carbons; other parts keep them, and a plain box keeps
+38 clash pairs at its corners. The topology cannot remove atoms, so the pass
+cannot either.

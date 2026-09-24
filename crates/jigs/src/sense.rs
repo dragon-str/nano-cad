@@ -13,7 +13,8 @@
 //!    them.
 //!
 //! Bonds are perceived from geometry: two atoms of the same body closer than
-//! `BOND_CUTOFF_M` are bonded. The scene schema does not carry a bond list, so
+//! `BOND_CUTOFF_M`, or than `BOND_RADIUS_FACTOR` times the sum of their
+//! covalent radii, are bonded. The scene schema does not carry a bond list, so
 //! the audit uses the same rule as the relaxation in `nanocad-meter`.
 
 use std::collections::HashMap;
@@ -31,8 +32,28 @@ pub const OVERLAP_M: f64 = 1.6e-10;
 /// this cannot be a bond, so the pair is a defect.
 pub const MIN_SEPARATION_M: f64 = 9.0e-11;
 
-/// The distance below which two atoms of one body are bonded, in metres.
+/// The distance below which two atoms of one body are always bonded, in
+/// metres.
 pub const BOND_CUTOFF_M: f64 = 1.62e-10;
+
+/// A pair is also bonded below this multiple of the sum of the two covalent
+/// radii (Cordero 2008). For C-C the limit is 1.75e-10 m, so a strained bond
+/// on a relaxed reconstructed surface still counts. For H-H the sum is
+/// 0.62e-10 m, so the fixed cutoff governs and a geminal pair at 1.78e-10 m
+/// stays non-bonded.
+pub const BOND_RADIUS_FACTOR: f64 = 1.15;
+
+/// The bond-perception limit of a pair of atomic numbers, in metres.
+fn bond_limit_m(left: u8, right: u8) -> f64 {
+    let radius = |number: u8| {
+        nanocad_model::Element::from_atomic_number(number)
+            .and_then(nanocad_model::covalent_radius_m)
+    };
+    match (radius(left), radius(right)) {
+        (Some(a), Some(b)) => BOND_CUTOFF_M.max(BOND_RADIUS_FACTOR * (a + b)),
+        _ => BOND_CUTOFF_M,
+    }
+}
 
 /// The cell size of the neighbour grid, in metres.
 const CELL_M: f64 = 1.0e-9;
@@ -182,13 +203,12 @@ pub fn sense_report(scene: &Scene) -> SenseReport {
                             continue;
                         }
                         let distance = distance_m(atom.position_m, atoms[other].position_m);
+                        let bond_m = bond_limit_m(atom.atomic_number, atoms[other].atomic_number);
                         if atom.body == atoms[other].body {
-                            if distance < BOND_CUTOFF_M {
+                            if distance < bond_m {
                                 unions.union(index, other);
                             }
-                        } else if distance < BOND_CUTOFF_M
-                            && !is_joined(atom.body, atoms[other].body)
-                        {
+                        } else if distance < bond_m && !is_joined(atom.body, atoms[other].body) {
                             cross_body_bonds += 1;
                         }
                         let overlap = distance < MIN_SEPARATION_M

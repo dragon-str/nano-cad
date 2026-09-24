@@ -134,8 +134,386 @@ pub(crate) type CapPlan = HashMap<(u32, usize), crate::group::FunctionalGroup>;
 /// so every carbon reaches a valence of four.
 pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec<u32>, PartError> {
     bond_atoms(topology, atoms)?;
-    let free = free_directions(topology, atoms);
-    cap_free(topology, &free, &CapPlan::new())
+    let mut all: Vec<u32> = atoms.to_vec();
+    let mut added: Vec<u32> = Vec::new();
+    // Close the notches that no dimer can close. Each round fills the shared
+    // sites that would still hold two caps, then plans again.
+    for _ in 0..MAX_FILL_ROUNDS {
+        let free = free_directions(topology, &all);
+        let plan = plan_dimers(topology, &free);
+        if plan.clash_sites_m.is_empty() {
+            break;
+        }
+        let mut fresh = Vec::with_capacity(plan.clash_sites_m.len());
+        for site_m in plan.clash_sites_m {
+            fresh.push(topology.add_atom(Atom::new(Element::CARBON, site_m, 0.0, "C")));
+        }
+        all.extend(fresh.iter().copied());
+        bond_new_atoms(topology, &fresh, &all)?;
+        added.extend(fresh);
+    }
+    let free = free_directions(topology, &all);
+    let plan = plan_dimers(topology, &free);
+    let free = apply_dimers(topology, &free, &plan)?;
+    added.extend(cap_free(topology, &free, &CapPlan::new())?);
+    Ok(added)
+}
+
+/// The C-C length of a surface dimer after the 2x1 reconstruction.
+///
+/// Source: the hydrogenated diamond C(100)-(2x1):H dimer is about 1.6e-10 m
+/// long in DFT and LEED studies (for example Furthmuller et al., Phys. Rev. B
+/// 53, 7334, 1996). The value stays below the 1.62e-10 m bond cutoff of the
+/// sense audit, so the audit perceives the dimer as a bond.
+pub(crate) const SURFACE_DIMER_M: f64 = 1.60e-10;
+
+/// The longest back bond a dimer shift may leave, in metres. A longer bond
+/// would fall out of the audit's bond perception, so such a pair is closed by
+/// a filled site instead.
+const MAX_BACK_BOND_M: f64 = 1.615e-10;
+
+/// The most notch-filling rounds before capping.
+const MAX_FILL_ROUNDS: usize = 4;
+
+/// The longest strained dimer the plan accepts before a relaxation, in
+/// metres. A longer pair is not paired.
+const MAX_STRAINED_DIMER_M: f64 = 2.6e-10;
+
+/// A missing site is filled with carbon only when this many caps would share
+/// it. A site with two caps on a face is a dimer site; filling it would grow
+/// the face one row per round.
+const MIN_FILL_CAPS: usize = 3;
+
+/// One planned dimer: the two hosts, the free-direction index of each into
+/// the shared site, and the two moved positions.
+pub(crate) type PlannedDimer = (u32, u32, usize, usize, [f64; 3], [f64; 3]);
+
+/// One candidate partner of a host: the partner, the two free-direction
+/// indices, and the moved positions of the host and the partner.
+type Candidate = (u32, usize, usize, [f64; 3], [f64; 3]);
+
+/// A surface reconstruction plan.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct DimerPlan {
+    /// The dimers: two hosts, the free-direction index of each into the
+    /// shared site, and the two moved positions.
+    pub pairs: Vec<PlannedDimer>,
+    /// The missing sites that would still take two or more caps.
+    pub clash_sites_m: Vec<[f64; 3]>,
+}
+
+/// Plans the 2x1 reconstruction of a capped diamond surface.
+///
+/// On a (001)-like face, one missing lattice site sits one bond from two
+/// surface carbons. Capping both would put two hydrogen atoms 0.74e-10 m
+/// apart in that site (ADR-0075). Real diamond reconstructs this face 2x1:
+/// the two carbons bond to each other, and each keeps one hydrogen.
+///
+/// The plan builds a graph of hosts that share a site, takes a leaf-first
+/// matching (maximum on the chains that a face gives), and keeps each pair
+/// whose move to [`SURFACE_DIMER_M`] leaves every back bond below
+/// [`MAX_BACK_BOND_M`]. A host with more than two free directions is not
+/// paired. A site that would still take two caps is a clash site; the caller
+/// fills it with carbon.
+pub(crate) fn plan_dimers(topology: &Topology, free: &[FreeDirection]) -> DimerPlan {
+    let bond_m = diamond_bond_length_m();
+    let site_of = |direction: &FreeDirection| {
+        topology.position_m(direction.host as usize).map(|host_m| {
+            [
+                host_m[0] + bond_m * direction.direction_m[0],
+                host_m[1] + bond_m * direction.direction_m[1],
+                host_m[2] + bond_m * direction.direction_m[2],
+            ]
+        })
+    };
+
+    let mut free_count: HashMap<u32, usize> = HashMap::new();
+    for direction in free {
+        *free_count.entry(direction.host).or_insert(0) += 1;
+    }
+    let mut by_site: HashMap<(i64, i64, i64), Vec<usize>> = HashMap::new();
+    for (index, direction) in free.iter().enumerate() {
+        if let Some(site_m) = site_of(direction) {
+            by_site.entry(site_key(site_m)).or_default().push(index);
+        }
+    }
+    let mut sites: Vec<_> = by_site.into_iter().collect();
+    sites.sort_unstable_by_key(|(site, _)| *site);
+
+    // The host graph: an edge joins two eligible hosts that share a site.
+    let eligible = |host: u32| matches!(free_count.get(&host), Some(1) | Some(2));
+    let mut edges: HashMap<u32, Vec<(u32, usize, usize)>> = HashMap::new();
+    for (_, members) in &sites {
+        for (i, &left) in members.iter().enumerate() {
+            for &right in &members[i + 1..] {
+                let (u, v) = (free[left].host, free[right].host);
+                if u == v || !eligible(u) || !eligible(v) {
+                    continue;
+                }
+                edges.entry(u).or_default().push((v, left, right));
+                edges.entry(v).or_default().push((u, right, left));
+            }
+        }
+    }
+
+    // Neighbour lists of the graph hosts.
+    let mut neighbours: HashMap<u32, Vec<u32>> = HashMap::new();
+    for bond in topology.bonds() {
+        if edges.contains_key(&bond.u) {
+            neighbours.entry(bond.u).or_default().push(bond.v);
+        }
+        if edges.contains_key(&bond.v) {
+            neighbours.entry(bond.v).or_default().push(bond.u);
+        }
+    }
+    // A host moves toward its partner along the pair axis. It moves at most
+    // half the gap to a full dimer, and less when a back bond would pass
+    // MAX_BACK_BOND_M. A step carbon whose back bond lies along the axis moves
+    // little, so the dimer there stays strained until a relaxation settles it.
+    let allowed_shift = |host: u32, host_m: [f64; 3], unit: [f64; 3], full_m: f64| {
+        let back = |shift_m: f64| {
+            let moved = [
+                host_m[0] + shift_m * unit[0],
+                host_m[1] + shift_m * unit[1],
+                host_m[2] + shift_m * unit[2],
+            ];
+            neighbours.get(&host).is_none_or(|list| {
+                list.iter().all(|&n| {
+                    topology
+                        .position_m(n as usize)
+                        .is_none_or(|p| distance_m(p, moved) <= MAX_BACK_BOND_M)
+                })
+            })
+        };
+        if back(full_m) {
+            return full_m;
+        }
+        let (mut low, mut high) = (0.0_f64, full_m);
+        for _ in 0..30 {
+            let mid = 0.5 * (low + high);
+            if back(mid) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        low
+    };
+    let feasible = |u: u32, v: u32| -> Option<([f64; 3], [f64; 3])> {
+        let u_m = topology.position_m(u as usize)?;
+        let v_m = topology.position_m(v as usize)?;
+        let length_m = distance_m(u_m, v_m);
+        if length_m <= SURFACE_DIMER_M {
+            return None;
+        }
+        let unit = [
+            (v_m[0] - u_m[0]) / length_m,
+            (v_m[1] - u_m[1]) / length_m,
+            (v_m[2] - u_m[2]) / length_m,
+        ];
+        let full_m = 0.5 * (length_m - SURFACE_DIMER_M);
+        let shift_u = allowed_shift(u, u_m, unit, full_m);
+        let shift_v = allowed_shift(v, v_m, [-unit[0], -unit[1], -unit[2]], full_m);
+        if length_m - shift_u - shift_v > MAX_STRAINED_DIMER_M {
+            return None;
+        }
+        let mut new_u = u_m;
+        let mut new_v = v_m;
+        for axis in 0..3 {
+            new_u[axis] += shift_u * unit[axis];
+            new_v[axis] -= shift_v * unit[axis];
+        }
+        Some((new_u, new_v))
+    };
+
+    // Leaf-first greedy matching over the feasible edges only.
+    let mut open: HashMap<u32, Vec<Candidate>> = HashMap::new();
+    for (&host, list) in &edges {
+        for &(other, own, theirs) in list {
+            if host < other {
+                if let Some((new_host, new_other)) = feasible(host, other) {
+                    open.entry(host)
+                        .or_default()
+                        .push((other, own, theirs, new_host, new_other));
+                    open.entry(other)
+                        .or_default()
+                        .push((host, theirs, own, new_other, new_host));
+                }
+            }
+        }
+    }
+    let mut hosts: Vec<u32> = open.keys().copied().collect();
+    hosts.sort_unstable();
+    let mut matched: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    let degree = |host: u32, matched: &std::collections::HashSet<u32>| {
+        open.get(&host)
+            .map(|list| list.iter().filter(|e| !matched.contains(&e.0)).count())
+            .unwrap_or(0)
+    };
+    let mut plan = DimerPlan::default();
+    loop {
+        let mut best: Option<(usize, u32)> = None;
+        for &host in &hosts {
+            if matched.contains(&host) {
+                continue;
+            }
+            let d = degree(host, &matched);
+            if d > 0 && best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, host));
+                if d == 1 {
+                    break;
+                }
+            }
+        }
+        let Some((_, host)) = best else {
+            break;
+        };
+        let Some(&(other, own, theirs, new_host, new_other)) = open[&host]
+            .iter()
+            .filter(|e| !matched.contains(&e.0))
+            .min_by_key(|e| (degree(e.0, &matched), e.0))
+        else {
+            break;
+        };
+        matched.insert(host);
+        matched.insert(other);
+        plan.pairs
+            .push((host, other, own, theirs, new_host, new_other));
+    }
+
+    // The sites that still take two or more caps after the dimers.
+    let mut dropped: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for pair in &plan.pairs {
+        dropped.insert(pair.2);
+        dropped.insert(pair.3);
+    }
+    for (site, members) in &sites {
+        let remaining = members
+            .iter()
+            .filter(|&&index| !dropped.contains(&index) && !matched.contains(&free[index].host))
+            .count();
+        if remaining >= MIN_FILL_CAPS {
+            let quarter_m = DIAMOND_LATTICE_CONSTANT_M / 4.0;
+            plan.clash_sites_m.push([
+                site.0 as f64 * quarter_m,
+                site.1 as f64 * quarter_m,
+                site.2 as f64 * quarter_m,
+            ]);
+        }
+    }
+    plan
+}
+
+/// Applies a dimer plan: moves and bonds each pair, drops the directions into
+/// the shared sites, and re-aims the last free direction of each dimer carbon
+/// so it completes the tetrahedron of its three carbon bonds.
+///
+/// Returns the free directions that remain to be capped.
+pub(crate) fn apply_dimers(
+    topology: &mut Topology,
+    free: &[FreeDirection],
+    plan: &DimerPlan,
+) -> Result<Vec<FreeDirection>, PartError> {
+    let mut dropped: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut hosts: std::collections::HashSet<u32> = std::collections::HashSet::new();
+    for &(u, v, own, theirs, new_u, new_v) in &plan.pairs {
+        topology.set_position_m(u as usize, new_u)?;
+        topology.set_position_m(v as usize, new_v)?;
+        topology.add_bond(Bond::new(u, v, 1, BondType::Single))?;
+        dropped.insert(own);
+        dropped.insert(theirs);
+        hosts.insert(u);
+        hosts.insert(v);
+    }
+    let mut neighbours: HashMap<u32, Vec<u32>> = HashMap::new();
+    for bond in topology.bonds() {
+        if hosts.contains(&bond.u) {
+            neighbours.entry(bond.u).or_default().push(bond.v);
+        }
+        if hosts.contains(&bond.v) {
+            neighbours.entry(bond.v).or_default().push(bond.u);
+        }
+    }
+    let mut out = Vec::with_capacity(free.len());
+    for (index, direction) in free.iter().enumerate() {
+        if dropped.contains(&index) {
+            continue;
+        }
+        let mut direction = *direction;
+        if hosts.contains(&direction.host) {
+            if let Some(host_m) = topology.position_m(direction.host as usize) {
+                let mut sum = [0.0_f64; 3];
+                for &n in neighbours.get(&direction.host).into_iter().flatten() {
+                    if let Some(p) = topology.position_m(n as usize) {
+                        let d = distance_m(p, host_m);
+                        for axis in 0..3 {
+                            sum[axis] += (p[axis] - host_m[axis]) / d;
+                        }
+                    }
+                }
+                let norm = (sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]).sqrt();
+                if norm > 1.0e-12 {
+                    direction.direction_m = [-sum[0] / norm, -sum[1] / norm, -sum[2] / norm];
+                }
+            }
+        }
+        out.push(direction);
+    }
+    Ok(out)
+}
+
+/// The integer key of a diamond site on the quarter-cell grid.
+fn site_key(point_m: [f64; 3]) -> (i64, i64, i64) {
+    let quarter_m = DIAMOND_LATTICE_CONSTANT_M / 4.0;
+    (
+        (point_m[0] / quarter_m).round() as i64,
+        (point_m[1] / quarter_m).round() as i64,
+        (point_m[2] / quarter_m).round() as i64,
+    )
+}
+
+/// Bonds each new carbon to every first-shell carbon of `all`.
+fn bond_new_atoms(topology: &mut Topology, fresh: &[u32], all: &[u32]) -> Result<(), PartError> {
+    let bond_m = diamond_bond_length_m();
+    let tolerance_m = bond_m * 1.0e-3;
+    let fresh_set: std::collections::HashSet<u32> = fresh.iter().copied().collect();
+    let mut grid: HashMap<(i64, i64, i64), Vec<u32>> = HashMap::new();
+    for &index in all {
+        if let Some(position_m) = topology.position_m(index as usize) {
+            grid.entry(cell_of(position_m, bond_m))
+                .or_default()
+                .push(index);
+        }
+    }
+    for &u in fresh {
+        let Some(u_m) = topology.position_m(u as usize) else {
+            continue;
+        };
+        let (cx, cy, cz) = cell_of(u_m, bond_m);
+        let mut partners = Vec::new();
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for &v in grid.get(&(cx + dx, cy + dy, cz + dz)).into_iter().flatten() {
+                        // A pair of two new atoms is bonded once, from the lower index.
+                        if v == u || (fresh_set.contains(&v) && v < u) {
+                            continue;
+                        }
+                        if topology
+                            .position_m(v as usize)
+                            .is_some_and(|v_m| (distance_m(u_m, v_m) - bond_m).abs() <= tolerance_m)
+                        {
+                            partners.push(v);
+                        }
+                    }
+                }
+            }
+        }
+        for v in partners {
+            topology.add_bond(Bond::new(u, v, 1, BondType::Single))?;
+        }
+    }
+    Ok(())
 }
 
 /// Adds one bond for every first-shell carbon pair in `atoms`.
@@ -361,4 +739,88 @@ fn distance_m(a_m: [f64; 3], b_m: [f64; 3]) -> f64 {
     let dy = a_m[1] - b_m[1];
     let dz = a_m[2] - b_m[2];
     (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::lattice_fill::fill_solid;
+    use crate::shape::Box3;
+
+    /// Builds a capped diamond block and returns its topology.
+    fn capped_block(size_cells: [f64; 3]) -> Topology {
+        let a = DIAMOND_LATTICE_CONSTANT_M;
+        // A carbon with one lattice bond is a loose corner group. The pass
+        // does not pair it, so remove it first, as the gear pump does.
+        let sites = crate::gear_pump::keep_well_bonded(fill_solid(&Box3 {
+            min_m: [0.0, 0.0, 0.0],
+            max_m: [size_cells[0] * a, size_cells[1] * a, size_cells[2] * a],
+        }));
+        let mut topology = Topology::new();
+        let atoms: Vec<u32> = sites
+            .into_iter()
+            .map(|site| topology.add_atom(Atom::new(Element::CARBON, site, 0.0, "C")))
+            .collect();
+        bond_and_cap(&mut topology, &atoms).expect("the block caps");
+        topology
+    }
+
+    fn close_pairs(topology: &Topology, limit_m: f64) -> usize {
+        let count = topology.atom_count();
+        let mut close = 0;
+        for i in 0..count {
+            for j in (i + 1)..count {
+                let (Some(p), Some(q)) = (topology.position_m(i), topology.position_m(j)) else {
+                    continue;
+                };
+                if distance_m(p, q) < limit_m {
+                    close += 1;
+                }
+            }
+        }
+        close
+    }
+
+    /// A (001) block has flat faces where two caps share one site. The 2x1
+    /// reconstruction leaves no pair closer than the 0.9e-10 m audit limit.
+    #[test]
+    fn a_reconstructed_block_has_no_cap_clash() {
+        let topology = capped_block([3.0, 3.0, 2.0]);
+        assert_eq!(close_pairs(&topology, 0.9e-10), 0);
+    }
+
+    /// Every carbon still has four bonds after the reconstruction.
+    #[test]
+    fn every_carbon_keeps_four_bonds() {
+        let topology = capped_block([3.0, 3.0, 2.0]);
+        let mut degree = vec![0usize; topology.atom_count()];
+        for bond in topology.bonds() {
+            degree[bond.u as usize] += 1;
+            degree[bond.v as usize] += 1;
+        }
+        for (index, element) in topology.elements().iter().enumerate() {
+            if *element == Element::CARBON {
+                assert_eq!(degree[index], 4, "carbon {index}");
+            }
+        }
+    }
+
+    /// The flat faces carry surface dimers near the 1.6e-10 m target.
+    #[test]
+    fn the_faces_carry_dimers() {
+        let topology = capped_block([3.0, 3.0, 2.0]);
+        let dimers = topology
+            .bonds()
+            .filter(|bond| {
+                let (Some(p), Some(q)) = (
+                    topology.position_m(bond.u as usize),
+                    topology.position_m(bond.v as usize),
+                ) else {
+                    return false;
+                };
+                (distance_m(p, q) - SURFACE_DIMER_M).abs() < 1.0e-13
+            })
+            .count();
+        assert!(dimers > 0);
+    }
 }

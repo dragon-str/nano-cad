@@ -22,6 +22,7 @@ pub mod loading;
 pub mod relax;
 pub mod relaxed;
 pub mod slip;
+pub mod valence_relax;
 
 pub use binding::{binding_energy_j, selectivity_ratio, BindingReport, BindingTarget};
 pub use cam_drive::{cam_drive_report, CamDriveReport, CamDriveTarget, SMOOTH_PRESSURE_ANGLE_RAD};
@@ -43,6 +44,7 @@ pub use loading::{loading_report, GasLoadingReport, LoadingReport, LoadingTarget
 pub use relax::{relax_part, relax_subassembly, RelaxAtom, RelaxReport, RelaxTarget};
 pub use relaxed::{RelaxedSlipBarrier, RelaxedSlipBarrierReport, RelaxedSlipBarrierTarget};
 pub use slip::{SlipBarrier, SlipBarrierReport, SlipBarrierTarget};
+pub use valence_relax::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 
 use nanocad_parts::planetary::PlanetarySet;
 use nanocad_parts::PartError;

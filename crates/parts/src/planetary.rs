@@ -658,8 +658,17 @@ mod tests {
                 .map(|position_m| position_m[1])
                 .sum::<f64>()
                 / range.len() as f64;
-            assert!((mean_x - expected_m[0]).abs() < 1.0e-11);
-            assert!((mean_y - expected_m[1]).abs() < 1.0e-11);
+            // The 2x1 surface reconstruction moves dimer atoms and re-aims
+            // their caps, and it is not symmetric about the gear axis. It
+            // shifts the centroid by a fraction of an Angstrom.
+            assert!(
+                (mean_x - expected_m[0]).abs() < 5.0e-11,
+                "{mean_x} {expected_m:?}"
+            );
+            assert!(
+                (mean_y - expected_m[1]).abs() < 5.0e-11,
+                "{mean_y} {expected_m:?}"
+            );
         }
     }
 
