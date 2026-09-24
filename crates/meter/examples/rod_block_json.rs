@@ -14,7 +14,7 @@ use nanocad_meter::{iron_coordination, metal_site_binding, MetalSiteTarget, AVOG
 use nanocad_parts::{guest, ParameterSet, RodPocketGenerator};
 
 /// The retracted rod face, below the iron, in metres.
-const RETRACT_M: f64 = 2.5e-10;
+const RETRACT_M: f64 = 1.5e-10;
 
 fn main() {
     // POCKET_CLEARANCE_M and POCKET_ROD_RADIUS_M override the defaults, for
@@ -24,6 +24,7 @@ fn main() {
         ("POCKET_CLEARANCE_M", "clearance_m"),
         ("POCKET_ROD_RADIUS_M", "rod_radius_m"),
         ("POCKET_IRON_RANK", "iron_rank"),
+        ("POCKET_DEPTH_M", "depth_m"),
     ] {
         if let Some(value) = std::env::var(variable).ok().and_then(|v| v.parse().ok()) {
             parameters = parameters.with(name, value);
@@ -111,7 +112,11 @@ fn main() {
         .fold(0.0_f64, f64::max);
 
     if let Some(path) = std::env::args().nth(1) {
-        let Ok(part) = set.assembled(set.iron_z_m - RETRACT_M) else {
+        let retract_m = std::env::var("POCKET_RETRACT_M")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(RETRACT_M);
+        let Ok(part) = set.assembled(set.iron_z_m - retract_m) else {
             std::process::exit(1);
         };
         let atoms: Vec<String> = (0..part.atom_count())
@@ -135,7 +140,7 @@ fn main() {
             set.rod_radius_m * 1e10,
             set.iron_z_m * 1e10,
             set.mouth_z_m * 1e10,
-            (set.iron_z_m - RETRACT_M) * 1e10,
+            (set.iron_z_m - retract_m) * 1e10,
             set.block_atom_count(),
             atoms.join(",")
         );

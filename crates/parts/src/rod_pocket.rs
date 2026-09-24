@@ -32,7 +32,7 @@ static ROD_POCKET_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "rod_radius_m",
         Some(Unit::Metre),
-        3.5e-10,
+        2.6e-10,
         1.5e-10,
         2.0e-9,
         false,
@@ -41,8 +41,8 @@ static ROD_POCKET_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "clearance_m",
         Some(Unit::Metre),
-        3.6e-10,
         3.0e-10,
+        2.5e-10,
         1.0e-9,
         false,
         "carbon-to-carbon gap between the rod and the bore wall",
@@ -50,7 +50,7 @@ static ROD_POCKET_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new(
         "depth_m",
         Some(Unit::Metre),
-        6.5e-10,
+        3.5e-10,
         2.0e-10,
         2.0e-9,
         false,

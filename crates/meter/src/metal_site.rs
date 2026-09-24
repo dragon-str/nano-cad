@@ -448,6 +448,39 @@ mod tests {
         assert!(water - oxygen > 50.0, "{oxygen} {water}");
     }
 
+    /// The default rod pocket loads oxygen with the rod pulled back and has
+    /// no bound oxygen pose with the rod face level with the iron (ADR-0091).
+    #[test]
+    fn the_rod_pocket_loads_and_the_rod_blocks() {
+        use nanocad_parts::{guest, ParameterSet, RodPocketGenerator};
+        let set = RodPocketGenerator
+            .build(&ParameterSet::new())
+            .expect("the pocket builds");
+        let target = MetalSiteTarget {
+            directions: 24,
+            spins: 6,
+            donor_tilts: 2,
+            ..MetalSiteTarget::default()
+        };
+        let oxygen = |face_m: f64| {
+            let part = set.assembled(face_m).expect("assembly");
+            let coordination = iron_coordination("o2");
+            metal_site_binding(
+                &part,
+                set.iron,
+                guest("o2").expect("o2"),
+                coordination.as_ref(),
+                &target,
+            )
+            .expect("search")
+            .minimum_energy_kj_per_mol()
+        };
+        let loaded = oxygen(set.iron_z_m - 2.0e-10);
+        let covered = oxygen(set.iron_z_m + 1.0e-10);
+        assert!(loaded < -70.0, "{loaded}");
+        assert!(!covered.is_finite() || covered > -20.0, "{covered}");
+    }
+
     #[test]
     fn a_rotation_turns_one_vector_onto_another() {
         for (from, to) in [

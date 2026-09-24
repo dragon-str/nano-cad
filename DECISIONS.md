@@ -2329,3 +2329,43 @@ for example a carbon spike on a pin wheel, not a 3.5e-10 m rod.
 Limits. Rigid, frozen solid; no polarization; mixing differs from UFF; the
 iron-water and iron-oxygen wells come from the Fe(NH3)4 proxy. The results
 are simulated estimates.
+
+## ADR-0091: A snug rod pocket still carries about four water molecules
+
+Context. ADR-0090 found that the 7.1e-10 m rod pocket holds about 20 water
+molecules. M28-03 makes the pocket as small as the loading and the block allow.
+
+Decision. The `rod_pocket` defaults are now a 2.6e-10 m rod, a 3.0e-10 m gap
+(bore 5.6e-10 m) and a mouth 3.5e-10 m above the block origin (3.2e-10 m
+above the iron). The rod is pulled back 1.5e-10 m below the iron to load.
+The earlier -40 kJ/mol at the 6.2e-10 m bore was a lattice effect at that
+radius, not a limit of narrow bores: the 5.6e-10 m bore loads well.
+
+Test 1 (`rod_block_json`). Loaded oxygen -74.5 kJ/mol, water -16. Face
+0.5e-10 m below the iron: oxygen -18. Face level with the iron or past it: no
+bound oxygen pose. Peak push 2.4e-9 N (estimate). Rod to block at least
+2.27e-10 m. A meter test now guards the load and the block.
+
+Test 2 (`pocket_water_md.py`, 1 ns each). Empty site: 5.2 water molecules
+from a wet start and 5.1 from a dry start, never empty. Oxygen bound: 3.8
+water molecules beside it (at most 7). The large pocket held 20.
+
+Finding. Shrinking the pocket cuts the carried water by a factor of five, but
+not to zero. Water (2.8e-10 m) is smaller than oxygen, and a pocket that an
+oxygen can enter and bind in keeps crescents beside the bound oxygen that
+water fills. With rigid hydrogen-capped diamond walls the pump carries about
+four water molecules for each oxygen. Into an oxygen tank, that is a failure:
+the tank fills with water.
+
+Option for the next step (not tested). Accept the water and separate it: the
+rotor delivers oxygen and about four water molecules into a small collection
+chamber, where oxygen leaves the liquid as gas; a second, dry stage feeds the
+tank from that gas; a plain liquid pump returns the water to the blood. The
+returned water carries dissolved oxygen back. With Henry's law at 310 K
+(about 1.07e-3 mol/(L atm), an extrapolation at high pressure) the loss is
+about 7e-5 of the delivered oxygen per atmosphere of chamber pressure: 0.07
+percent at 10 atm. This is an estimate and needs its own kill tests.
+
+Limits. As ADR-0090: frozen solid, UFF with Lorentz-Berthelot mixing, proxy
+wells, no polarization. The count uses the bore radius at the carbon centres
+up to the carbon plane of the mouth.
