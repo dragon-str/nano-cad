@@ -2250,3 +2250,39 @@ Limits. A carbon with one lattice bond (a corner group) is not paired. The
 gear pump prunes such carbons; other parts keep them, and a plain box keeps
 38 clash pairs at its corners. The topology cannot remove atoms, so the pass
 cannot either.
+
+## ADR-0089: An iron site in each tooth root; the gap is too large
+
+Context. M27-04 puts the metal binding site of ADR-0086 into the gear pump
+and integrates the metal-ligand term into the binding search (was M25-02).
+
+Decision. `GearPumpGenerator` turns the root cap nearest each gap centre into
+an iron atom, 1.95e-10 m from its carbon along the cap direction, open toward
+the gap. Gear B takes the same local atoms. The model tables now hold iron:
+Cordero low-spin radius 1.32e-10 m and UFF Fe (2.912e-10 m, 0.013 kcal/mol).
+`nanocad_meter::metal_site_binding` places the donor oxygen on the open side
+of the iron over 12 distances, 48 directions and 8 spins. A pose energy is the
+UFF wall term plus a Morse coordination term, which replaces the Lennard-Jones
+pair between the donor and the iron. The wells are from the Fe(NH3)4 proxy:
+oxygen 80 kJ/mol at 1.90e-10 m, water 10.3 kJ/mol at 2.70e-10 m, carbon
+dioxide none. One width, `a = 2.744e10 1/m`, matches k = 200 N/m for oxygen.
+
+Results (`pump_site_json`, gap 3 of gear A, rigid, no solvent). Oxygen binds
+at -82.6 kJ/mol (-79.5 coordination, -3.1 wall), water at -13.3 and carbon
+dioxide at -5.5 (wall only). At alveolar pressures and 310 K the site holds
+oxygen 0.995 of the time, water 7e-12 and carbon dioxide 1.4e-14. During the
+mesh the nearest carbon of the other gear comes within 5.46e-10 m of the iron,
+inside the 3.1e-10 m reach of a bound oxygen, so the mesh forces the release.
+
+Finding. The free volume of one gap, from the root to the housing bore and
+outside every Bondi sphere, is 3.05e-27 m^3: about 100 molecules of liquid
+water. ADR-0086 called the gap a one-molecule pocket; at module 0.6e-9 m it is
+not. The site selects oxygen, but each gap would carry about 100 water
+molecules with each oxygen. A volumetric gear pump in a liquid pumps the
+liquid. The gap volume must fall to about one molecule, or the carried water
+must be returned, before the pump can deliver oxygen without water.
+
+Limits. The wells come from a proxy, not from the diamond root site. The
+search is rigid, has no solvent and ignores the entropy of the bound pose.
+The free volume uses zero probe radius, so the water count is an upper-range
+estimate.

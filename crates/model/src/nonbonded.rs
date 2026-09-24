@@ -86,13 +86,21 @@ const ENTRIES: &[Entry] = &[
         vdw_distance_a: 3.947,
         well_depth_kcal_per_mol: 0.227,
     },
+    // UFF Fe3+2 (Rappe et al. 1992). A metal site also needs a coordination
+    // term; the Lennard-Jones pair is only its non-bonded shell.
+    Entry {
+        atomic_number: 26,
+        vdw_distance_a: 2.912,
+        well_depth_kcal_per_mol: 0.013,
+    },
 ];
 
 /// Returns the nonbonded parameters of an element, when the table holds it.
 ///
 /// The table holds the elements that an organic molecule needs: hydrogen,
-/// carbon, nitrogen, oxygen, fluorine, phosphorus, sulfur and chlorine. Any
-/// other element returns `None`, so a caller cannot use a silent default.
+/// carbon, nitrogen, oxygen, fluorine, phosphorus, sulfur and chlorine, and
+/// iron for a metal binding site. Any other element returns `None`, so a
+/// caller cannot use a silent default.
 pub fn nonbonded(element: Element) -> Option<NonbondedParams> {
     let number = element.atomic_number();
     let entry = ENTRIES.iter().find(|entry| entry.atomic_number == number)?;

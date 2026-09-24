@@ -189,7 +189,9 @@ and two equal eight-tooth gears. Each gear has a revolute joint at its post,
 and one gear coupling ties the joints. The viewer reads a scene with a zero
 design and a gear coupling as joint-driven motion. Each gear turns about its
 own joint anchor, and the coupling sets the opposite rate. Hide the housing in
-the Components panel to see the mesh.
+the Components panel to see the mesh. Each tooth root holds one iron atom, the
+binding site, drawn in orange (M27-04). An element without a table colour gets
+a stable colour from its symbol.
 
 The rotor scene holds 27 bodies and 25 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for

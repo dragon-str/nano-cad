@@ -45,6 +45,10 @@ const SAMPLES_PER_FLANK: usize = 6;
 /// The samples along each tip and root arc of the outline.
 const SAMPLES_PER_ARC: usize = 3;
 
+/// The iron-carbon bond of a root site, in metres. An iron-carbon sigma bond
+/// in an organo-iron complex is 1.9e-10 to 2.0e-10 m.
+pub const FE_C_BOND_M: f64 = 1.95e-10;
+
 /// A lattice carbon with fewer first-shell neighbours than this is removed.
 /// A carbon with one bond is a loose tag on the surface, not a part.
 const MIN_CARBON_NEIGHBOURS: usize = 2;
@@ -130,6 +134,15 @@ static GEAR_PUMP_PARAMETERS: &[ParameterSpec] = &[
         5.0e-9,
         false,
         "thickness of the housing wall and of each side plate",
+    ),
+    ParameterSpec::new(
+        "metal_sites",
+        None,
+        1.0,
+        0.0,
+        1.0,
+        true,
+        "1 puts an iron site in the root of every tooth gap, 0 leaves the root capped",
     ),
     ParameterSpec::new(
         "port_width_m",
@@ -363,6 +376,9 @@ pub struct GearPumpSet {
     pub gear_a_atoms: Range<usize>,
     /// The atom range of gear B, the follower.
     pub gear_b_atoms: Range<usize>,
+    /// The iron atoms of the root sites: gear A first, then gear B, one per
+    /// tooth gap in gap order. Empty when `metal_sites` is 0.
+    pub metal_sites: Vec<usize>,
 }
 
 /// Builds the selective gear pump: a figure-eight housing and two meshing
@@ -405,6 +421,12 @@ impl GearPumpGenerator {
         )?;
         let gear_b_atoms = index_range(&gear_b_indices);
 
+        let metal_sites = if resolved.require("metal_sites")? >= 0.5 {
+            add_metal_sites(&mut topology, &design, &gear_a_atoms, &gear_b_atoms)?
+        } else {
+            Vec::new()
+        };
+
         let name = format!("gear-pump-z{}", design.teeth());
         let mut part = Part::new(name, topology).with_material("diamond");
         let metadata = &mut part.metadata;
@@ -429,6 +451,7 @@ impl GearPumpGenerator {
             housing_atoms,
             gear_a_atoms,
             gear_b_atoms,
+            metal_sites,
         })
     }
 }
@@ -449,6 +472,86 @@ impl PartGenerator for GearPumpGenerator {
     fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
         Ok(self.build(parameters)?.part)
     }
+}
+
+/// Turns one root cap of every tooth gap into an iron atom.
+///
+/// Gear A has a tooth tip at angle 0, so its gaps lie at `(k + 1/2) 2 PI / z`.
+/// The cap nearest the root point of each gap becomes iron, moved out along
+/// its cap direction to [`FE_C_BOND_M`]. Gear B is the same body turned by
+/// its phase, so the same local atom becomes iron there. The iron keeps its
+/// open side toward the gap: that side is the binding site (M27-04).
+fn add_metal_sites(
+    topology: &mut Topology,
+    design: &GearPumpDesign,
+    gear_a: &Range<usize>,
+    gear_b: &Range<usize>,
+) -> Result<Vec<usize>, PartError> {
+    let center_m = design.gear_a_center_m();
+    let teeth = design.teeth();
+    let mut host_of: HashMap<usize, usize> = HashMap::new();
+    for bond in topology.bonds() {
+        let (u, v) = (bond.u as usize, bond.v as usize);
+        if topology.element(u) == Some(Element::HYDROGEN) {
+            host_of.insert(u, v);
+        }
+        if topology.element(v) == Some(Element::HYDROGEN) {
+            host_of.insert(v, u);
+        }
+    }
+    let probe_radius_m = design.root_radius_m() + 1.0e-10;
+    let mut chosen = Vec::with_capacity(teeth);
+    for gap in 0..teeth {
+        let angle_rad = (gap as f64 + 0.5) * 2.0 * PI / teeth as f64;
+        let target_m = [
+            center_m[0] + probe_radius_m * angle_rad.cos(),
+            center_m[1] + probe_radius_m * angle_rad.sin(),
+            0.0,
+        ];
+        let best = gear_a
+            .clone()
+            .filter(|index| host_of.contains_key(index))
+            .filter_map(|index| {
+                let p = topology.position_m(index)?;
+                let d = (p[0] - target_m[0]).powi(2)
+                    + (p[1] - target_m[1]).powi(2)
+                    + (p[2] - target_m[2]).powi(2);
+                Some((d, index))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        let Some((_, index)) = best else {
+            return Err(PartError::InvalidGeometry(
+                "a tooth gap has no root cap for an iron site".to_owned(),
+            ));
+        };
+        chosen.push(index - gear_a.start);
+    }
+    let mut sites = Vec::with_capacity(2 * teeth);
+    for range in [gear_a, gear_b] {
+        for &offset in &chosen {
+            let cap = range.start + offset;
+            let host = *host_of.get(&cap).ok_or_else(|| {
+                PartError::InvalidGeometry("the gears do not share an atom order".to_owned())
+            })?;
+            let (Some(cap_m), Some(host_m)) = (topology.position_m(cap), topology.position_m(host))
+            else {
+                continue;
+            };
+            let length_m = ((cap_m[0] - host_m[0]).powi(2)
+                + (cap_m[1] - host_m[1]).powi(2)
+                + (cap_m[2] - host_m[2]).powi(2))
+            .sqrt();
+            let iron_m = [
+                host_m[0] + FE_C_BOND_M * (cap_m[0] - host_m[0]) / length_m,
+                host_m[1] + FE_C_BOND_M * (cap_m[1] - host_m[1]) / length_m,
+                host_m[2] + FE_C_BOND_M * (cap_m[2] - host_m[2]) / length_m,
+            ];
+            topology.set_element(cap, Element::IRON)?;
+            topology.set_position_m(cap, iron_m)?;
+            sites.push(cap);
+        }
+    }
+    Ok(sites)
 }
 
 /// Returns the carbon sites of one gear in its local crystal frame.
@@ -744,6 +847,64 @@ mod tests {
         let kept = keep_well_bonded(sites);
         assert!(kept.len() <= before);
         assert!(kept.iter().all(|p| p[0] < 2.0 * a + quarter));
+    }
+
+    #[test]
+    fn every_tooth_gap_has_one_root_iron() {
+        let set = default_set();
+        let design = &set.design;
+        let teeth = design.teeth();
+        assert_eq!(set.metal_sites.len(), 2 * teeth);
+        let pitch_rad = 2.0 * PI / teeth as f64;
+        for (n, &site) in set.metal_sites.iter().enumerate() {
+            assert_eq!(set.part.topology.element(site), Some(Element::IRON));
+            let (center, phase) = if n < teeth {
+                (design.gear_a_center_m(), 0.0)
+            } else {
+                (design.gear_b_center_m(), design.gear_b_phase_rad())
+            };
+            let p = set.part.topology.position_m(site).expect("iron");
+            let radius_m = (p[0] - center[0]).hypot(p[1] - center[1]);
+            assert!(radius_m > design.root_radius_m(), "{radius_m}");
+            assert!(radius_m < design.root_radius_m() + 3.0e-10, "{radius_m}");
+            // A gap centre sits half a pitch from a tooth tip.
+            let angle = (p[1] - center[1]).atan2(p[0] - center[0]) - phase;
+            let from_tip = angle.rem_euclid(pitch_rad);
+            assert!(
+                (from_tip - 0.5 * pitch_rad).abs() < 0.25 * pitch_rad,
+                "iron {n} sits {from_tip} rad from a tip"
+            );
+        }
+    }
+
+    #[test]
+    fn the_iron_clears_the_other_gear_through_the_mesh() {
+        let set = default_set();
+        let design = &set.design;
+        let teeth = design.teeth();
+        let irons_a: Vec<[f64; 3]> = set.metal_sites[..teeth]
+            .iter()
+            .filter_map(|&i| set.part.topology.position_m(i))
+            .collect();
+        let b = carbons(&set.part, &set.gear_b_atoms);
+        let pitch_rad = 2.0 * PI / teeth as f64;
+        let mut worst = f64::INFINITY;
+        for step in 0..48 {
+            let turn_rad = 2.0 * pitch_rad * step as f64 / 48.0;
+            let a_now: Vec<_> = irons_a
+                .iter()
+                .map(|p| rotate_about(*p, design.gear_a_center_m(), turn_rad))
+                .collect();
+            let b_now: Vec<_> = b
+                .iter()
+                .map(|p| rotate_about(*p, design.gear_b_center_m(), -turn_rad))
+                .collect();
+            worst = worst.min(min_distance_m(&a_now, &b_now));
+        }
+        // Measured 5.46e-10 m. A bound O2 reaches about 3.1e-10 m from the
+        // iron, so the mating tooth sweeps through the bound guest: that is
+        // the forced release at the mesh.
+        assert!(worst > 3.0e-10, "iron to mating carbon {worst:e} m");
     }
 
     #[test]

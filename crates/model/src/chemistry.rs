@@ -84,6 +84,14 @@ const ENTRIES: &[Entry] = &[
         atomic_mass_u: 35.45,
         covalent_radius_m: 1.02e-10,
     },
+    // Iron for a metal binding site. Cordero gives 1.32e-10 m for low-spin
+    // iron, the state of oxy-heme. The valence is the octahedral count.
+    Entry {
+        atomic_number: 26,
+        valence: 6,
+        atomic_mass_u: 55.845,
+        covalent_radius_m: 1.32e-10,
+    },
     Entry {
         atomic_number: 35,
         valence: 1,
@@ -96,7 +104,8 @@ const ENTRIES: &[Entry] = &[
 ///
 /// The table holds the elements that an organic molecule needs: hydrogen,
 /// carbon, nitrogen, oxygen, fluorine, phosphorus, sulfur, chlorine and
-/// bromine. Any other element returns `None`.
+/// bromine, and iron for a metal binding site. Any other element returns
+/// `None`.
 pub fn chemistry(element: Element) -> Option<ElementChemistry> {
     let number = element.atomic_number();
     let entry = ENTRIES.iter().find(|entry| entry.atomic_number == number)?;

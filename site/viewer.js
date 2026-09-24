@@ -99,6 +99,7 @@
     P: "#ff9e64",
     S: "#e0c000",
     B: "#ffb86c",
+    Fe: "#e0662c",
   };
 
   var view = { yaw: -0.65, tilt: 1.02, zoom: 1, panX: 0, panY: 0 };
@@ -174,8 +175,13 @@
     if (ELEMENT_COLORS[element]) {
       return ELEMENT_COLORS[element];
     }
-    var z = parseInt(element.replace(/[^0-9]/g, ""), 10) || 20;
-    return "hsl(" + ((z * 47) % 360) + ", 55%, 60%)";
+    // An element without a table colour gets a stable hue from its symbol.
+    // The colour must be hex, because the atom buffer reads it as hex.
+    var code = 0;
+    for (var ch = 0; ch < element.length; ch += 1) {
+      code = (code * 31 + element.charCodeAt(ch)) % 360;
+    }
+    return hslToHex(code, 0.55, 0.6);
   }
 
   /* ---------- Fit and projection ---------- */
@@ -304,10 +310,29 @@
     P: 1.07e-10,
     S: 1.05e-10,
     B: 0.84e-10,
+    Fe: 1.32e-10,
   };
 
   function atomRadius(element) {
     return ATOM_RADII[element] || 0.7e-10;
+  }
+
+  function hslToHex(hue, saturation, lightness) {
+    var c = (1 - Math.abs(2 * lightness - 1)) * saturation;
+    var x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    var m = lightness - c / 2;
+    var rgb =
+      hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x] :
+      hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+    return (
+      "#" +
+      rgb
+        .map(function (v) {
+          var n = Math.round((v + m) * 255);
+          return (n < 16 ? "0" : "") + n.toString(16);
+        })
+        .join("")
+    );
   }
 
   function hexToRgb(hex) {
@@ -1633,7 +1658,8 @@
         "atoms: " + scene.atomistic.atom_count,
         "pitch radius: " + (pitch * 1e9).toFixed(2) + " nm",
         "suction port at -y, discharge port at +y",
-        "a tooth gap carries one guest round the bore",
+        "each tooth root holds one iron site (orange)",
+        "one gap holds about 100 water volumes (estimate)",
         "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
       ];
     } else if (motion.kind === "rotor") {

@@ -33,6 +33,11 @@ const C_H_K_N_PER_M: f64 = 474.0;
 const C_C_R0_M: f64 = 1.544e-10;
 /// The C-H bond, in metres.
 const C_H_R0_M: f64 = 1.09e-10;
+/// Fe-C bond stiffness, in newtons per metre. It is the iron-ligand value of
+/// the metal-ligand example (ADR-0083), an estimate.
+const FE_C_K_N_PER_M: f64 = 200.0;
+/// The Fe-C sigma bond of a root site, in metres.
+const FE_C_R0_M: f64 = 1.95e-10;
 /// C-C-C bend constant, in joules per radian squared (0.67 mdyn A/rad^2).
 const CCC_K_J_PER_RAD2: f64 = 0.67e-18;
 /// C-C-H bend constant, in joules per radian squared.
@@ -135,7 +140,10 @@ pub fn relax_valence(
             continue;
         };
         let hydrogen = elements[u] == Element::HYDROGEN || elements[v] == Element::HYDROGEN;
-        let (k_n_per_m, r0_m) = if hydrogen {
+        let iron = elements[u] == Element::IRON || elements[v] == Element::IRON;
+        let (k_n_per_m, r0_m) = if iron {
+            (FE_C_K_N_PER_M, FE_C_R0_M)
+        } else if hydrogen {
             (C_H_K_N_PER_M, C_H_R0_M)
         } else {
             c_c_pairs.push((u, v));
