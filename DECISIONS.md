@@ -2162,3 +2162,45 @@ dispersion, no counterpoise correction, one functional, one basis and one small
 model. The seal gaps (backlash, tip, face) must be smaller than a water
 molecule, and tooth stiffness at a module near `3e-10 m` is unproven. Every
 number here is an estimate from a simulated design. No medical claim is made.
+
+## ADR-0087: Gear-pump geometry: eight teeth, housing posts, tuned gaps
+
+Context. M27-02 builds the gear pump of ADR-0086 as parts and a scene. The
+existing `spur_gear` part is a skeletal rim with spokes, so it cannot seal. The
+planetary set already fills a solid hydrogen-capped diamond gear from an
+involute outline.
+
+Decision. `crates/parts/src/gear_pump.rs` (`GearPumpGenerator`, id `gear_pump`)
+builds two equal solid gears and one housing in a single part with three atom
+ranges. The gears use module `0.6e-9 m`, eight teeth and a `30 deg` pressure
+angle, which is the smallest undercut-free count at that angle. Each gear has
+eight (001) layers and a bore of radius `1.0e-9 m`. The housing is one lattice:
+two side plates, a figure-eight wall, a suction port at `-y` and a discharge
+port at `+y` at the mesh waist, and one post through each gear bore. The posts
+join the plates, so no body floats. The gear is held by its post and the plates,
+not by its tips.
+
+Every gap is a carbon-to-carbon distance near `4.5e-10 m`. Two hydrogen caps
+then leave about `2.3e-10 m`, less than the `2.8e-10 m` diameter of water. The
+housing clearance is `4.6e-10 m`. The gear-to-gear gap was tuned by a scan over
+one tooth pitch: backlash `4e-10 m` and a centre offset `4e-10 m` give a worst
+gap of `4.50e-10 m`. Backlash `2e-10 m` gave `2.8e-10 m`, where the caps touch.
+A pruning pass removes lattice carbons with fewer than two carbon neighbours and
+keeps the largest connected piece.
+
+`crates/jigs/src/gear_pump_scene.rs` gives three bodies, two revolute joints at
+the post centres and one gear coupling. The scene catalog lists it as a machine
+with the id `gear_pump`. The viewer reads a zero design with a gear coupling as
+joint-driven motion: each gear turns about its own joint anchor, and the
+coupling sets the opposite rate.
+
+Fix. `GearProfile::minimum_tooth_count` returned nine at `30 deg`, because
+`2 / sin^2(30 deg)` rounds above eight in floating point. A `1e-9` tolerance
+now gives eight.
+
+Limits. The sense audit shows no cross-body overlap, no floating body, no
+disjoint body and no cross-body bond. It still flags the same-body hydrogen cap
+clash at a shared missing site (ADR-0075), which is in every scene. The scene
+has 53 366 atoms, 48 206 of them in the housing. The part holds no binding site
+(M27-04). No drive torque, contact force or solvent is modelled. The gaps are
+from the rigid lattice, not from a relaxed structure.

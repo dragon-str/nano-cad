@@ -16,6 +16,7 @@ pub mod diamond_solid;
 pub mod dislocation;
 pub mod error;
 pub mod gear_profile;
+pub mod gear_pump;
 pub mod generator;
 pub mod geometry;
 mod group;
@@ -54,6 +55,7 @@ pub use dislocation::{
 };
 pub use error::PartError;
 pub use gear_profile::{GearProfile, GearProfileGenerator};
+pub use gear_pump::{GearPumpDesign, GearPumpGenerator, GearPumpSet};
 pub use generator::{PartGenerator, PartSchema};
 pub use group::{FunctionalGroup, FUNCTIONAL_GROUPS};
 pub use guest::{

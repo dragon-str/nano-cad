@@ -19,6 +19,7 @@ use crate::cam_plate::CamPlateGenerator;
 use crate::clutch::{ClutchPlateGenerator, RatchetGenerator};
 use crate::error::PartError;
 use crate::gear_profile::GearProfileGenerator;
+use crate::gear_pump::GearPumpGenerator;
 use crate::generator::PartGenerator;
 use crate::housing::RotorHousingGenerator;
 use crate::lattice::{DiamondGenerator, GraphiteGenerator};
@@ -55,6 +56,7 @@ static RESPIROCYTE_ROTOR: RespirocyteRotorGenerator = RespirocyteRotorGenerator;
 static RESPIROCYTE_PUMP: RespirocytePumpGenerator = RespirocytePumpGenerator;
 static RESPIROCYTE_TANK: RespirocyteTankGenerator = RespirocyteTankGenerator;
 static SORTING_ROTOR: SortingRotorGenerator = SortingRotorGenerator;
+static GEAR_PUMP: GearPumpGenerator = GearPumpGenerator;
 static ROTOR_HOUSING: RotorHousingGenerator = RotorHousingGenerator;
 static BINDING_POCKET: BindingPocketGenerator = BindingPocketGenerator;
 static EJECTION_ROD: EjectionRodGenerator = EjectionRodGenerator;
@@ -146,6 +148,10 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &SORTING_ROTOR,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &GEAR_PUMP,
         category: "device",
     },
     RegisteredGenerator {

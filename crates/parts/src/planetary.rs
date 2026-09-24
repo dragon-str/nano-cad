@@ -471,7 +471,7 @@ impl PartGenerator for PlanetaryGenerator {
 }
 
 /// Trims a repeated closing point from a closed polyline.
-fn trim_closed_loop(mut points_m: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+pub(crate) fn trim_closed_loop(mut points_m: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     if points_m.len() >= 2 {
         let first = points_m[0];
         let last = points_m[points_m.len() - 1];
@@ -529,7 +529,7 @@ fn placed_xy(point: &[f64; 3], sin_rot: f64, cos_rot: f64, center_m: [f64; 2]) -
 /// is capped with hydrogen. The bond and cap pass runs in the gear's local
 /// frame: the tetrahedral direction lookup reads the crystal axes, so it must
 /// run before the rotation.
-fn add_gear_local(
+pub(crate) fn add_gear_local(
     topology: &mut Topology,
     local_m: &[[f64; 3]],
     rotation_rad: f64,
@@ -554,7 +554,7 @@ fn add_gear_local(
     Ok(indices)
 }
 /// Returns the contiguous index range that a list of atom indices covers.
-fn index_range(indices: &[u32]) -> Range<usize> {
+pub(crate) fn index_range(indices: &[u32]) -> Range<usize> {
     match (indices.first(), indices.last()) {
         (Some(first), Some(last)) => *first as usize..*last as usize + 1,
         _ => 0..0,

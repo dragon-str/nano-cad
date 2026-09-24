@@ -359,8 +359,13 @@
       colors[i * 3 + 2] = rgb[2];
     }
     var design = scene.design || {};
-    motion.kind = design.module_m > 0 ? "gears" : "rotor";
-    if (motion.kind === "gears") {
+    var couplings = (scene.device && scene.device.gear_couplings) || [];
+    motion.kind =
+      design.module_m > 0 ? "gears" : couplings.length > 0 ? "joints" : "rotor";
+    if (motion.kind === "joints") {
+      motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
+      motion.revolute = revoluteMotions(scene.device, motion.w_sun);
+    } else if (motion.kind === "gears") {
       var ns = design.sun_teeth || 24;
       var nr = design.ring_teeth || 60;
       motion.w_sun = -0.34;
@@ -395,6 +400,55 @@
       colors: colors,
     };
     uploadAtoms();
+  }
+
+  /* Joint-driven motion for a scene with a zero design and gear couplings,
+     such as the gear pump. The first coupled joint turns at `rate`. Each
+     coupling sets the other joint to -rate * r_a / r_b (external mesh). Each
+     moving body turns about its joint anchor. */
+  function revoluteMotions(device, rate) {
+    var joints = device.joints || [];
+    var rates = {};
+    var couplings = device.gear_couplings || [];
+    if (couplings.length > 0) {
+      rates[couplings[0].joint_a] = rate;
+    }
+    for (var pass = 0; pass < couplings.length; pass += 1) {
+      for (var k = 0; k < couplings.length; k += 1) {
+        var c = couplings[k];
+        var ratio = c.radius_a_m / c.radius_b_m;
+        if (rates[c.joint_a] !== undefined && rates[c.joint_b] === undefined) {
+          rates[c.joint_b] = -rates[c.joint_a] * ratio;
+        } else if (rates[c.joint_b] !== undefined && rates[c.joint_a] === undefined) {
+          rates[c.joint_a] = -rates[c.joint_b] / ratio;
+        }
+      }
+    }
+    var out = {};
+    for (var j = 0; j < joints.length; j += 1) {
+      var joint = joints[j];
+      if (joint.kind !== "revolute" || rates[j] === undefined) {
+        continue;
+      }
+      var anchor = joint.anchor_world_m || [0, 0, 0];
+      out[joint.body_b] = { cx: anchor[0], cy: anchor[1], w: rates[j] };
+    }
+    return out;
+  }
+
+  function jointMotion(body) {
+    var r = motion.revolute && motion.revolute[body];
+    if (!r) {
+      return { c: 1, s: 0, tx: 0, ty: 0 };
+    }
+    var c = Math.cos(r.w * motion.time);
+    var s = Math.sin(r.w * motion.time);
+    return {
+      c: c,
+      s: s,
+      tx: r.cx - (r.cx * c - r.cy * s),
+      ty: r.cy - (r.cx * s + r.cy * c),
+    };
   }
 
   function isBodyHidden(body) {
@@ -461,6 +515,9 @@
   /* The rigid motion of one body at the current time: a rotation about z by
      (c, s), then a shift (tx, ty). Atoms and solid meshes share it. */
   function bodyMotion(body) {
+    if (motion.kind === "joints") {
+      return jointMotion(body);
+    }
     var t = motion.time;
     var cc = Math.cos(motion.w_sun * t);
     var sc = Math.sin(motion.w_sun * t);
@@ -574,6 +631,14 @@
   }
 
   function liveBodyPoint(body, point) {
+    if (motion.kind === "joints") {
+      var m = jointMotion(body);
+      return [
+        point[0] * m.c - point[1] * m.s + m.tx,
+        point[0] * m.s + point[1] * m.c + m.ty,
+        point[2],
+      ];
+    }
     if (motion.kind !== "rotor" || !motion.rods) {
       return [point[0], point[1], point[2]];
     }
@@ -1557,7 +1622,21 @@
   function setReadout() {
     var d = scene.design;
     var lines;
-    if (motion.kind === "rotor") {
+    if (motion.kind === "joints") {
+      var pitch = scene.device.gear_couplings[0].radius_a_m;
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "mechanism: " + (scene.frame === "gear_pump" ? "selective gear pump" : scene.frame),
+        "bodies: " + scene.device.body_count + " (housing with posts, two gears)",
+        "joints: " + scene.device.joints.length + " revolute, " +
+          scene.device.gear_couplings.length + " gear coupling",
+        "atoms: " + scene.atomistic.atom_count,
+        "pitch radius: " + (pitch * 1e9).toFixed(2) + " nm",
+        "suction port at -y, discharge port at +y",
+        "a tooth gap carries one guest round the bore",
+        "display rate: " + ROTOR_DISPLAY_RATE_RAD_PER_S.toFixed(1) + " rad/s",
+      ];
+    } else if (motion.kind === "rotor") {
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: sorting rotor",

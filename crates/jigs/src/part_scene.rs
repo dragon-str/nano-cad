@@ -10,6 +10,7 @@ use serde::Serialize;
 use nanocad_model::Part;
 use nanocad_parts::{library, ParameterSet};
 
+use crate::gear_pump_scene::{build_gear_pump_scene, GEAR_PUMP_SCENE_ID};
 use crate::rotor_scene::zero_design;
 use crate::scene::{
     AtomisticLayer, CoarseBody, CoarseCylinder, CoarseLayer, DeviceLayer, Scene, SceneAtom,
@@ -43,7 +44,7 @@ pub struct SceneCatalogEntry {
 
 /// Returns every scene that the viewer can show.
 ///
-/// The two machines come first. The library parts follow, in registry order.
+/// The machines come first. The library parts follow, in registry order.
 pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
     let mut entries = vec![
         SceneCatalogEntry {
@@ -58,8 +59,18 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
             kind: "machine".to_string(),
             category: "machines".to_string(),
         },
+        SceneCatalogEntry {
+            id: GEAR_PUMP_SCENE_ID.to_string(),
+            name: "Selective gear pump".to_string(),
+            kind: "machine".to_string(),
+            category: "machines".to_string(),
+        },
     ];
     for entry in library() {
+        // The gear pump is listed once, as a machine with three bodies.
+        if entry.id == GEAR_PUMP_SCENE_ID {
+            continue;
+        }
         entries.push(SceneCatalogEntry {
             id: entry.id.to_string(),
             name: entry.name.to_string(),
@@ -74,6 +85,9 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
 ///
 /// An unknown id is [`SceneError::Part`].
 pub fn build_part_scene(id: &str) -> Result<Scene, SceneError> {
+    if id == GEAR_PUMP_SCENE_ID {
+        return build_gear_pump_scene();
+    }
     let part = nanocad_parts::generate(id, &ParameterSet::new())?;
     let name = nanocad_parts::generator(id)
         .map(|generator| generator.name().to_string())

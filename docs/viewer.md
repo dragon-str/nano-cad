@@ -183,6 +183,14 @@ outlet. The drive starts, so the rotor turns at once. The result lists the atom
 counts, the mass, the rim speed and the pocket rate, next to the figures from
 Freitas, *Nanomedicine* Volume I, Section 3.4.2.
 
+The library lists a **Selective gear pump** under Machines (ADR-0086,
+ADR-0087). It holds three bodies: a fixed figure-eight housing with two posts,
+and two equal eight-tooth gears. Each gear has a revolute joint at its post,
+and one gear coupling ties the joints. The viewer reads a scene with a zero
+design and a gear coupling as joint-driven motion. Each gear turns about its
+own joint anchor, and the coupling sets the opposite rate. Hide the housing in
+the Components panel to see the mesh.
+
 The rotor scene holds 27 bodies and 25 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for
 each pocket. Each rod lies along the radius of its pocket, sits in a radial bore

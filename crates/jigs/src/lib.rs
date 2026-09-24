@@ -19,6 +19,7 @@ mod assembly;
 mod design;
 mod device;
 mod error;
+mod gear_pump_scene;
 mod jig;
 mod motor;
 mod nanomedicine;
@@ -44,6 +45,10 @@ pub use device::{
     PrismaticJoint, Quat, RevoluteJoint, RigidBody, RigidBodySystem,
 };
 pub use error::JigError;
+pub use gear_pump_scene::{
+    build_gear_pump_scene, gear_pump_scene, GEAR_PUMP_FRAME, GEAR_PUMP_SCENE_ID, PUMP_GEAR_A_BODY,
+    PUMP_GEAR_B_BODY, PUMP_GEAR_ROLE, PUMP_HOUSING_BODY, PUMP_HOUSING_ROLE,
+};
 pub use jig::{Jig, JigKind};
 pub use motor::MotorJig;
 pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineError, SliceResult};

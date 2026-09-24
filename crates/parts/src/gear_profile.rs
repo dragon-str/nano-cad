@@ -116,7 +116,9 @@ impl GearProfile {
         if !raw.is_finite() || raw <= 0.0 {
             return usize::MAX;
         }
-        raw.ceil() as usize
+        // A small tolerance keeps an exact ratio, such as 2 / sin^2(30 deg) = 8,
+        // from rounding up on the last bit.
+        (raw - 1.0e-9).ceil() as usize
     }
 
     /// Rejects a tooth count below the undercut limit.
@@ -394,6 +396,12 @@ impl PartGenerator for GearProfileGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 2 / sin^2(30 deg) is exactly 8. Rounding must not push it to 9.
+    #[test]
+    fn thirty_degrees_allows_eight_teeth() {
+        assert_eq!(GearProfile::minimum_tooth_count(PI / 6.0), 8);
+    }
 
     fn default_profile() -> GearProfile {
         GearProfile::new(0.5e-9, 20, DEFAULT_PRESSURE_ANGLE_RAD).expect("valid profile")
