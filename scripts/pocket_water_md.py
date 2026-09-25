@@ -68,6 +68,12 @@ def main() -> int:
     parser.add_argument("--sample-ps", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--platform", default="OpenCL")
+    parser.add_argument(
+        "--environment",
+        choices=["liquid", "gas"],
+        default="liquid",
+        help="gas: only the pocket water, facing an empty gas space with a sink",
+    )
     args = parser.parse_args()
 
     geometry = json.load(open(args.geometry))
@@ -196,12 +202,12 @@ def main() -> int:
     system.addForce(nb)
 
     morse = mm.CustomBondForce("D*((1-exp(-a*(r-r0)))^2-1)")
-    morse.addGlobalParameter("D", MORSE_D_KJ)
+    morse.addPerBondParameter("D")
     morse.addGlobalParameter("a", MORSE_A_PER_NM)
     morse.addGlobalParameter("r0", MORSE_R0_NM)
     morse.setUsesPeriodicBoundaryConditions(True)
     for o in water_oxygens:
-        morse.addBond(iron, o, [])
+        morse.addBond(iron, o, [MORSE_D_KJ])
     system.addForce(morse)
 
     # Keep water above the block floor and below the box top.
@@ -229,22 +235,55 @@ def main() -> int:
 
     pocket_lo = face_z / 10 + z_shift
     pocket_hi = mouth_z / 10 + z_shift
+    sink_z = pocket_hi + 0.3
+    ghosts: set[int] = set()
+
+    def ghost(indices) -> None:
+        """Turn waters into non-interacting ghosts: a perfect sink."""
+        for w in indices:
+            if w in ghosts:
+                continue
+            ghosts.add(w)
+            o = water_oxygens[w]
+            for atom in (o, o + 1, o + 2):
+                nb.setParticleParameters(atom, 0.0, 0.1, 0.0)
+            morse.setBondParameters(w, iron, o, [0.0])
+        nb.updateParametersInContext(context)
+        morse.updateParametersInContext(context)
+
+    def oxygen_positions():
+        state = context.getState(getPositions=True)
+        pos = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
+        ox = pos[first_water::3]
+        dx = (ox[:, 0] - axis_center[0] + box_x / 2) % box_x - box_x / 2
+        dy = (ox[:, 1] - axis_center[1] + box_y / 2) % box_y - box_y / 2
+        return ox, np.hypot(dx, dy)
+
+    initial_in_pocket = None
+    if args.environment == "gas":
+        # Keep only the water inside the bore and below its mouth; every other
+        # molecule becomes a ghost. The pocket then faces an empty gas.
+        ox, radial = oxygen_positions()
+        keep = (radial < bore_a / 10) & (ox[:, 2] > pocket_lo) & (ox[:, 2] < pocket_hi + 0.05)
+        ghost([w for w in range(len(water_oxygens)) if not keep[w]])
+        initial_in_pocket = int(keep.sum())
     samples = []
     iron_contacts = []
     for _ in range(int(args.production_ps / args.sample_ps)):
         integrator.step(steps_per_sample)
-        state = context.getState(getPositions=True)
-        pos = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
-        ox = pos[first_water::3]
-        # Wrap x and y into the box around the bore axis.
-        dx = (ox[:, 0] - axis_center[0] + box_x / 2) % box_x - box_x / 2
-        dy = (ox[:, 1] - axis_center[1] + box_y / 2) % box_y - box_y / 2
-        radial = np.hypot(dx, dy)
-        inside = (radial < bore_a / 10) & (ox[:, 2] > pocket_lo) & (ox[:, 2] < pocket_hi)
+        ox, radial = oxygen_positions()
+        live = np.array([w not in ghosts for w in range(len(water_oxygens))])
+        if args.environment == "gas":
+            escaped = np.where(live & (ox[:, 2] > sink_z))[0]
+            if len(escaped):
+                ghost(escaped.tolist())
+                live[escaped] = False
+        inside = live & (radial < bore_a / 10) & (ox[:, 2] > pocket_lo) & (ox[:, 2] < pocket_hi)
         samples.append(int(inside.sum()))
         d_fe = np.linalg.norm(ox - fe_s, axis=1)
-        iron_contacts.append(int((d_fe < 0.32).sum()))
+        iron_contacts.append(int(((d_fe < 0.32) & live).sum()))
 
+    empty_time = next((i * args.sample_ps for i, c in enumerate(samples) if c == 0), None)
     samples = np.array(samples)
     contacts = np.array(iron_contacts)
     pocket_volume = math.pi * (bore_a / 10) ** 2 * (pocket_hi - pocket_lo)
@@ -260,6 +299,12 @@ def main() -> int:
         "mean_iron_contacts": round(float(contacts.mean()), 3),
         "fraction_iron_wet": round(float((contacts > 0).mean()), 3),
         "platform": platform.getName(),
+        "environment": args.environment,
+        "first_empty_ps": empty_time,
+        "initial_waters_in_pocket": initial_in_pocket,
+        "escaped": len(ghosts) - (len(water_oxygens) - (initial_in_pocket or 0))
+        if args.environment == "gas"
+        else None,
     }
     print(json.dumps(result))
     return 0

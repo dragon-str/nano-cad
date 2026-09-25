@@ -2369,3 +2369,46 @@ percent at 10 atm. This is an estimate and needs its own kill tests.
 Limits. As ADR-0090: frozen solid, UFF with Lorentz-Berthelot mixing, proxy
 wells, no polarization. The count uses the bore radius at the carbon centres
 up to the carbon plane of the mouth.
+
+## ADR-0092: Option A, separate the water: the gas-side stage stays nearly dry
+
+Context. ADR-0091 left the snug rod pocket carrying about four water
+molecules with each oxygen. Option A accepts that water at the first stage.
+Stage 1 pumps oxygen with its water from the blood into a small collection
+chamber. In the chamber, oxygen leaves the liquid into a permanent gas space.
+Stage 2 is a second rod-pocket rotor that loads from that gas and fills the
+tank. A liquid pump returns the chamber water to the blood.
+
+Kill test 1, thermodynamics. The chamber gas is saturated with water vapour
+(6.28 kPa at 310 K), so its water chemical potential equals that of the
+liquid. Stage 2 is dry only if a pocket that faces gas holds far less water
+than a pocket in liquid. The difference comes from the missing bulk water at
+the mouth, so it must be measured.
+
+Kill test 2, MD (`pocket_water_md.py --environment gas`). The pocket is filled
+from a 50 ps liquid run. Every water outside the bore is then made
+non-interacting, and a water that rises 3e-10 m past the mouth is removed.
+This makes a perfect sink. The pocket emptied in every run: after 76, 168 and
+460 ps with the site empty, and after 54, 82 and 90 ps beside a bound oxygen.
+The mean residence of one water is 38 to 494 ps. Kinetic theory gives
+condensation onto the whole bore mouth at 0.22 per ns at most (sticking
+coefficient 1). So a stage-2 pocket in saturated vapour holds at most about
+0.1 water with the site empty and 0.03 beside a bound oxygen. In liquid it
+held 3.8. The test passes: stage 2 carries about 1/100 of the water of
+stage 1.
+
+Mass balance (estimate). The returned water carries dissolved oxygen back
+to the blood. Henry's law at 310 K gives 1.9e-5 oxygen per water per atm.
+With four waters for each oxygen, the loss is 7.7e-5 per atm of chamber
+pressure: 0.008 percent at 1 atm. Stage 2 then compresses to the tank. The
+pressure-volume work against 1000 atm is about 2 kJ/mol, small beside the
+80 kJ/mol release.
+
+Open risks. (1) The gas space must be permanent. A meniscus pinned at a
+2e-9 m hydrophobic slot holds about 2 gamma / w = 70 MPa (estimate). Start-up
+needs a first bubble. (2) Water enters the tank at up to 0.03 per oxygen. It
+builds up unless the release path removes it; with dense oxygen at 1000 atm
+this is not modelled. (3) Every energy uses the Fe(NH3)4 proxy wells, UFF
+walls, a frozen solid and no polarization. (4) The residence times come from
+six short runs and are uncertain by a factor of a few. The conclusion holds
+unless the uncertainty exceeds about a factor of 30.
