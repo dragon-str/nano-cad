@@ -53,6 +53,23 @@ pytest python/tests
 just verify            # runs all gates
 ```
 
+## Resource limits (hard rule)
+
+The development machine is a Mac mini with 16 GB of memory. On 2026-09-25 a
+quantum-chemistry run started 10 PySCF workers at 3 GB each, used 27 GB and
+crashed the machine.
+
+- Before any parallel or long job, read the memory size (`sysctl -n
+  hw.memsize`) and plan the total. All jobs together must stay under 40
+  percent of physical memory (about 6.5 GB).
+- A parallel script must set a per-worker memory budget, cap its worker count
+  from that budget, and run a watchdog that stops every worker when the summed
+  resident memory passes the cap. `scripts/fe_o2_switch_scan.py` is the model.
+- Run one heavy job at a time. Do not start a second job while one runs.
+- Print the plan (`--dry-run`) before a new heavy run.
+- Keep Python environments out of `/tmp`; macOS clears it. Use
+  `~/.cache/nano-cad/` (for example `~/.cache/nano-cad/qm`).
+
 ## Definition of done
 
 A task is done only when all of these are true.
