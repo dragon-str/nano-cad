@@ -2455,3 +2455,51 @@ a tank, so a real design needs a weaker resting site, which this proxy does
 not have. Rigid fragments, no relaxation of the O2 pose, no solvent. The next
 test must use a better method (a hybrid functional or a spin-state-checked
 calculation) on a site that can exist on diamond.
+
+## ADR-0094: Hybrid functionals confirm a large strain switch on the iron
+
+Context. ADR-0093 found a strain switch with PBE, but 23 of 50 calculations
+did not converge and PBE overbinds O2 on iron. This rerun uses two hybrid
+functionals and a stronger SCF procedure.
+
+Method. `fe_o2_switch_scan.py --xc tpssh b3lyp`, Fe(NH3)4 proxy, def2-SVP,
+grid level 2, two initial guesses per point, damping and a level shift,
+then a clean pass from the result, lowest converged energy kept, <S^2>
+recorded. States: unstrained, dome 0.6 A, trans NH3 at 2.10 and 1.95 A. O2
+at 1.85 and 2.05 A (triplet) and 2.05 A (quintet). 50 calculations, all
+converged; 3 workers, peak 3.9 GB, about 3 hours.
+
+Results (binding enthalpy against the frame at the same strain, kJ/mol):
+
+| State | TPSSh | B3LYP |
+|---|---|---|
+| unstrained | -158 | -136 |
+| dome 0.6 A | -51 | -37 |
+| trans 2.10 A | -199 | -163 |
+| trans 1.95 A | -234 | -202 |
+
+Doming by 0.6 A weakens the bond by 108 (TPSSh) and 99 (B3LYP) kJ/mol. A
+trans ligand strengthens it by 28 to 75 kJ/mol. The two functionals agree
+within 20 kJ/mol on every switch amplitude. The kill test (45-50 kJ/mol)
+passes by a factor of two.
+
+Strain cost. The empty site is lower in energy domed, by 39 (TPSSh) and 37
+(B3LYP) kJ/mol, and it turns high-spin (S=2). The loaded site costs 69 and
+61 kJ/mol to dome. This is the hemoglobin pattern: the empty iron rests
+domed, the bound iron sits flat. So the cam flattens the empty site at the
+inlet (costs about 38 kJ/mol) so oxygen loads, and lets it dome at the
+outlet, pushing it with about 65 kJ/mol so that oxygen leaves.
+
+Release against a tank. With the gas entropy (about 64 kJ/mol at 310 K,
+ADR-0086) the domed site has a binding free energy of about +13 (TPSSh) and
++27 (B3LYP) kJ/mol at 1 bar. Release into a tank at 1000 atm needs more than
+RT ln(1000) = 17.8 kJ/mol. That is marginal for TPSSh, so the release side
+wants a deeper dome or a weaker resting site.
+
+Limits. Rigid fragments, no geometry relaxation, O2 pose fixed at 60 degrees
+tilt, no dispersion, def2-SVP (basis-set superposition error overbinds), the
+triplet complexes have <S^2> near 3 (open-shell Fe(III)-superoxide
+character, normal for Fe-O2 but a sign of multireference character). It is
+the Fe(NH3)4 proxy, not a site built on diamond. The switch amplitudes are
+estimates good to perhaps 30 kJ/mol; the absolute energies are less
+certain.

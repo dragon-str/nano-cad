@@ -98,32 +98,49 @@ def o2(fe_z: float, d: float):
     ]
 
 
-def scf(atoms, spin2):
+def scf(atoms, spin2, xc="pbe"):
+    """Lowest converged UKS energy over two initial guesses.
+
+    Each guess runs with damping and a level shift, then again from its own
+    density with no shift. A result counts only when it converges. The spin
+    contamination <S^2> is returned with it.
+    """
     from pyscf import dft, gto
 
     mol = gto.M(atom=atoms, basis="def2-svp", charge=0, spin=spin2, verbose=0, max_memory=WORKER_MAX_MEMORY_MB)
-    mf = dft.UKS(mol)
-    mf.xc = "pbe"
-    mf.grids.level = 1
-    mf.conv_tol = 1e-6
-    mf.max_cycle = 100
-    mf.level_shift = 0.2
-    try:
-        e = mf.kernel()
-        if not mf.converged:
-            mf.level_shift = 0.5
-            mf.max_cycle = 200
+    best = (None, False, None)
+    for guess in ("minao", "atom"):
+        mf = dft.UKS(mol)
+        mf.xc = xc
+        mf.grids.level = 1 if xc == "pbe" else 2
+        mf.conv_tol = 1e-6
+        mf.init_guess = guess
+        mf.damp = 0.3
+        mf.diis_start_cycle = 4
+        mf.level_shift = 0.3
+        mf.max_cycle = 150
+        try:
+            mf.kernel()
+            mf.level_shift = 0.0
+            mf.damp = 0.0
+            mf.max_cycle = 150
             e = mf.kernel(mf.make_rdm1())
-        return float(e), bool(mf.converged)
-    except Exception:  # noqa: BLE001
-        return None, False
+        except Exception:  # noqa: BLE001
+            continue
+        if mf.converged and (best[0] is None or not best[1] or e < best[0]):
+            best = (float(e), True, float(mf.spin_square()[0]))
+        elif best[0] is None:
+            best = (float(e), False, None)
+        if xc == "pbe" and best[1]:
+            break
+    return best
 
 
 def work(task):
     t0 = time.time()
-    e, ok = scf(task["atoms"], task["spin2"])
+    e, ok, s2 = scf(task["atoms"], task["spin2"], task["xc"])
     out = {k: v for k, v in task.items() if k != "atoms"}
-    out.update(E=e, conv=ok, seconds=round(time.time() - t0))
+    out.update(E=e, conv=ok, s2=s2, seconds=round(time.time() - t0))
     return out
 
 
@@ -139,15 +156,18 @@ STATES = [
 DISTANCES = (1.85, 2.05, 2.25)
 
 
-def tasks():
-    out = [dict(kind="o2", mode="-", value=0.0, d=0.0, spin2=2, atoms=o2(0.0, 5.0)[:2])]
-    for mode, value in STATES:
-        atoms, fe_z = frame(mode, value)
-        for spin2 in (0, 2, 4):
-            out.append(dict(kind="frame", mode=mode, value=value, d=0.0, spin2=spin2, atoms=atoms))
-        for d in DISTANCES:
-            out.append(dict(kind="complex", mode=mode, value=value, d=d, spin2=2, atoms=atoms + o2(fe_z, d)))
-        out.append(dict(kind="complex", mode=mode, value=value, d=2.05, spin2=4, atoms=atoms + o2(fe_z, 2.05)))
+def tasks(xcs=("pbe",), states=None, distances=DISTANCES):
+    chosen = [st for st in STATES if states is None or f"{st[0]}:{st[1]}" in states]
+    out = []
+    for xc in xcs:
+        out.append(dict(kind="o2", xc=xc, mode="-", value=0.0, d=0.0, spin2=2, atoms=o2(0.0, 5.0)[:2]))
+        for mode, value in chosen:
+            atoms, fe_z = frame(mode, value)
+            for spin2 in (0, 2, 4):
+                out.append(dict(kind="frame", xc=xc, mode=mode, value=value, d=0.0, spin2=spin2, atoms=atoms))
+            for d in distances:
+                out.append(dict(kind="complex", xc=xc, mode=mode, value=value, d=d, spin2=2, atoms=atoms + o2(fe_z, d)))
+            out.append(dict(kind="complex", xc=xc, mode=mode, value=value, d=2.05, spin2=4, atoms=atoms + o2(fe_z, 2.05)))
     # Heavy jobs first, so the pool drains evenly.
     out.sort(key=lambda t: -len(t["atoms"]))
     return out
@@ -200,7 +220,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--xc", nargs="+", default=["pbe"], help="functionals, e.g. pbe tpssh b3lyp")
+    parser.add_argument("--states", nargs="+", default=None, help="subset, e.g. base:0.0 trans:1.95")
+    parser.add_argument("--distances", nargs="+", type=float, default=list(DISTANCES))
     args = parser.parse_args()
+    job = tasks(tuple(args.xc), args.states, tuple(args.distances))
     total_mb = physical_memory_mb()
     cap_mb = MEMORY_FRACTION * total_mb
     workers = max(1, min(args.workers, int(cap_mb // WORKER_PLANNED_MB)))
@@ -210,7 +234,8 @@ def main() -> int:
         "requested_workers": args.workers,
         "workers": workers,
         "worker_max_memory_mb": WORKER_MAX_MEMORY_MB,
-        "tasks": len(tasks()),
+        "tasks": len(job),
+        "xc": args.xc,
     }
     print(json.dumps({"plan": plan}), file=sys.stderr, flush=True)
     if args.dry_run:
@@ -220,7 +245,7 @@ def main() -> int:
     guard.start()
     # One task per worker process, so memory returns to the system each time.
     with mp.Pool(workers, maxtasksperchild=1) as pool:
-        for result in pool.imap_unordered(work, tasks()):
+        for result in pool.imap_unordered(work, job):
             print(json.dumps(result), flush=True)
     stop.set()
     return 0
