@@ -2537,3 +2537,24 @@ measured wetting also depends on the carbon well depth of UFF, which is not
 fitted to the diamond-water contact angle, so the model may overstate the
 wetting. The experimental contact angle of hydrogenated diamond is near 90
 degrees, where small slots are known to fill.
+
+## ADR-0096: Squeezing the pocket does not remove the carried water
+
+Context. A cascade for a pure oxygen tank first needs a step that removes the
+water that stage 1 carries (3.8 per oxygen, ADR-0091). The cheapest candidate:
+raise the rod to just below the bound oxygen before the pocket closes, so
+the smaller pocket pushes water out of the mouth.
+
+Test. `rod_block_json` with the rod face 1.0e-10 m below the iron (oxygen
+still bound at -73 kJ/mol; at 0.5e-10 m it falls to -18). `pocket_water_md.py
+--o2 bound`, 1 ns, two seeds: 3.60 and 3.71 water molecules in the pocket,
+at most 7, empty 0.5-1 percent of the time. With the rod at 1.5e-10 m it was
+3.8. The water sits beside and above the bound oxygen, toward the mouth, not
+under it. Squeezing from below fails.
+
+Consequence. A chain of liquid-phase stages does not purify either: every
+stage that loads from liquid carries about four water molecules per oxygen,
+whatever the oxygen concentration of its feed. The size relation points the
+other way: water (kinetic diameter 2.65e-10 m) is smaller than oxygen
+(3.46e-10 m). So water cannot be kept out by size, but it can be let out by
+size. Zeolite 3A dries gases on this principle.
