@@ -2503,3 +2503,37 @@ character, normal for Fe-O2 but a sign of multireference character). It is
 the Fe(NH3)4 proxy, not a site built on diamond. The switch amplitudes are
 estimates good to perhaps 30 kJ/mol; the absolute energies are less
 certain.
+
+## ADR-0095: Option A fails its gas-space test: water floods a diamond slot
+
+Context. Option A (ADR-0092) needs a permanent gas space in the collection
+chamber, held in a slot between hydrogen-capped diamond walls. Kill test: a
+slot that starts dry must stay dry in contact with liquid water.
+
+Method. `slot_json` writes two parallel 3.2 nm plates with reconstructed
+(001) faces; `scripts/slot_water_md.py` puts them in SPC/E water with a free
+liquid surface (near zero pressure), OpenMM, 310 K, 1 ns, dry and wet starts,
+gaps 1.0, 1.5 and 2.0 nm between the facing carbon planes. One process,
+340 MB.
+
+Results (water in the slot, mean of the last 500 ps):
+
+| Gap | Dry start | Wet start | Fill of a liquid-density slot |
+|---|---|---|---|
+| 1.0 nm | 171.7 | 172.5 | 0.75 |
+| 1.5 nm | 299.1 | 298.5 | 0.80 |
+| 2.0 nm | 440.0 | 441.6 | 0.85 |
+
+Every dry slot filled within a few hundred ps to the same count as the wet
+start. The fill is below 1 only because the layer next to each wall is
+excluded. Hydrogen-capped diamond with UFF walls is wetted, so capillary
+action floods the chamber. Option A fails as designed: its gas space cannot
+form in a diamond slot.
+
+What would be needed. A strongly water-repelling wall (for example a
+fluorinated surface, contact angle above about 110 degrees) or a positive gas
+pressure that holds the meniscus. Either must be tested the same way. The
+measured wetting also depends on the carbon well depth of UFF, which is not
+fitted to the diamond-water contact angle, so the model may overstate the
+wetting. The experimental contact angle of hydrogenated diamond is near 90
+degrees, where small slots are known to fill.
