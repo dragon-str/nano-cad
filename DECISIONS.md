@@ -2558,3 +2558,43 @@ whatever the oxygen concentration of its feed. The size relation points the
 other way: water (kinetic diameter 2.65e-10 m) is smaller than oxygen
 (3.46e-10 m). So water cannot be kept out by size, but it can be let out by
 size. Zeolite 3A dries gases on this principle.
+
+## ADR-0097: Drain channel: no size window, but the O2 loss is tolerable
+
+Context. ADR-0096 proposed a tank that drains its carried water out through
+channels too narrow for oxygen. Kill test M28-09.
+
+Rigid scan (`channel_scan_json`, hydroxyl-lined through-channels in a 1 nm
+diamond slab, every orientation). The lattice gives only discrete sizes. At a
+carbon radius of 3.6e-10 m both water and oxygen are blocked; at 3.8e-10 m
+(free radius 1.36e-10 m) both pass with no barrier. There is no size window:
+end-on O2 is no wider than the oxygen atom of water. The kinetic diameters
+(2.65 vs 3.46 A) come from rotating gas molecules and do not apply in a
+channel that aligns them.
+
+The real requirement is milder. Drained water carries the oxygen that is
+dissolved in it. Plain water at 1000 atm holds about 1.9e-2 O2 per water
+(Henry, extrapolated), so with four waters per pumped oxygen the drain would
+return 7.7 percent of the oxygen. A channel that excludes dissolved oxygen by
+dG divides that by exp(dG / RT).
+
+MD with Widom insertion (`channel_water_md.py`, SPC/E, charged hydroxyl
+lining, 310 K, 1 bar). Bulk excess chemical potential of O2: +9.0 kJ/mol in
+three 1 ns runs, against about +8.4 measured, which checks the method. In the
+channel the Widom average is not converged: at 4.5e-10 m it gave +16, +38
+and +63 kJ/mol in three runs, so exclusion 7 to 54 kJ/mol; at 3.8e-10 m, +8.
+Widom overestimates in a dense region, so the lowest value is the safest:
+exclusion about 7 kJ/mol, a factor of about 15.
+
+Consequence. The drain returns about 0.5 percent of the pumped oxygen at 1000
+atm (estimate), and less at lower tank pressure. That is tolerable. The
+remaining risk is not the loss while draining but the leak while idle: if
+oxygen can pass the water in the channel, the full tank bleeds by diffusion
+(estimate: about 5e6 O2/s per channel at 4.5e-10 m, which empties a
+respirocyte-scale tank in minutes). Only a strictly single-file channel,
+where oxygen cannot overtake water, or a valve that opens the drain only
+while it drains, stops that. The 3.8e-10 m channel is single-file.
+
+Next test: a pressure-driven MD run through the single-file channel with
+oxygen at high concentration on the tank side, counting water and oxygen
+transits directly, with and without flow.
