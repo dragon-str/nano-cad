@@ -2598,3 +2598,42 @@ while it drains, stops that. The 3.8e-10 m channel is single-file.
 Next test: a pressure-driven MD run through the single-file channel with
 oxygen at high concentration on the tank side, counting water and oxygen
 transits directly, with and without flow.
+
+## ADR-0098: The single-file drain passes water and holds oxygen (estimate)
+
+Context. ADR-0097 left one risk for the drain: oxygen leaking through the
+channel while the tank is idle. Test M28-10 on the hydroxyl-lined 3.8e-10 m
+channel (free radius 1.36e-10 m), `scripts/drain_transit_md.py`.
+
+Transit counts (2 ns each, SPC/E, about 1 M dissolved O2 on the tank side,
+pressure by a constant force on each water, Zhu et al. 2002). The channel
+holds 4.0 to 4.7 waters in single file.
+
+| dP | Water up | Water down | Net water per ns | O2 transits |
+|---|---|---|---|---|
+| 0 | 3 | 9 | -3 | 0 |
+| 200 MPa | 38 | 1 | 18.5 | 0 |
+| 500 MPa | 76 | 0 | 38 | 0 |
+
+The flow is roughly linear in pressure: about 9e9 water/s per channel at
+100 MPa (1000 atm). A tank that takes 3e8 O2/s brings 1.2e9 water/s, so one
+channel drains it. No oxygen crossed in 6 ns, but that bound is weak.
+
+Umbrella sampling of one O2 along the axis (41 windows 0.06 nm apart, 150 ps
+each, WHAM). The PMF inside the channel averages +8.9 kJ/mol, in line with
+the Widom value of +8 (ADR-0097). The peak is 21 kJ/mol above the mean bulk
+level. The two bulk ends differ by about 9 kJ/mol, which measures how far
+the profile is from convergence. A solubility-diffusion estimate with an
+assumed D of 1e-9 m^2/s gives an idle leak of 7.6e5 O2/s per channel at 1 M.
+A tank of 3e9 O2 would lose half in about an hour. At one fill and discharge
+per circulation (about a minute) that is about 1.5 percent per cycle. With
+the 9 kJ/mol uncertainty the range is about 0.05 to 45 percent.
+
+Self-sealing. The channel wets, so gas oxygen at 1000 atm cannot push the
+water out of it: the capillary entry pressure 2 gamma / r is about 7e8 Pa
+(continuum extrapolation). The blood side keeps it full.
+
+Conclusion. The drain passes the transit test as an estimate: water flows,
+no oxygen was seen to cross, and the estimated idle leak is tolerable at the
+central value. Tightening the PMF (longer windows, both pull directions) is
+needed before the number is used in a design budget.
