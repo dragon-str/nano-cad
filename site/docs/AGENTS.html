@@ -28,6 +28,9 @@ cargo test --workspace
 cargo bench            # timing only, not a gate
 pytest python/tests
 just verify            # runs all gates</code></pre>
+<h2>Resource limits (hard rule)</h2>
+<p>The development machine is a Mac mini with 16 GB of memory. On 2026-09-25 a quantum-chemistry run started 10 PySCF workers at 3 GB each, used 27 GB and crashed the machine.</p>
+<ul><li>Before any parallel or long job, read the memory size (<code>sysctl -n hw.memsize</code>) and plan the total. All jobs together must stay under 40 percent of physical memory (about 6.5 GB).</li><li>A parallel script must set a per-worker memory budget, cap its worker count from that budget, and run a watchdog that stops every worker when the summed resident memory passes the cap. <code>scripts/fe_o2_switch_scan.py</code> is the model.</li><li>Run one heavy job at a time. Do not start a second job while one runs.</li><li>Print the plan (<code>--dry-run</code>) before a new heavy run.</li><li>Keep Python environments out of <code>/tmp</code>; macOS clears it. Use <code>~/.cache/nano-cad/</code> (for example <code>~/.cache/nano-cad/qm</code>).</li></ul>
 <h2>Definition of done</h2>
 <p>A task is done only when all of these are true.</p>
 <ul><li>The code compiles with no warnings.</li><li>Tests are added and pass.</li><li>A finite-difference gradient test exists for any new force term.</li><li>The energy-conservation check passes for any new integrator or thermostat.</li><li>The relevant docs are updated.</li><li><code>TASKS.md</code> shows the task checked with a result note.</li><li>No GPL code was copied.</li></ul>

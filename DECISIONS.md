@@ -2412,3 +2412,46 @@ this is not modelled. (3) Every energy uses the Fe(NH3)4 proxy wells, UFF
 walls, a frozen solid and no polarization. (4) The residence times come from
 six short runs and are uncertain by a factor of a few. The conclusion holds
 unless the uncertainty exceeds about a factor of 30.
+
+## ADR-0093: Option B, a strain switch on the iron: large effect, weak evidence
+
+Context. Option B releases oxygen by a change of chemistry, not by a push. A
+cam strains the atoms that hold the iron so that the Fe-O2 bond changes
+between the inlet and the outlet. Kill test: some strain must change the
+binding by at least 45-50 kJ/mol.
+
+Method. `scripts/fe_o2_switch_scan.py`, Fe(NH3)4 proxy, UKS PBE/def2-SVP,
+rigid fragments, three frame spins, O2 at three distances (triplet) and one
+quintet. Modes: the iron domed out of the N4 plane (0.3, 0.6 A), the Fe-N
+bonds stretched (2.35, 2.55 A), and an NH3 pushed onto the back of the iron
+(trans, 2.10, 1.95 A). 50 calculations, 3 workers, peak 4.6 GB. 23 of the 50
+did not converge.
+
+Results (binding enthalpy against the strained frame, kJ/mol; converged
+calculations only where a pair exists):
+
+| State | All points | Converged only |
+|---|---|---|
+| unstrained | -129 | -93 |
+| dome 0.3 A | -135 | -93 |
+| dome 0.6 A | -94 | no converged pair |
+| stretch 2.35 A | -176 | -153 |
+| stretch 2.55 A | -156 | -167 |
+| trans NH3 2.10 A | -203 | -203 |
+| trans NH3 1.95 A | -225 | -202 |
+
+Finding. Stretch and trans strain make the bond much stronger: a trans
+ligand adds about 110 kJ/mol against the unstrained site (converged points).
+Doming weakens it by about 35 kJ/mol, and only at 0.6 A, where no pair
+converged. So the switch works in the reverse sense: a weak resting site,
+and a cam that pushes a ligand onto the back of the iron at the inlet to load,
+then withdraws at the outlet to release. The amplitude passes the 45-50
+kJ/mol test by about a factor of two.
+
+Limits. The evidence is weak. Half the calculations did not converge. PBE is
+known to overbind O2 to iron by tens of kJ/mol, so the absolute energies are
+too negative. The unstrained site at -93 kJ/mol is too strong to release into
+a tank, so a real design needs a weaker resting site, which this proxy does
+not have. Rigid fragments, no relaxation of the O2 pose, no solvent. The next
+test must use a better method (a hybrid functional or a spin-state-checked
+calculation) on a site that can exist on diamond.
