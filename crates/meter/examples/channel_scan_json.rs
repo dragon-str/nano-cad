@@ -29,14 +29,22 @@ fn sphere(count: usize) -> Vec<[f64; 3]> {
         .map(|i| {
             let z = 1.0 - 2.0 * (i as f64 + 0.5) / count as f64;
             let r = (1.0 - z * z).sqrt();
-            [r * (golden * i as f64).cos(), r * (golden * i as f64).sin(), z]
+            [
+                r * (golden * i as f64).cos(),
+                r * (golden * i as f64).sin(),
+                z,
+            ]
         })
         .collect()
 }
 
 /// Rotation matrix taking the z axis to `d`, then spun by `spin` about `d`.
 fn frame(d: [f64; 3], spin: f64) -> [[f64; 3]; 3] {
-    let helper = if d[0].abs() < 0.9 { [1.0, 0.0, 0.0] } else { [0.0, 1.0, 0.0] };
+    let helper = if d[0].abs() < 0.9 {
+        [1.0, 0.0, 0.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
     let mut u = [
         helper[1] * d[2] - helper[2] * d[1],
         helper[2] * d[0] - helper[0] * d[2],
@@ -50,8 +58,16 @@ fn frame(d: [f64; 3], spin: f64) -> [[f64; 3]; 3] {
         d[0] * u[1] - d[1] * u[0],
     ];
     let (s, c) = spin.sin_cos();
-    let a = [c * u[0] + s * v[0], c * u[1] + s * v[1], c * u[2] + s * v[2]];
-    let b = [-s * u[0] + c * v[0], -s * u[1] + c * v[1], -s * u[2] + c * v[2]];
+    let a = [
+        c * u[0] + s * v[0],
+        c * u[1] + s * v[1],
+        c * u[2] + s * v[2],
+    ];
+    let b = [
+        -s * u[0] + c * v[0],
+        -s * u[1] + c * v[1],
+        -s * u[2] + c * v[2],
+    ];
     // Columns: a, b, d. Body x -> a, body y -> b, body z -> d.
     [[a[0], b[0], d[0]], [a[1], b[1], d[1]], [a[2], b[2], d[2]]]
 }
@@ -113,7 +129,9 @@ fn main() {
         ) {
             Ok(part) => part,
             Err(error) => {
-                rows.push(format!("{{\"radius_m\":{radius_m:.3e},\"error\":\"{error}\"}}"));
+                rows.push(format!(
+                    "{{\"radius_m\":{radius_m:.3e},\"error\":\"{error}\"}}"
+                ));
                 continue;
             }
         };
@@ -132,7 +150,11 @@ fn main() {
             .iter()
             .filter(|(p, _, _)| p[2].abs() < 0.4 * THICKNESS_M)
             .map(|(p, _, e)| {
-                let r = if *e == Element::HYDROGEN { 1.2e-10 } else { 1.52e-10 };
+                let r = if *e == Element::HYDROGEN {
+                    1.2e-10
+                } else {
+                    1.52e-10
+                };
                 p[0].hypot(p[1]) - r
             })
             .fold(f64::INFINITY, f64::min);
@@ -148,7 +170,8 @@ fn main() {
                     for oy in [-0.4e-10, 0.0, 0.4e-10] {
                         for d in &directions {
                             for s in 0..spins {
-                                let rot = frame(*d, std::f64::consts::TAU * s as f64 / spins as f64);
+                                let rot =
+                                    frame(*d, std::f64::consts::TAU * s as f64 / spins as f64);
                                 best = best.min(energy_at(&wall, g, [ox, oy, z], &rot));
                             }
                         }
@@ -161,7 +184,11 @@ fn main() {
             let kj = barrier * AVOGADRO / 1.0e3;
             cells.push(format!(
                 "\"{id}_barrier_kj_per_mol\":{}",
-                if kj.is_finite() { format!("{kj:.1}") } else { "null".to_string() }
+                if kj.is_finite() {
+                    format!("{kj:.1}")
+                } else {
+                    "null".to_string()
+                }
             ));
             let _ = steps;
         }

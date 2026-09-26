@@ -12,7 +12,10 @@ fn main() {
     let group: f64 = args.first().and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let radius_m: f64 = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(3.8e-10);
     let thickness_m: f64 = args.get(2).and_then(|v| v.parse().ok()).unwrap_or(1.0e-9);
-    let path = args.get(3).cloned().unwrap_or_else(|| "channel.json".to_string());
+    let path = args
+        .get(3)
+        .cloned()
+        .unwrap_or_else(|| "channel.json".to_string());
     let part = match BindingPocketGenerator.generate(
         &ParameterSet::new()
             .with("pocket_radius_m", radius_m)
