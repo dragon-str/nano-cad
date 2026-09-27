@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Respirocyte oxygen chain: feasibility summary - Nano-CAD docs</title>
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body class="doc-page">
+    <header>
+      <a href="index.html">Nano-CAD docs</a>
+      <span><a href="../index.html">Three-scale viewer</a></span>
+    </header>
+    <main>
+<h1>Respirocyte oxygen chain: feasibility summary</h1>
+<p>Status: simulated estimates, 2026-09-28. Nothing here is built or validated. Each line names the test, the method, the result and the main uncertainty. The decision records (ADR) in <code>DECISIONS.md</code> hold the details.</p>
+<h2>The design under test</h2>
+<ol><li>A rotor with small pockets on its rim takes oxygen from blood.</li><li>Each pocket holds one heme-like iron site (Fe-porphine with an axial ligand). The site binds oxygen when the iron is flat.</li><li>At the outlet a cam pulls the axial ligand. The iron domes 0.3 A out of the ring plane, the bond weakens by about 50 kJ/mol, and the oxygen leaves into the tank.</li><li>Each pocket also carries about four water molecules. The tank wall has single-file drain channels lined with hydroxyl groups. The tank pressure pushes the water out through them; the oxygen stays in.</li><li>The tank is built gas-filled and never falls below a 10 atm cushion.</li></ol>
+<h2>Results</h2>
+<table><thead><tr><th>Link</th><th>Test</th><th>Method</th><th>Result</th><th>Main uncertainty</th><th>ADR</th></tr></thead><tbody><tr><td>Gear pump (rejected)</td><td>release at the mesh</td><td>geometry</td><td>the other gear never reaches the bound O2; each gap carries about 100 waters</td><td>none: the design fails</td><td>0089, 0090</td></tr><tr><td>Site selects O2 over water</td><td>competition at alveolar pressures</td><td>Fe(NH3)4 proxy, PBE; Langmuir</td><td>O2 0.995, water 7e-12</td><td>proxy site, PBE</td><td>0084, 0086, 0089</td></tr><tr><td>Pocket size</td><td>water in the pocket</td><td>OpenMM, SPC/E, 1 ns</td><td>20 waters (7.1 A bore), 3.8 beside bound O2 (5.6 A bore)</td><td>UFF walls, frozen solid</td><td>0090, 0091</td></tr><tr><td>Squeezing the water out</td><td>rod raised under the O2</td><td>same MD</td><td>3.6-3.7 waters remain</td><td>as above</td><td>0096</td></tr><tr><td>Gas chamber (option A, rejected)</td><td>slot wetting</td><td>same MD, 1-2 nm slots</td><td>every dry slot floods</td><td>UFF carbon-water well not fitted</td><td>0095</td></tr><tr><td>Drain: size selection</td><td>rigid scan</td><td>UFF, all orientations</td><td>no size window: 3.6 A blocks both, 3.8 A passes both</td><td>lattice gives discrete sizes</td><td>0097</td></tr><tr><td>Drain: water flow</td><td>pressure-driven MD</td><td>2 ns at 0, 200, 500 MPa</td><td>about 9e9 water/s per channel at 1000 atm; one channel suffices</td><td>force-driven pressure model</td><td>0098</td></tr><tr><td>Drain: O2 loss while draining</td><td>Widom insertion</td><td>MD</td><td>about 0.5 % of pumped O2</td><td>noisy insertion average</td><td>0097</td></tr><tr><td>Drain: idle leak</td><td>umbrella sampling, forward and reverse</td><td>82 windows, WHAM</td><td>1-4 % of a full tank per 60 s cycle</td><td>assumed diffusion coefficient; end mismatch 7-9 kJ/mol</td><td>0099</td></tr><tr><td>Release switch, proxy</td><td>strain scan</td><td>Fe(NH3)4, TPSSh and B3LYP</td><td>doming weakens the bond by about 100 kJ/mol</td><td>proxy, rigid</td><td>0094</td></tr><tr><td>Release switch, heme-like site</td><td>dome scan</td><td>Fe-porphine, PBE and B3LYP</td><td>switch 50 (PBE) and 57 (B3LYP) kJ/mol; at least 32 needed</td><td>absolute level differs by 63 kJ/mol between methods; anchored to myoglobin P50</td><td>0101, 0103</td></tr><tr><td>Tank start-up</td><td>nucleation</td><td>classical nucleation theory</td><td>needs 850-1700 atm supersaturation; use a 10 atm gas cushion</td><td>rate prefactor</td><td>0102</td></tr><tr><td>Energy and power</td><td>budget against Freitas</td><td>arithmetic</td><td>cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures</td><td>Freitas's own engine figure is below the compression minimum</td><td>0100, 0101</td></tr></tbody></table>
+<h2>What passes, what fails, what is open</h2>
+<p>Passes as simulated estimates: selective loading, release by a strain switch, water removal by a drain, idle leak, tank start-up, mean power.</p>
+<p>Fails or exceeds: peak power at a 10 s fill is about 2x the Freitas maximum. A 20 s fill, or a cam that returns more of its energy, would close it.</p>
+<p>Not modelled:</p>
+<ul><li>How the porphine attaches to diamond, and how a cam pulls its lower ligand without breaking the attachment.</li><li>Relaxed geometries. Every quantum-chemistry number uses a rigid geometry.</li><li>Autoxidation of Fe(II) to Fe(III), which stops binding (met-hemoglobin).</li><li>Nitrogen build-up in the tank (a small vent is proposed, not tested).</li><li>Fouling, immune response, manufacturing.</li></ul>
+<h2>How far to trust this</h2>
+<p>Every number stacks model chemistry: proxy or idealized sites, UFF walls, rigid parts, two density functionals that disagree on absolute binding by 63 kJ/mol. Each link carries an uncertainty of tens of kJ/mol or a factor of a few. The chain is internally consistent and no link fails outright, so it earns a better model. It does not show that the device works.</p>
+    </main>
+    <footer>
+      Generated from <code>docs/respirocyte_feasibility.md</code> by
+      <code>scripts/build_docs_site.py</code>. The project reports simulated
+      results. The viewer and its scene are schematic, not a built device. No
+      medical claim.
+    </footer>
+  </body>
+</html>
