@@ -1,0 +1,183 @@
+"""M28-14: the strain switch on a heme-like Fe-N4 site.
+
+The site is an idealized Fe-porphine (D4h, Fe-N 2.00 A) with an axial NH3
+below the iron at 2.10 A. A cam that pulls the axial ligand domes the iron h
+Angstrom out of the ring plane, away from the O2 side; the ring stays planar
+and rigid (the atoms that hold the ring are the rotor). O2 binds on top, end
+on, bent at 60 degrees from the axis.
+
+For each dome h: E_bind = min E(site + O2) - min E(site) - E(O2), and the
+strain cost E(h) - E(0) of the empty and the loaded site.
+
+Method: UKS with density fitting (def2-universal-jkfit), def2-SVP on Fe, N
+and O, 6-31G on ring carbons, STO-3G on hydrogens, grid level 1. `--xc` chooses the functional. Rigid, idealized geometry.
+
+Memory safety as in `fe_o2_switch_scan.py`: 1 GB PySCF budget per worker,
+worker count capped at 40 percent of physical memory, a watchdog, one task
+per worker process, `--dry-run`.
+"""
+
+from __future__ import annotations
+
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ[_v] = "1"
+
+import argparse
+import json
+import multiprocessing as mp
+import sys
+import threading
+import time
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fe_o2_switch_scan import (  # noqa: E402
+    MEMORY_FRACTION,
+    WORKER_MAX_MEMORY_MB,
+    WORKER_PLANNED_MB,
+    physical_memory_mb,
+    watchdog,
+)
+
+O2_BOND = 1.23
+O2_TILT_DEG = 60.0
+AXIAL_N = 2.10
+
+
+def rot(p, k):
+    c, s = np.cos(k * np.pi / 2), np.sin(k * np.pi / 2)
+    return (c * p[0] - s * p[1], s * p[0] + c * p[1], p[2])
+
+
+def porphine():
+    """Idealized planar porphine dianion core, z = 0."""
+    quarter = [
+        ("N", (2.00, 0.00, 0.0)),
+        ("C", (2.83, 1.10, 0.0)),
+        ("C", (2.83, -1.10, 0.0)),
+        ("C", (4.23, 0.675, 0.0)),
+        ("C", (4.23, -0.675, 0.0)),
+        ("H", (5.13, 1.27, 0.0)),
+        ("H", (5.13, -1.27, 0.0)),
+        ("C", (2.43, 2.43, 0.0)),
+        ("H", (3.19, 3.19, 0.0)),
+    ]
+    out = []
+    for k in range(4):
+        out += [(e, rot(p, k)) for e, p in quarter]
+    return out
+
+
+def nh3_below(fe_z):
+    n = np.array([0.0, 0.0, fe_z - AXIAL_N])
+    out = [("N", tuple(n))]
+    for k in range(3):
+        a = np.radians(120 * k)
+        out.append(("H", tuple(n + 1.01 * np.array([0.94 * np.cos(a), 0.94 * np.sin(a), -0.34]))))
+    return out
+
+
+def site(h):
+    fe_z = -h
+    return [("Fe", (0.0, 0.0, fe_z))] + porphine() + nh3_below(fe_z), fe_z
+
+
+def o2(fe_z, d):
+    t = np.radians(O2_TILT_DEG)
+    z = fe_z + d
+    return [("O", (0.0, 0.0, z)), ("O", (O2_BOND * np.sin(t), 0.0, z + O2_BOND * np.cos(t)))]
+
+
+BASIS = {"Fe": "def2-svp", "N": "def2-svp", "O": "def2-svp", "C": "6-31g", "H": "sto-3g"}
+
+
+def scf(atoms, charge, spin2, xc):
+    """Damped, level-shifted first pass, then a second-order (Newton) finish.
+
+    The iron, its donors and the O2 carry def2-SVP; the ring carbons carry
+    6-31G and the hydrogens STO-3G, to keep the basis near 300 functions.
+    Peak resident memory measured at 1.7 GB per process (2026-09-27).
+    """
+    from pyscf import dft, gto
+
+    mol = gto.M(atom=atoms, basis=BASIS, charge=charge, spin=spin2, verbose=0,
+                max_memory=WORKER_MAX_MEMORY_MB)
+    mf = dft.UKS(mol).density_fit(auxbasis="def2-universal-jkfit")
+    mf.xc = xc
+    mf.grids.level = 1
+    mf.init_guess = "atom"
+    mf.damp = 0.5
+    mf.level_shift = 0.5
+    mf.diis_start_cycle = 8
+    mf.max_cycle = 40
+    mf.conv_tol = 1e-5
+    try:
+        mf.kernel()
+        nt = mf.newton()
+        nt.conv_tol = 1e-6
+        nt.max_cycle = 30
+        e = nt.kernel(mf.mo_coeff, mf.mo_occ)
+        return float(e), bool(nt.converged), float(nt.spin_square()[0])
+    except Exception:  # noqa: BLE001
+        return None, False, None
+
+
+def work(task):
+    t0 = time.time()
+    e, ok, s2 = scf(task["atoms"], task["charge"], task["spin2"], task["xc"])
+    out = {k: v for k, v in task.items() if k != "atoms"}
+    out.update(E=e, conv=ok, s2=s2, seconds=round(time.time() - t0))
+    return out
+
+
+def tasks(xc, domes, distances):
+    # The porphine core is a dianion; with Fe(II) and neutral NH3 and O2 the
+    # site is neutral.
+    out = [dict(kind="o2", xc=xc, h=0.0, d=0.0, charge=0, spin2=2,
+                atoms=[("O", (0, 0, 0)), ("O", (0, 0, O2_BOND))])]
+    for h in domes:
+        atoms, fe_z = site(h)
+        for spin2 in (0, 2, 4):
+            out.append(dict(kind="site", xc=xc, h=h, d=0.0, charge=0, spin2=spin2, atoms=atoms))
+        for d in distances:
+            for spin2 in (0, 2):
+                out.append(dict(kind="complex", xc=xc, h=h, d=d, charge=0, spin2=spin2,
+                                atoms=atoms + o2(fe_z, d)))
+    out.sort(key=lambda t: -len(t["atoms"]))
+    return out
+
+
+def main() -> int:
+    p = argparse.ArgumentParser()
+    p.add_argument("--workers", type=int, default=3)
+    p.add_argument("--xc", default="pbe")
+    p.add_argument("--domes", nargs="+", type=float, default=[0.0, 0.3, 0.5])
+    p.add_argument("--distances", nargs="+", type=float, default=[1.80, 2.00])
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--only", type=int, default=None, help="run only the first N tasks (timing)")
+    a = p.parse_args()
+    job = tasks(a.xc, a.domes, a.distances)
+    if a.only:
+        job = job[: a.only]
+    total = physical_memory_mb()
+    cap = MEMORY_FRACTION * total
+    workers = max(1, min(a.workers, int(cap // WORKER_PLANNED_MB)))
+    print(json.dumps({"plan": {"physical_memory_mb": round(total), "cap_mb": round(cap),
+                               "workers": workers, "tasks": len(job), "xc": a.xc}}),
+          file=sys.stderr, flush=True)
+    if a.dry_run:
+        return 0
+    stop = threading.Event()
+    threading.Thread(target=watchdog, args=(cap, stop), daemon=True).start()
+    with mp.Pool(workers, maxtasksperchild=1) as pool:
+        for r in pool.imap_unordered(work, job):
+            print(json.dumps(r), flush=True)
+    stop.set()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

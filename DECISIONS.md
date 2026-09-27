@@ -2700,3 +2700,65 @@ device recovers the compression work at discharge; his pages do not say so.
 (3) Start-up: a tank full of liquid holds only 7e7 O2 dissolved at 1000 atm,
 5 percent of the design load, so an O2 gas phase must nucleate in the tank.
 That has not been tested.
+
+## ADR-0101: A heme-like Fe-N4 site switches O2 when the iron domes 0.3 A
+
+Context. The strain switch (ADR-0094) had only the free Fe(NH3)4 proxy.
+Diamond cannot form a flat Fe-N4 ring itself, but Fe-N4 sites exist in
+carbon materials and in heme. The site is an idealized Fe-porphine held
+rigid by the rotor, with an axial NH3 below the iron. The cam pulls the
+axial ligand, so the iron domes h out of the ring plane away from the O2
+(the hemoglobin T-state motion).
+
+Method. `scripts/heme_switch_scan.py`, UKS PBE, density fitting, def2-SVP on
+Fe, N and O, 6-31G on ring carbons, STO-3G on hydrogens, second-order SCF
+finish, rigid geometry, O2 end-on bent 60 degrees at 1.8 and 2.0 A, site
+spins S = 0, 1, 2, complex spins S = 0, 1. 22 calculations, all converged,
+3 workers, peak 4.0 GB, about 2 hours. A single calculation peaks at 1.7 GB.
+
+Results (kJ/mol).
+
+| Dome h | E_bind | dG at 1 bar (+64 entropy) | Empty-site strain | Loaded-site strain |
+|---|---|---|---|---|
+| 0.0 A | -82.6 | -18.6 | 0 | 0 |
+| 0.3 A | -32.5 | +31.5 | 7.9 | 58.0 |
+| 0.5 A | +19.7 (unbound) | +83.7 | 56.0 | 158.3 |
+
+The flat site loads at the lung: occupancy 0.994 at 0.13 bar. The site domed
+0.3 A releases into a 1000 atm tank (dG +31.5 against the +17.8 needed).
+Doming 0.3 A switches the bond by 50 kJ/mol, as the proxy predicted.
+
+Cycle. Load flat; dome the loaded site (58 kJ/mol); O2 leaves into the tank;
+flatten the empty site (returns 7.9). Cam work 50 kJ/mol against a
+reversible minimum of 23 (0.13 to 1000 atm). Per O2 9.5e-20 J with the water
+work; peak power for a 10 s fill 1.4e-11 W, 2x the Freitas maximum of
+7.3e-12 W (the rod push was 3x). Mean over a 60 s cycle 2.4e-12 W, inside it.
+
+Difference from the proxy. PBE puts the empty site in S = 1 at every dome,
+so the empty site does not rest domed; the proxy with hybrids rested domed
+and high-spin. PBE is known to over-stabilize low spin in iron, so a hybrid
+rerun is the next check: a high-spin domed empty site would cut the cam work.
+
+Limits. Rigid idealized porphine, two O2 distances only, mixed basis, PBE,
+no dispersion. The iron-porphine is attached to diamond only by assumption;
+the attachment chemistry is not modelled.
+
+## ADR-0102: Tank start-up: keep a permanent gas cushion
+
+Context. M28-13. A tank full of liquid holds only 7e7 O2 dissolved at 1000
+atm (5 percent of capacity), so the gas phase must form.
+
+Classical nucleation theory (water surface tension 0.070 N/m, 310 K, kinetic
+prefactor 1e39 per m^3 per s, one event per second in the 1.19e-19 m^3 tank,
+which allows a barrier of 46 kT) gives the supersaturation needed: 1,680 atm
+homogeneous, 1,190 atm on a 90-degree wall, 850 atm at 110 degrees. The tank
+works at 1000 atm, and ADR-0095 found capped diamond wetted, so a bubble does
+not form reliably at operating pressure.
+
+Decision. The tank is built gas-filled and never discharges below a cushion
+of about 10 atm. The cushion costs 1 percent of capacity. A bubble that fills
+the 0.61 um tank has a Laplace pressure of only 4.5 atm, so it is stable.
+The drain keeps the liquid out while the tank pressure exceeds the blood
+pressure. Loss of the cushion (a full discharge or a leak) is a failure mode
+that the controller must prevent. This is an estimate; nucleation rates
+carry orders-of-magnitude uncertainty, which does not change the decision.
