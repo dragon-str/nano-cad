@@ -52,8 +52,9 @@ def rot(p, k):
     return (c * p[0] - s * p[1], s * p[0] + c * p[1], p[2])
 
 
-def porphine():
-    """Idealized planar porphine dianion core, z = 0."""
+def porphine(core=2.00):
+    """Idealized planar porphine dianion core, z = 0, scaled so that Fe-N is
+    `core` Angstrom (a uniform squeeze or stretch of the whole ring)."""
     quarter = [
         ("N", (2.00, 0.00, 0.0)),
         ("C", (2.83, 1.10, 0.0)),
@@ -65,6 +66,8 @@ def porphine():
         ("C", (2.43, 2.43, 0.0)),
         ("H", (3.19, 3.19, 0.0)),
     ]
+    f = core / 2.00
+    quarter = [(e, (p[0] * f, p[1] * f, p[2])) for e, p in quarter]
     out = []
     for k in range(4):
         out += [(e, rot(p, k)) for e, p in quarter]
@@ -80,9 +83,9 @@ def nh3_below(fe_z, axial=AXIAL_N):
     return out
 
 
-def site(h, axial=AXIAL_N):
+def site(h, axial=AXIAL_N, core=2.00):
     fe_z = -h
-    return [("Fe", (0.0, 0.0, fe_z))] + porphine() + nh3_below(fe_z, axial), fe_z
+    return [("Fe", (0.0, 0.0, fe_z))] + porphine(core) + nh3_below(fe_z, axial), fe_z
 
 
 def o2(fe_z, d):
@@ -150,6 +153,19 @@ def tasks(xc, domes, distances):
     return out
 
 
+def pull_empty_tasks(xc, axials):
+    """The empty flat site with the axial NH3 pulled away (M28-19)."""
+    out = [dict(kind="nh3", xc=xc, h=0.0, d=0.0, axial=0.0, charge=0, spin2=0,
+                atoms=nh3_below(0.0, 0.0))]
+    for axial in axials:
+        atoms, _ = site(0.0, axial)
+        for spin2 in (0, 2, 4):
+            out.append(dict(kind="pull_empty", xc=xc, h=0.0, d=0.0, axial=axial, charge=0,
+                            spin2=spin2, atoms=atoms))
+    out.sort(key=lambda t: -len(t["atoms"]))
+    return out
+
+
 def pull_tasks(xc, h, d, axials):
     """The loaded site with the axial NH3 pulled away (the cam lever test)."""
     out = [dict(kind="nh3", xc=xc, h=h, d=d, axial=0.0, charge=0, spin2=0,
@@ -159,6 +175,23 @@ def pull_tasks(xc, h, d, axials):
         for spin2 in (0, 2):
             out.append(dict(kind="pull", xc=xc, h=h, d=d, axial=axial, charge=0, spin2=spin2,
                             atoms=atoms + o2(fe_z, d)))
+    out.sort(key=lambda t: -len(t["atoms"]))
+    return out
+
+
+def core_tasks(xc, cores, domes, d):
+    """M28-18: ring size against dome, empty (S=1, 2) and loaded (S=0, 1)."""
+    out = [dict(kind="o2", xc=xc, core=0.0, h=0.0, d=0.0, charge=0, spin2=2,
+                atoms=[("O", (0, 0, 0)), ("O", (0, 0, O2_BOND))])]
+    for core in cores:
+        for h in domes:
+            atoms, fe_z = site(h, AXIAL_N, core)
+            for spin2 in (2, 4):
+                out.append(dict(kind="site", xc=xc, core=core, h=h, d=0.0, charge=0, spin2=spin2,
+                                atoms=atoms))
+            for spin2 in (0, 2):
+                out.append(dict(kind="complex", xc=xc, core=core, h=h, d=d, charge=0,
+                                spin2=spin2, atoms=atoms + o2(fe_z, d)))
     out.sort(key=lambda t: -len(t["atoms"]))
     return out
 
@@ -173,8 +206,18 @@ def main() -> int:
     p.add_argument("--only", type=int, default=None, help="run only the first N tasks (timing)")
     p.add_argument("--pull", nargs="+", type=float, default=None,
                    help="axial Fe-N distances for the lever test at dome 0 and O2 at 1.85 A")
+    p.add_argument("--cores", nargs="+", type=float, default=None,
+                   help="Fe-N core sizes for the ring-squeeze test (M28-18)")
+    p.add_argument("--empty", action="store_true", help="with --pull: pull the empty site")
     a = p.parse_args()
-    job = pull_tasks(a.xc, 0.0, 1.85, a.pull) if a.pull else tasks(a.xc, a.domes, a.distances)
+    if a.cores:
+        job = core_tasks(a.xc, a.cores, a.domes, 1.85)
+    elif a.pull and a.empty:
+        job = pull_empty_tasks(a.xc, a.pull)
+    elif a.pull:
+        job = pull_tasks(a.xc, 0.0, 1.85, a.pull)
+    else:
+        job = tasks(a.xc, a.domes, a.distances)
     if a.only:
         job = job[: a.only]
     total = physical_memory_mb()

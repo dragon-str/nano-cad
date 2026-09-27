@@ -2817,3 +2817,60 @@ porphyrin core through its meso anchors (C-C bonds carry 4-6 nN). A core
 too small for Fe(II) pushes the iron out of the plane, and the Fe-N bonds
 work in compression, which is stiff. Kill test: scan core size against dome
 and O2 binding.
+
+## ADR-0105: Squeezing the porphyrin core does not dome the loaded iron
+
+Context. M28-18 tested the lever proposed in ADR-0104: squeeze the ring so a
+core too small for the iron pushes it out of plane.
+
+Method. `heme_switch_scan.py --cores 2.06 2.00 1.92 1.85 --domes 0 0.25 0.5`,
+PBE, ring scaled uniformly, empty site S = 1, 2 and loaded site S = 0, 1,
+O2 at 1.85 A. 49 calculations, all converged, peak 4.1 GB.
+
+Results. At every core size the loaded iron is lowest flat (h = 0). The
+ring absorbs the squeeze: a 4 percent smaller core costs 380 kJ/mol, 7.5
+percent costs 1300, almost all in its own C-C and C-N bonds. Binding at
+h = 0 hardly moves (-76, -81, -85, -90 kJ/mol from large to small core).
+Doming relieves an Fe-N bond only by sqrt(core^2 + h^2), so a 1.85 A core
+would need 0.76 A of dome to reach 2.00 A. The lever fails. A few points are
+not monotonic (for example the empty 2.06 A site at h = 0.25) and probably
+landed on excited SCF states; they do not change the conclusion.
+
+Spin check (the question from the hemoglobin comparison). With the core
+expanded to 2.06 A and the iron domed 0.5 A, the empty site is high-spin
+(S = 2), as in deoxy-heme. At the 2.00 A core it stays S = 1, so the fixed
+2.00 A core of the earlier scans biased the resting state.
+
+## ADR-0106: Withdraw the axial ligand instead of forcing the dome
+
+Context. The dome is too stiff to force (ADR-0104, ADR-0105), but the axial
+ligand itself changes O2 binding (the trans effect, ADR-0094). A cam that
+moves the ligand in and out does not fight the ring. Pulling the ligand off
+is meant to break its weak bond; pushing it back is compression.
+
+Method. `heme_switch_scan.py --pull 2.1 3.0 4.0 --empty` (empty flat site,
+S = 0, 1, 2, 10 calculations, all converged) with the loaded pull of
+ADR-0104.
+
+Results (PBE, kJ/mol, relative to the ligand at 2.1 A):
+
+| Axial Fe-N | Empty site | Loaded site | Switch in O2 binding |
+|---|---|---|---|
+| 2.1 A | 0 | 0 | 0 |
+| 3.0 A | 19.6 | 45.7 | 26.2 weaker |
+| 4.0 A | 45.9 | 88.1 | 42.1 weaker |
+
+The four-coordinate empty site is S = 1, as measured for four-coordinate
+Fe(II) porphyrins. Withdrawing the ligand 1.9 A weakens O2 binding by 42
+kJ/mol. With the flat, ligated site at the myoglobin level (-14 kJ/mol at 1
+bar), the withdrawn site sits near +28, above the +17.8 needed to release
+into 1000 atm. The margin is about 10 kJ/mol, so the test passes narrowly.
+
+Force and work. The cam pulls a ligand bond that holds about 1.3 nN, within
+what a diamond arm carries; the bond breaking is intended. Cam work per
+cycle = 88.1 - 45.9 = 42 kJ/mol, less than the forced dome (50-57). Per O2
+8.2e-20 J with the water work; peak power at a 10 s fill 1.2e-11 W, 1.7x the
+Freitas maximum (the dome was 2x, the rod 3x).
+
+Limits. PBE only; rigid flat ring; NH3 as the ligand (histidine in biology);
+the ligand must travel about 2 A. A B3LYP check follows.

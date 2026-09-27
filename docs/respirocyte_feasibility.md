@@ -9,9 +9,9 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 1. A rotor with small pockets on its rim takes oxygen from blood.
 2. Each pocket holds one heme-like iron site (Fe-porphine with an axial
    ligand). The site binds oxygen when the iron is flat.
-3. At the outlet a cam pulls the axial ligand. The iron domes 0.3 A out of
-   the ring plane, the bond weakens by about 50 kJ/mol, and the oxygen
-   leaves into the tank.
+3. At the outlet a cam withdraws the axial ligand about 2 A from the iron.
+   The O2 bond weakens by about 42 kJ/mol, and the oxygen leaves into the
+   tank. Forcing the iron to dome was tested and fails (ADR-0104, 0105).
 4. Each pocket also carries about four water molecules. The tank wall has
    single-file drain channels lined with hydroxyl groups. The tank pressure
    pushes the water out through them; the oxygen stays in.
@@ -33,6 +33,8 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Release switch, proxy | strain scan | Fe(NH3)4, TPSSh and B3LYP | doming weakens the bond by about 100 kJ/mol | proxy, rigid | 0094 |
 | Release switch, heme-like site | dome scan | Fe-porphine, PBE and B3LYP | switch 50 (PBE) and 57 (B3LYP) kJ/mol; at least 32 needed | absolute level differs by 63 kJ/mol between methods; anchored to myoglobin P50 | 0101, 0103 |
 | Cam lever through the axial ligand | pull scan | Fe-porphine, PBE | fails: the axial Fe-N bond gives way at about 1.3 nN; doming needs 3.2-6.6 nN | rigid ring | 0104 |
+| Cam lever by squeezing the ring | core-size scan | Fe-porphine, PBE | fails: the loaded iron stays flat; the ring absorbs the squeeze | uniform ring scaling | 0105 |
+| Release by withdrawing the axial ligand | empty and loaded pull scans | Fe-porphine, PBE | passes narrowly: 42 kJ/mol switch (32 needed); cam work 42 kJ/mol; peak power 1.7x Freitas | PBE only, rigid ring | 0106 |
 | Tank start-up | nucleation | classical nucleation theory | needs 850-1700 atm supersaturation; use a 10 atm gas cushion | rate prefactor | 0102 |
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 
@@ -41,11 +43,12 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 Passes as simulated estimates: selective loading, release by a strain
 switch, water removal by a drain, idle leak, tank start-up, mean power.
 
-Fails or exceeds: peak power at a 10 s fill is about 2x the Freitas maximum.
+Fails or exceeds: peak power at a 10 s fill is about 1.7x the Freitas maximum.
 A 20 s fill, or a cam that returns more of its energy, would close it.
 
-Fails: a cam cannot dome the iron by pulling its axial ligand (ADR-0104).
-The next candidate squeezes the porphyrin core through covalent anchors.
+Fails: a cam cannot force the iron to dome, by pulling its axial ligand
+(ADR-0104) or by squeezing the ring (ADR-0105). Withdrawing the axial
+ligand works instead (ADR-0106).
 
 Not modelled:
 
