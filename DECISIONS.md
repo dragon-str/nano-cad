@@ -2789,3 +2789,31 @@ about four times more strain than hemoglobin uses. That forced strain is what
 the cam supplies.
 
 Memory. Hybrid runs now plan 2.8 GB per worker (2 workers on this machine).
+
+## ADR-0104: The axial lever fails: the Fe-N bond is weaker than the dome
+
+Context. M28-17. The switch of ADR-0101 needs a cam that domes the loaded
+iron 0.3 A. The plan was to pull the axial ligand below the iron.
+
+Force needed. The loaded site costs 58 (PBE) to 60 (B3LYP) kJ/mol to dome
+0.3 A: a mean force of 3.2-3.3 nN and, for a harmonic mode, 6.4-6.6 nN at
+0.3 A.
+
+Force available (`heme_switch_scan.py --pull`, loaded site, O2 at 1.85 A,
+flat ring, axial NH3 pulled from 2.1 to 4.0 A, PBE, 15 calculations, all
+converged, peak 4.0 GB). Energy along the pull: 0, 9.3, 24.7, 39.9, 45.7
+(spin change), 75.0, 88.1 kJ/mol at 2.1, 2.3, 2.5, 2.7, 3.0, 3.4, 4.0 A. The
+steepest slope is about 1.3 nN. The bond holds 88 kJ/mol, more than the dome
+needs, but it cannot hold the force: with the dome stiffness of about
+1300 kJ/mol/A^2, 1.3 nN domes the iron only about 0.06 A before the ligand
+lets go. The lever fails by a factor of 3 to 5.
+
+Consistency with biology. Hemoglobin pulls on its iron through the same
+single proximal Fe-N bond, and its T/R switch is only 12-15 kJ/mol. A single
+dative bond limits how hard any mechanism can pull on the iron.
+
+Next candidate. Put the load on covalent bonds. The cam squeezes the
+porphyrin core through its meso anchors (C-C bonds carry 4-6 nN). A core
+too small for Fe(II) pushes the iron out of the plane, and the Fe-N bonds
+work in compression, which is stiff. Kill test: scan core size against dome
+and O2 binding.

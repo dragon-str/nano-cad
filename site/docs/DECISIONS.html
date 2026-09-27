@@ -556,6 +556,12 @@
 <p>Two methods, one conclusion. The switch amplitude agrees within 7 kJ/mol. The absolute binding differs by 63 kJ/mol: B3LYP is known to underbind O2 to heme, and generalized-gradient functionals are closer. Experiment sets the level: myoglobin at 37 C has a P50 near 0.3-0.4 kPa, so its flat (R-like) site has dG near -14 kJ/mol at 1 bar. PBE gives -18.6 for the flat site here. Taking the experimental level and the computed switch: the flat site loads at the lung, and the domed site sits near +36 to +43 kJ/mol, above the +17.8 needed to release into 1000 atm. The switch needs at least 32 kJ/mol; the two methods give 50 and 57.</p>
 <p>Hemoglobin's own T/R switch is about 12-15 kJ/mol, so this design forces about four times more strain than hemoglobin uses. That forced strain is what the cam supplies.</p>
 <p>Memory. Hybrid runs now plan 2.8 GB per worker (2 workers on this machine).</p>
+<h2>ADR-0104: The axial lever fails: the Fe-N bond is weaker than the dome</h2>
+<p>Context. M28-17. The switch of ADR-0101 needs a cam that domes the loaded iron 0.3 A. The plan was to pull the axial ligand below the iron.</p>
+<p>Force needed. The loaded site costs 58 (PBE) to 60 (B3LYP) kJ/mol to dome 0.3 A: a mean force of 3.2-3.3 nN and, for a harmonic mode, 6.4-6.6 nN at 0.3 A.</p>
+<p>Force available (<code>heme_switch_scan.py --pull</code>, loaded site, O2 at 1.85 A, flat ring, axial NH3 pulled from 2.1 to 4.0 A, PBE, 15 calculations, all converged, peak 4.0 GB). Energy along the pull: 0, 9.3, 24.7, 39.9, 45.7 (spin change), 75.0, 88.1 kJ/mol at 2.1, 2.3, 2.5, 2.7, 3.0, 3.4, 4.0 A. The steepest slope is about 1.3 nN. The bond holds 88 kJ/mol, more than the dome needs, but it cannot hold the force: with the dome stiffness of about 1300 kJ/mol/A^2, 1.3 nN domes the iron only about 0.06 A before the ligand lets go. The lever fails by a factor of 3 to 5.</p>
+<p>Consistency with biology. Hemoglobin pulls on its iron through the same single proximal Fe-N bond, and its T/R switch is only 12-15 kJ/mol. A single dative bond limits how hard any mechanism can pull on the iron.</p>
+<p>Next candidate. Put the load on covalent bonds. The cam squeezes the porphyrin core through its meso anchors (C-C bonds carry 4-6 nN). A core too small for Fe(II) pushes the iron out of the plane, and the Fe-N bonds work in compression, which is stiff. Kill test: scan core size against dome and O2 binding.</p>
     </main>
     <footer>
       Generated from <code>DECISIONS.md</code> by

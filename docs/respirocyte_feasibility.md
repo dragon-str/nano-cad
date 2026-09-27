@@ -32,6 +32,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Drain: idle leak | umbrella sampling, forward and reverse | 82 windows, WHAM | 1-4 % of a full tank per 60 s cycle | assumed diffusion coefficient; end mismatch 7-9 kJ/mol | 0099 |
 | Release switch, proxy | strain scan | Fe(NH3)4, TPSSh and B3LYP | doming weakens the bond by about 100 kJ/mol | proxy, rigid | 0094 |
 | Release switch, heme-like site | dome scan | Fe-porphine, PBE and B3LYP | switch 50 (PBE) and 57 (B3LYP) kJ/mol; at least 32 needed | absolute level differs by 63 kJ/mol between methods; anchored to myoglobin P50 | 0101, 0103 |
+| Cam lever through the axial ligand | pull scan | Fe-porphine, PBE | fails: the axial Fe-N bond gives way at about 1.3 nN; doming needs 3.2-6.6 nN | rigid ring | 0104 |
 | Tank start-up | nucleation | classical nucleation theory | needs 850-1700 atm supersaturation; use a 10 atm gas cushion | rate prefactor | 0102 |
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 
@@ -43,10 +44,12 @@ switch, water removal by a drain, idle leak, tank start-up, mean power.
 Fails or exceeds: peak power at a 10 s fill is about 2x the Freitas maximum.
 A 20 s fill, or a cam that returns more of its energy, would close it.
 
+Fails: a cam cannot dome the iron by pulling its axial ligand (ADR-0104).
+The next candidate squeezes the porphyrin core through covalent anchors.
+
 Not modelled:
 
-- How the porphine attaches to diamond, and how a cam pulls its lower
-  ligand without breaking the attachment.
+- How the porphine attaches to diamond.
 - Relaxed geometries. Every quantum-chemistry number uses a rigid geometry.
 - Autoxidation of Fe(II) to Fe(III), which stops binding (met-hemoglobin).
 - Nitrogen build-up in the tank (a small vent is proposed, not tested).

@@ -71,8 +71,8 @@ def porphine():
     return out
 
 
-def nh3_below(fe_z):
-    n = np.array([0.0, 0.0, fe_z - AXIAL_N])
+def nh3_below(fe_z, axial=AXIAL_N):
+    n = np.array([0.0, 0.0, fe_z - axial])
     out = [("N", tuple(n))]
     for k in range(3):
         a = np.radians(120 * k)
@@ -80,9 +80,9 @@ def nh3_below(fe_z):
     return out
 
 
-def site(h):
+def site(h, axial=AXIAL_N):
     fe_z = -h
-    return [("Fe", (0.0, 0.0, fe_z))] + porphine() + nh3_below(fe_z), fe_z
+    return [("Fe", (0.0, 0.0, fe_z))] + porphine() + nh3_below(fe_z, axial), fe_z
 
 
 def o2(fe_z, d):
@@ -150,6 +150,19 @@ def tasks(xc, domes, distances):
     return out
 
 
+def pull_tasks(xc, h, d, axials):
+    """The loaded site with the axial NH3 pulled away (the cam lever test)."""
+    out = [dict(kind="nh3", xc=xc, h=h, d=d, axial=0.0, charge=0, spin2=0,
+                atoms=nh3_below(0.0, 0.0))]
+    for axial in axials:
+        atoms, fe_z = site(h, axial)
+        for spin2 in (0, 2):
+            out.append(dict(kind="pull", xc=xc, h=h, d=d, axial=axial, charge=0, spin2=spin2,
+                            atoms=atoms + o2(fe_z, d)))
+    out.sort(key=lambda t: -len(t["atoms"]))
+    return out
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--workers", type=int, default=3)
@@ -158,8 +171,10 @@ def main() -> int:
     p.add_argument("--distances", nargs="+", type=float, default=[1.80, 2.00])
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--only", type=int, default=None, help="run only the first N tasks (timing)")
+    p.add_argument("--pull", nargs="+", type=float, default=None,
+                   help="axial Fe-N distances for the lever test at dome 0 and O2 at 1.85 A")
     a = p.parse_args()
-    job = tasks(a.xc, a.domes, a.distances)
+    job = pull_tasks(a.xc, 0.0, 1.85, a.pull) if a.pull else tasks(a.xc, a.domes, a.distances)
     if a.only:
         job = job[: a.only]
     total = physical_memory_mb()

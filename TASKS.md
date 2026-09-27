@@ -1693,4 +1693,5 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-14** Heme-like Fe-N4 strain-switch site. <!-- result: PBE, 22/22 converged. Flat -82.6, domed 0.3 A -32.5, domed 0.5 A unbound (kJ/mol). Loads at the lung (0.994), releases into 1000 atm at 0.3 A. Cam work 50 kJ/mol vs 23 minimum; peak power 2x Freitas (ADR-0101). -->
 - [x] **M28-15** Hybrid check of the heme switch. <!-- result: B3LYP switch 57 kJ/mol (PBE 50). Absolute binding differs by 63 (B3LYP underbinds); myoglobin's P50 sets the flat level near -14 kJ/mol, so load and release both pass. Empty domed site stays S=1; cam work about 50-57 kJ/mol (ADR-0103). -->
 - [x] **M28-16** Feasibility summary. <!-- result: `docs/respirocyte_feasibility.md`: every link, method, result and uncertainty in one table. -->
-- [ ] **M28-17** Attach the heme-like site to diamond and drive its dome. <!-- result: open. -->
+- [x] **M28-17** Drive the dome through the axial ligand. <!-- result: FAILED. Doming the loaded site needs 3.2-6.6 nN; the axial Fe-N bond gives way at about 1.3 nN (PBE pull scan, 15/15 converged). The cam would pull the ligand off (ADR-0104). -->
+- [ ] **M28-18** Core-compression lever. <!-- result: open. Squeeze the porphyrin core through covalent meso anchors; scan core size against dome and O2 binding. -->
