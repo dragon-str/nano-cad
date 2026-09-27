@@ -2637,3 +2637,66 @@ Conclusion. The drain passes the transit test as an estimate: water flows,
 no oxygen was seen to cross, and the estimated idle leak is tolerable at the
 central value. Tightening the PMF (longer windows, both pull directions) is
 needed before the number is used in a design budget.
+
+## ADR-0099: The drain PMF is reproducible; idle leak about 1-4 % per cycle
+
+Context. ADR-0098 had one 150 ps-per-window PMF whose two bulk ends differed
+by 9 kJ/mol. M28-11 reruns it: 41 windows of 300 ps pulled from the tank side
+(`--save fwd.npz`), 41 windows of 300 ps pulled back from the far side with
+a new seed (`--reverse`), and WHAM over both (`--combine`).
+
+Results. The forward and reverse profiles agree within about 3 kJ/mol at
+every point, so the profile is reproducible. Peak 22.6 (forward), 26.2
+(reverse), 24.4 kJ/mol (both) against the mean of the two ends. Channel
+interior +10.6, +13.4, +12.0. The ends still differ by 6.7 to 9.2 kJ/mol in
+both directions, so this is not sampling noise: the windows reach only
+0.7 nm past the slab, and the far face holds an O2 adsorption well of about
+-6 kJ/mol. The tank-side end sits about 3.5 kJ/mol above the mean.
+
+Leak. Solubility-diffusion with an assumed D of 1e-9 m^2/s, 1 M O2 on the
+tank side: 1.2e5 to 4.0e5 O2/s per channel (2.3e5 combined), and about 4x
+more when the barrier is taken from the tank-side level. For the Freitas tank
+(1.51e9 O2) that is about 1 to 4 percent of a full tank per 60 s cycle. The
+leaked oxygen enters the blood, so it is lost to control, not to the body.
+
+Limits. D in a single-file channel is assumed, not measured; the diffusion
+coefficient of O2 in a single-file water column is likely lower, which lowers
+the leak. The windows should reach 1.5 nm past each face for a true bulk
+reference.
+
+## ADR-0100: Budget of the drained-tank respirocyte against Freitas
+
+Reference figures (Freitas, "Respirocytes", 1996-1999 revision on
+foresight.org, via web.archive.org). O2 tank 1.19e-19 m^3 holding 1.51e9 O2
+at 1000 atm. Fill or discharge in about 10 s. Circulation about 60 s. Sorting
+rotors: 1e6 molecules/s and 1e-22 J/molecule sorted, up to 1e-19 J/molecule
+against 30,000 atm. Glucose engines 3e-13 W each, 7.3e-12 W with all 12
+running. Water ballast tank 6.07e9 molecules. Rotor turn rate and the 236x
+derivation are not given there.
+
+Budget of this design (every entry an estimate):
+
+| Item | Value | Against Freitas |
+|---|---|---|
+| Fill rate | 1.5e8 O2/s | same |
+| Water carried in | 4 per O2, 6.0e9 per fill | equals his whole ballast tank |
+| Drain capacity, one channel | 9e9 water/s at 1000 atm; blood osmotic pull 7.6 atm at start | enough |
+| O2 lost while draining | 0.5 % | none in his design |
+| Idle leak, one channel | 1-4 % of the tank per 60 s cycle | none in his design |
+| N2 carried in | 6e4 per fill (vent needed) | none in his design |
+| Energy per O2, rod push | 1.45e-19 J | about his 1e-19 J head-pressure cost |
+| Energy per O2, ideal switch | 5.0e-20 J (reversible compression 3.8e-20 plus water) | half his head-pressure cost |
+| Peak power, 10 s fill, rod push | 2.2e-11 W | 3x his 7.3e-12 W maximum |
+| Peak power, 10 s fill, ideal switch | 7.6e-12 W | equal to his maximum |
+| Whole-body power, 5.36e12 devices, one fill per minute | 20 W (push), 7 W (switch) | inside his 17-340 W |
+
+Observations. (1) The only budget line that fails is peak power with the
+rod push: the push dissipates the full 80 kJ/mol binding energy on every
+molecule. The strain switch, if its cam stores and returns the strain energy,
+fits Freitas's power. (2) Freitas's quoted engine output (3e-13 W at 1e8
+molecules/s, 3e-21 J/molecule) is below the reversible work to compress O2
+from 0.13 to 1000 atm (3.8e-20 J/molecule). That is consistent only if the
+device recovers the compression work at discharge; his pages do not say so.
+(3) Start-up: a tank full of liquid holds only 7e7 O2 dissolved at 1000 atm,
+5 percent of the design load, so an O2 gas phase must nucleate in the tank.
+That has not been tested.

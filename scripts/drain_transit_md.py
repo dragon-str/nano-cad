@@ -58,9 +58,20 @@ def main() -> int:
     p.add_argument("--umbrella", action="store_true", help="PMF of one O2 along the channel axis")
     p.add_argument("--window-ps", type=float, default=200.0)
     p.add_argument("--window-step-nm", type=float, default=0.1)
+    p.add_argument("--reverse", action="store_true", help="walk the windows from the far side back")
+    p.add_argument("--save", default=None, help="write the window series to this .npz")
+    p.add_argument("--combine", nargs="+", default=None, help="WHAM over saved .npz files; no MD")
     a = p.parse_args()
 
     g = json.load(open(a.geometry))
+    if a.combine:
+        centres, series = [], []
+        for path in a.combine:
+            d = np.load(path, allow_pickle=True)
+            centres += list(d["centres"])
+            series += list(d["series"])
+        return report(a, centres, series, float(d["slab_lo"]), float(d["slab_hi"]), float(d["zc"]),
+                      float(d["k_z"]), float(d["r_cyl"]), g)
     atoms = g["atoms"]
     solid = np.array([x[1:4] for x in atoms]) / 10.0
     elements = [x[0] for x in atoms]
@@ -254,6 +265,8 @@ def umbrella(a, ctx, integ, o2_first, slab_lo, slab_hi, zc, k_z, r_cyl, g) -> in
     """Windows along z from the tank side to the far side; WHAM; leak rate."""
     kt = 0.0083145 * 310.0
     centres = np.arange(slab_lo - 0.7, slab_hi + 0.7 + 1e-9, a.window_step_nm)
+    if a.reverse:
+        centres = centres[::-1]
     series = []
     # Pull the O2 from its start to the first window.
     for z0 in centres:
@@ -267,8 +280,18 @@ def umbrella(a, ctx, integ, o2_first, slab_lo, slab_hi, zc, k_z, r_cyl, g) -> in
         series.append(np.array(zs))
         print(json.dumps({"window": round(float(z0), 3), "mean_z": round(float(np.mean(zs)), 3),
                           "sd": round(float(np.std(zs)), 4)}), file=sys.stderr, flush=True)
+    if a.save:
+        np.savez(a.save, centres=centres, series=np.array(series, dtype=object), k_z=k_z,
+                 slab_lo=slab_lo, slab_hi=slab_hi, zc=zc, r_cyl=r_cyl, thickness=g["thickness"],
+                 radius=g["radius"])
+    return report(a, list(centres), series, slab_lo, slab_hi, zc, k_z, r_cyl, g)
+
+
+def report(a, centres, series, slab_lo, slab_hi, zc, k_z, r_cyl, g) -> int:
+    kt = 0.0083145 * 310.0
+    centres = np.array(centres)
     # WHAM on a grid.
-    edges = np.arange(centres[0] - 0.3, centres[-1] + 0.3, 0.02)
+    edges = np.arange(centres.min() - 0.3, centres.max() + 0.3, 0.02)
     mids = 0.5 * (edges[1:] + edges[:-1])
     hist = np.array([np.histogram(zs, edges)[0] for zs in series], float)
     n = hist.sum(axis=1)
@@ -302,6 +325,7 @@ def umbrella(a, ctx, integ, o2_first, slab_lo, slab_hi, zc, k_z, r_cyl, g) -> in
         "radius_A": g["radius"],
         "windows": len(centres),
         "window_ps": a.window_ps,
+        "bulk_end_mismatch_kj": round(float(np.nanmean(w[(mids < slab_lo - 0.3) & ok]) - np.nanmean(w[(mids > slab_hi + 0.3) & ok])), 2),
         "barrier_kj": round(barrier, 1),
         "channel_mean_kj": round(float(np.nanmean(w[inside])), 1) if inside.any() else None,
         "empty_bins_in_span": int((~ok & (mids > slab_lo - 0.3) & (mids < slab_hi + 0.3)).sum()),
