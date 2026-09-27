@@ -2762,3 +2762,30 @@ The drain keeps the liquid out while the tank pressure exceeds the blood
 pressure. Loss of the cushion (a full discharge or a leak) is a failure mode
 that the controller must prevent. This is an estimate; nucleation rates
 carry orders-of-magnitude uncertainty, which does not change the decision.
+
+## ADR-0103: B3LYP confirms the switch size; experiment fixes the absolute level
+
+Context. M28-15 reruns the heme-like site of ADR-0101 with B3LYP at dome 0
+and 0.3 A (15 calculations, all converged, 3 workers, peak 5.8 GB).
+
+Results (kJ/mol). Flat: E_bind -19.9 (dG at 1 bar +44). Domed 0.3 A: +37.5
+(unbound). Switch 57.4 (PBE: 50.1). Loaded-site strain 60.0 (PBE 58.0),
+empty-site strain 2.6 (PBE 7.9). The empty domed site stays S = 1 in both
+methods (S = 2 lies 13 above), so the hoped-for high-spin saving does not
+appear, and the cam work stays about 50-57 kJ/mol.
+
+Two methods, one conclusion. The switch amplitude agrees within 7 kJ/mol.
+The absolute binding differs by 63 kJ/mol: B3LYP is known to underbind O2 to
+heme, and generalized-gradient functionals are closer. Experiment sets the
+level: myoglobin at 37 C has a P50 near 0.3-0.4 kPa, so its flat (R-like)
+site has dG near -14 kJ/mol at 1 bar. PBE gives -18.6 for the flat site here.
+Taking the experimental level and the computed switch: the flat site loads at
+the lung, and the domed site sits near +36 to +43 kJ/mol, above the +17.8
+needed to release into 1000 atm. The switch needs at least 32 kJ/mol; the
+two methods give 50 and 57.
+
+Hemoglobin's own T/R switch is about 12-15 kJ/mol, so this design forces
+about four times more strain than hemoglobin uses. That forced strain is what
+the cam supplies.
+
+Memory. Hybrid runs now plan 2.8 GB per worker (2 workers on this machine).

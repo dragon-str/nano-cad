@@ -164,7 +164,10 @@ def main() -> int:
         job = job[: a.only]
     total = physical_memory_mb()
     cap = MEMORY_FRACTION * total
-    workers = max(1, min(a.workers, int(cap // WORKER_PLANNED_MB)))
+    # A hybrid functional peaked at 2.0 GB for one process and 5.8 GB for
+    # three (2026-09-28), close to the cap, so plan 2.8 GB for a hybrid.
+    planned_mb = WORKER_PLANNED_MB if a.xc == "pbe" else 2800
+    workers = max(1, min(a.workers, int(cap // planned_mb)))
     print(json.dumps({"plan": {"physical_memory_mb": round(total), "cap_mb": round(cap),
                                "workers": workers, "tasks": len(job), "xc": a.xc}}),
           file=sys.stderr, flush=True)
