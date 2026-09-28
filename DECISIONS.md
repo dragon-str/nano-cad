@@ -2948,3 +2948,27 @@ is not: superoxide and hydrogen peroxide degrade the porphyrin ring (heme
 degradation), and the device cannot repair a broken ring. That rate, and
 whether the superoxide stays in the pocket water long enough to attack it,
 set the device lifetime. Not modelled.
+
+## ADR-0109: O2 loading rate, not the rotor, limits throughput
+
+Context. Every earlier budget assumed, as Freitas does (1e6 molecules/s per
+12-site rotor, about 8e4 rev/s), that a site loads on every pass. A heme
+site loads by diffusion and binding: rate = k_on c.
+
+Estimate. With a myoglobin-like k_on of about 1.5e7 per M per s
+(literature order; our narrow pocket may be slower) and 130 uM dissolved O2
+at arterial pO2 100 mmHg, an exposed empty site loads at about 2e3 per
+second (time constant 0.5 ms). A Freitas-rate rotor gives each site about
+4 us on a one-third inlet arc: 0.8 percent loading per pass.
+
+Consequence. Throughput per site is at most about 650 O2/s with a one-third
+inlet arc. A 20 s fill needs about 1.2e5 sites: about 9,700 rotors of 12
+(Freitas lists 5,184 O2 rotors), about 2.5 percent of the device volume. The
+rotors turn at about 300 rev/s for 90 percent loading per pass, 300x slower
+than the Freitas rate, which also cuts friction losses. Cam work per O2 is
+unchanged. Oxidation grows with the site count, to about 1 per second per
+device (repair about 1.6e-19 W; superoxide 1 per second against 94 from a
+red cell), still negligible (ADR-0108).
+
+Limits. k_on in the snug diamond pocket is not computed; a slower on-rate
+raises the site count in proportion.

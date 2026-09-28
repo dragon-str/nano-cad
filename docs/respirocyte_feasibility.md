@@ -38,6 +38,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Cam lever by squeezing the ring | core-size scan | Fe-porphine, PBE | fails: the loaded iron stays flat; the ring absorbs the squeeze | uniform ring scaling | 0105 |
 | Release by withdrawing the axial ligand | empty and loaded pull scans | Fe-porphine, PBE and B3LYP | passes: switch 42 (PBE) and 63 (B3LYP) kJ/mol, 32 needed; cam work equals the switch; peak power 1.7-2.4x Freitas | rigid ring, NH3 ligand | 0106, 0107 |
 | Oxidation of the iron site | Fe/Co redox scan; repair budget; tunnelling estimate | PBE + C-PCM; Moser-Dutton | keep iron (Co oxidizes more easily in this model); 3e-10 oxidations per O2; a donor station on the empty arc repairs far faster than sites oxidize, at about 1e-20 W | absolute redox energies unphysical; only the Fe-Co difference used | 0108 |
+| O2 loading rate | k_on c budget | arithmetic, myoglobin-like k_on | a site loads at about 2e3/s; about 9,700 rotors (2x Freitas) at about 300 rev/s | k_on in the diamond pocket not computed | 0109 |
 | Tank start-up | nucleation | classical nucleation theory | needs 850-1700 atm supersaturation; use a 10 atm gas cushion | rate prefactor | 0102 |
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 
