@@ -83,9 +83,9 @@ def nh3_below(fe_z, axial=AXIAL_N):
     return out
 
 
-def site(h, axial=AXIAL_N, core=2.00):
+def site(h, axial=AXIAL_N, core=2.00, metal="Fe"):
     fe_z = -h
-    return [("Fe", (0.0, 0.0, fe_z))] + porphine(core) + nh3_below(fe_z, axial), fe_z
+    return [(metal, (0.0, 0.0, fe_z))] + porphine(core) + nh3_below(fe_z, axial), fe_z
 
 
 def o2(fe_z, d):
@@ -94,10 +94,10 @@ def o2(fe_z, d):
     return [("O", (0.0, 0.0, z)), ("O", (O2_BOND * np.sin(t), 0.0, z + O2_BOND * np.cos(t)))]
 
 
-BASIS = {"Fe": "def2-svp", "N": "def2-svp", "O": "def2-svp", "C": "6-31g", "H": "sto-3g"}
+BASIS = {"Fe": "def2-svp", "Co": "def2-svp", "N": "def2-svp", "O": "def2-svp", "C": "6-31g", "H": "sto-3g"}
 
 
-def scf(atoms, charge, spin2, xc):
+def scf(atoms, charge, spin2, xc, solvent=False):
     """Damped, level-shifted first pass, then a second-order (Newton) finish.
 
     The iron, its donors and the O2 carry def2-SVP; the ring carbons carry
@@ -123,16 +123,34 @@ def scf(atoms, charge, spin2, xc):
         nt.conv_tol = 1e-6
         nt.max_cycle = 30
         e = nt.kernel(mf.mo_coeff, mf.mo_occ)
-        return float(e), bool(nt.converged), float(nt.spin_square()[0])
+        out = (float(e), bool(nt.converged), float(nt.spin_square()[0]))
+        if not solvent or not nt.converged:
+            return out + (None, False)
+        # Implicit water (C-PCM, eps 78.4) as a single point from the gas
+        # density: the solvation energy is added to the gas energy.
+        ms = dft.UKS(mol).density_fit(auxbasis="def2-universal-jkfit").PCM()
+        ms.with_solvent.eps = 78.39
+        # A coarse surface grid: the dense PCM matrix at the default order 29
+        # took the process to 3.3 GB (2026-09-28).
+        ms.with_solvent.lebedev_order = 17
+        ms.xc = xc
+        ms.grids.level = 1
+        ms.conv_tol = 1e-5
+        ms.damp = 0.3
+        ms.level_shift = 0.2
+        ms.max_cycle = 120
+        es = ms.kernel(nt.make_rdm1())
+        return out + (float(es), bool(ms.converged))
     except Exception:  # noqa: BLE001
-        return None, False, None
+        return None, False, None, None, False
 
 
 def work(task):
     t0 = time.time()
-    e, ok, s2 = scf(task["atoms"], task["charge"], task["spin2"], task["xc"])
+    e, ok, s2, es, sok = scf(task["atoms"], task["charge"], task["spin2"], task["xc"],
+                             task.get("solvent", False))
     out = {k: v for k, v in task.items() if k != "atoms"}
-    out.update(E=e, conv=ok, s2=s2, seconds=round(time.time() - t0))
+    out.update(E=e, conv=ok, s2=s2, E_solv=es, solv_conv=sok, seconds=round(time.time() - t0))
     return out
 
 
@@ -196,6 +214,44 @@ def core_tasks(xc, cores, domes, d):
     return out
 
 
+REDOX_SPINS = {
+    # metal: (M(II) site, M(II)-O2, M(III) site), as 2S values
+    "Fe": ((0, 2, 4), (0, 2), (1, 3, 5)),
+    "Co": ((1, 3), (1, 3), (0, 2, 4)),
+}
+
+
+def redox_tasks(xc, metals, d=1.85):
+    """Autoxidation energetics and the withdrawal switch for each metal.
+
+    For each metal: the M(II) site and the M(II)-O2 adduct with the axial
+    NH3 at 2.1 and 4.0 A, and the M(III) site (charge +1) at 2.1 A; O2 and
+    O2- once. Every point gets a gas energy and a C-PCM water energy.
+    """
+    t = [
+        dict(kind="o2", xc=xc, metal="-", axial=0.0, charge=0, spin2=2, solvent=True,
+             atoms=[("O", (0, 0, 0)), ("O", (0, 0, O2_BOND))]),
+        dict(kind="o2minus", xc=xc, metal="-", axial=0.0, charge=-1, spin2=1, solvent=True,
+             atoms=[("O", (0, 0, 0)), ("O", (0, 0, 1.33))]),
+    ]
+    for metal in metals:
+        s_ii, s_o2, s_iii = REDOX_SPINS[metal]
+        for axial in (2.1, 4.0):
+            atoms, fe_z = site(0.0, axial, 2.00, metal)
+            for spin2 in s_ii:
+                t.append(dict(kind="site", xc=xc, metal=metal, axial=axial, charge=0,
+                              spin2=spin2, solvent=True, atoms=atoms))
+            for spin2 in s_o2:
+                t.append(dict(kind="complex", xc=xc, metal=metal, axial=axial, charge=0,
+                              spin2=spin2, solvent=True, atoms=atoms + o2(fe_z, d)))
+        atoms, _ = site(0.0, 2.1, 2.00, metal)
+        for spin2 in s_iii:
+            t.append(dict(kind="site_ox", xc=xc, metal=metal, axial=2.1, charge=1,
+                          spin2=spin2, solvent=True, atoms=atoms))
+    t.sort(key=lambda x: -len(x["atoms"]))
+    return t
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--workers", type=int, default=3)
@@ -209,8 +265,11 @@ def main() -> int:
     p.add_argument("--cores", nargs="+", type=float, default=None,
                    help="Fe-N core sizes for the ring-squeeze test (M28-18)")
     p.add_argument("--empty", action="store_true", help="with --pull: pull the empty site")
+    p.add_argument("--redox", nargs="+", default=None, help="metals for the autoxidation scan, e.g. Fe Co")
     a = p.parse_args()
-    if a.cores:
+    if a.redox:
+        job = redox_tasks(a.xc, a.redox)
+    elif a.cores:
         job = core_tasks(a.xc, a.cores, a.domes, 1.85)
     elif a.pull and a.empty:
         job = pull_empty_tasks(a.xc, a.pull)
@@ -225,6 +284,9 @@ def main() -> int:
     # A hybrid functional peaked at 2.0 GB for one process and 5.8 GB for
     # three (2026-09-28), close to the cap, so plan 2.8 GB for a hybrid.
     planned_mb = WORKER_PLANNED_MB if a.xc == "pbe" else 2800
+    if a.redox:
+        # One PCM calculation peaked at 2.8 GB (2026-09-28).
+        planned_mb = 3000
     workers = max(1, min(a.workers, int(cap // planned_mb)))
     print(json.dumps({"plan": {"physical_memory_mb": round(total), "cap_mb": round(cap),
                                "workers": workers, "tasks": len(job), "xc": a.xc}}),

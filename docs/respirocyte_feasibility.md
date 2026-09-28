@@ -16,6 +16,8 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
    single-file drain channels lined with hydroxyl groups. The tank pressure
    pushes the water out through them; the oxygen stays in.
 5. The tank is built gas-filled and never falls below a 10 atm cushion.
+6. A one-electron donor on the housing, on the arc where each site is empty,
+   reduces any oxidized Fe(III) back to Fe(II) as the site passes.
 
 ## Results
 
@@ -35,6 +37,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Cam lever through the axial ligand | pull scan | Fe-porphine, PBE | fails: the axial Fe-N bond gives way at about 1.3 nN; doming needs 3.2-6.6 nN | rigid ring | 0104 |
 | Cam lever by squeezing the ring | core-size scan | Fe-porphine, PBE | fails: the loaded iron stays flat; the ring absorbs the squeeze | uniform ring scaling | 0105 |
 | Release by withdrawing the axial ligand | empty and loaded pull scans | Fe-porphine, PBE and B3LYP | passes: switch 42 (PBE) and 63 (B3LYP) kJ/mol, 32 needed; cam work equals the switch; peak power 1.7-2.4x Freitas | rigid ring, NH3 ligand | 0106, 0107 |
+| Oxidation of the iron site | Fe/Co redox scan; repair budget; tunnelling estimate | PBE + C-PCM; Moser-Dutton | keep iron (Co oxidizes more easily in this model); 3e-10 oxidations per O2; a donor station on the empty arc repairs far faster than sites oxidize, at about 1e-20 W | absolute redox energies unphysical; only the Fe-Co difference used | 0108 |
 | Tank start-up | nucleation | classical nucleation theory | needs 850-1700 atm supersaturation; use a 10 atm gas cushion | rate prefactor | 0102 |
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 
@@ -55,7 +58,9 @@ Not modelled:
 
 - How the porphine attaches to diamond.
 - Relaxed geometries. Every quantum-chemistry number uses a rigid geometry.
-- Autoxidation of Fe(II) to Fe(III), which stops binding (met-hemoglobin).
+- Irreversible damage of the porphyrin ring by superoxide and peroxide.
+  This sets the device lifetime.
+- The donor chemistry of the repair station and its potential.
 - Nitrogen build-up in the tank (a small vent is proposed, not tested).
 - Fouling, immune response, manufacturing.
 

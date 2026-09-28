@@ -2891,3 +2891,60 @@ Monitoring note. During this run a progress check fell back to PID 0 when
 the scan had ended and summed every process on the machine (12 GB). The scan
 itself peaked below 6 GB. Progress checks must treat "no scan process" as
 finished, not measure a default PID.
+
+## ADR-0108: Keep iron; oxidation is a lifetime problem, solved by a repair station
+
+Context. M28-21. Fe(II) sites autoxidize to Fe(III), which cannot bind O2.
+Hemoglobin loses about 3 percent per day and survives by enzymatic repair
+(cytochrome b5 reductase). The question: does cobalt resist this better, and
+what does repair cost?
+
+Scan (`heme_switch_scan.py --redox Fe Co`, PBE, heme-like site, gas phase
+plus C-PCM water, 26 calculations, 2 workers at 3 GB planned each). All 26
+gas-phase calculations converged; 11 of the PCM single points did not, so the
+PCM numbers only rank.
+
+| | Fe | Co |
+|---|---|---|
+| O2 binding, NH3 at 2.1 A (gas) | -80.9 | -70.6 |
+| O2 binding, NH3 withdrawn to 4.0 A | -38.8 | +24.8 (unbound) |
+| Withdrawal switch | 42.1 (reproduces ADR-0106) | 95.4 |
+| M(II)-O2 -> M(III) + O2-, relative, gas | 0 | -22 |
+| same, relative, C-PCM water | 0 | -24 |
+
+Cobalt. The large Co switch matches the known chemistry: cobalt porphyrins
+need an axial base to bind O2. But cobalt is not easier to protect. In this
+model its autoxidation is about 22-24 kJ/mol more favourable than iron's,
+consistently in gas and in water, and its bound O2 is about 10 kJ/mol weaker.
+Measured Co-heme proteins bind O2 more weakly than their Fe forms, so loading
+at the lung would be marginal (occupancy about 0.66 at the PBE level). The
+absolute autoxidation energies (about 270-740 kJ/mol) are not physical: the
+charge-separated products are poorly described, and real autoxidation is
+proton-coupled. Only the Fe-Co difference is used. Decision: keep iron.
+
+Budget. At a 20 s fill a device needs about 900 sites (76 rotors of 12 at
+1e6 O2/s; Freitas lists 5,184 O2 rotors). Oxidation per site does not depend
+on the throughput. At a myoglobin-like rate (about 0.06 per hour) with each
+site loaded half the time, a device suffers about 0.008 oxidations per
+second: 3e-10 per delivered O2. It releases about 0.008 superoxide per
+second, against about 94 per second from one red cell. Without repair, half
+the sites die in about 23 hours; with the four waters beside the bound O2 the
+rate may be 10-100x higher. So repair is mandatory, but the electrons are
+trivial: 0.01-1 per second, about 1e-20 W.
+
+Repair station. Each site passes a fixed point of the housing about 8e4
+times per second. Put a one-electron donor there, on the arc where the site
+is empty (after release, before loading), so the donor can only reduce
+Fe(III) and never meets a bound O2. A donor near the bound O2 would itself
+drive autoxidation. Moser-Dutton tunnelling (lambda 0.8 eV, driving force
+0.3 eV) with a contact of 1 percent of a turn: donor-iron distance 22 A
+repairs 0.1 per second per site, 18 A repairs 25 per second, against an
+oxidation rate of 2e-5 to 2e-3 per second. The station is recharged from the
+device power supply. The donor potential must lie below the Fe(III)/Fe(II)
+couple of the site, not yet computed.
+
+What is left. Reversible oxidation is handled on paper. Irreversible damage
+is not: superoxide and hydrogen peroxide degrade the porphyrin ring (heme
+degradation), and the device cannot repair a broken ring. That rate, and
+whether the superoxide stays in the pocket water long enough to attack it,
+set the device lifetime. Not modelled.
