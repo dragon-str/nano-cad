@@ -1696,4 +1696,4 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-17** Drive the dome through the axial ligand. <!-- result: FAILED. Doming the loaded site needs 3.2-6.6 nN; the axial Fe-N bond gives way at about 1.3 nN (PBE pull scan, 15/15 converged). The cam would pull the ligand off (ADR-0104). -->
 - [x] **M28-18** Core-compression lever. <!-- result: FAILED. At every core size the loaded iron stays flat; the ring absorbs the squeeze (380 kJ/mol for 4 %). Expanded core + dome gives a high-spin empty site, as in deoxy-heme (ADR-0105). -->
 - [x] **M28-19** Axial-ligand withdrawal switch. <!-- result: PASS (PBE, narrow). Withdrawing NH3 2.1 -> 4.0 A weakens O2 binding by 42 kJ/mol (32 needed). Cam work 42 kJ/mol; peak power 1.7x Freitas (ADR-0106). -->
-- [ ] **M28-20** B3LYP check of the withdrawal switch. <!-- result: open. -->
+- [x] **M28-20** B3LYP check of the withdrawal switch. <!-- result: switch 63 kJ/mol (PBE 42); both above 32. Cam work 42-63 kJ/mol, peak power 1.7-2.4x Freitas (ADR-0107). -->

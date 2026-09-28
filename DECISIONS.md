@@ -2874,3 +2874,20 @@ Freitas maximum (the dome was 2x, the rod 3x).
 
 Limits. PBE only; rigid flat ring; NH3 as the ligand (histidine in biology);
 the ligand must travel about 2 A. A B3LYP check follows.
+
+## ADR-0107: B3LYP confirms the axial-withdrawal switch
+
+M28-20. `heme_switch_scan.py --xc b3lyp --pull 2.1 4.0` for the empty and
+the loaded site (12 calculations, all converged, 2 workers). Withdrawing the
+axial NH3 from 2.1 to 4.0 A costs 28.5 kJ/mol on the empty site and 91.5 on
+the loaded site: the O2 bond weakens by 63.0 kJ/mol (PBE 42.1). Both methods
+exceed the 32 kJ/mol needed. As for the dome (ADR-0103), B3LYP gives the
+larger switch; the two bracket it at 42-63 kJ/mol. Cam work equals the
+switch, so B3LYP raises the work to 63 kJ/mol and the peak power to about
+2.4x Freitas; PBE gives 1.7x. The empty site is S = 1 at both distances in
+both methods.
+
+Monitoring note. During this run a progress check fell back to PID 0 when
+the scan had ended and summed every process on the machine (12 GB). The scan
+itself peaked below 6 GB. Progress checks must treat "no scan process" as
+finished, not measure a default PID.

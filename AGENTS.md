@@ -67,6 +67,8 @@ crashed the machine.
   resident memory passes the cap. `scripts/fe_o2_switch_scan.py` is the model.
 - Run one heavy job at a time. Do not start a second job while one runs.
 - Print the plan (`--dry-run`) before a new heavy run.
+- A progress check must treat "no job process" as finished. Never measure a
+  default PID: PID 0 sums the whole machine.
 - Keep Python environments out of `/tmp`; macOS clears it. Use
   `~/.cache/nano-cad/` (for example `~/.cache/nano-cad/qm`).
 
