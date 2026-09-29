@@ -11,6 +11,7 @@ use nanocad_model::Part;
 use nanocad_parts::{library, ParameterSet};
 
 use crate::gear_pump_scene::{build_gear_pump_scene, GEAR_PUMP_SCENE_ID};
+use crate::module_scene::{build_relaxed_module_scene, module_relax_options, MODULE_SCENE_ID};
 use crate::rotor_scene::zero_design;
 use crate::scene::{
     AtomisticLayer, CoarseBody, CoarseCylinder, CoarseLayer, DeviceLayer, Scene, SceneAtom,
@@ -65,6 +66,12 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
             kind: "machine".to_string(),
             category: "machines".to_string(),
         },
+        SceneCatalogEntry {
+            id: MODULE_SCENE_ID.to_string(),
+            name: "Respirocyte O2 module (relaxed)".to_string(),
+            kind: "machine".to_string(),
+            category: "machines".to_string(),
+        },
     ];
     for entry in library() {
         // The gear pump is listed once, as a machine with three bodies.
@@ -87,6 +94,10 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
 pub fn build_part_scene(id: &str) -> Result<Scene, SceneError> {
     if id == GEAR_PUMP_SCENE_ID {
         return build_gear_pump_scene();
+    }
+    if id == MODULE_SCENE_ID {
+        // Relaxed on request: about 50 s in a release build.
+        return build_relaxed_module_scene(&module_relax_options()).map(|(scene, _)| scene);
     }
     let part = nanocad_parts::generate(id, &ParameterSet::new())?;
     let name = nanocad_parts::generator(id)
@@ -195,7 +206,23 @@ mod tests {
         assert_eq!(catalog[0].id, ROTOR_SCENE_ID);
         assert_eq!(catalog[0].kind, "machine");
         assert_eq!(catalog[1].id, GEARBOX_SCENE_ID);
-        assert_eq!(catalog.len(), library().len() + 2);
+        // Four machines lead the list; the gear pump is listed once, as a
+        // machine, not again as a library part.
+        let machines: Vec<&str> = catalog
+            .iter()
+            .filter(|entry| entry.category == "machines")
+            .map(|entry| entry.id.as_str())
+            .collect();
+        assert_eq!(
+            machines,
+            [
+                ROTOR_SCENE_ID,
+                GEARBOX_SCENE_ID,
+                GEAR_PUMP_SCENE_ID,
+                MODULE_SCENE_ID
+            ]
+        );
+        assert_eq!(catalog.len(), library().len() - 1 + machines.len());
         assert!(catalog.iter().any(|entry| entry.id == "leaf_spring"));
     }
 

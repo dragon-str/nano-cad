@@ -65,6 +65,14 @@ Not modelled:
 - Nitrogen build-up in the tank (a small vent is proposed, not tested).
 - Fouling, immune response, manufacturing.
 
+## CAD model
+
+`respirocyte_module` in the viewer (Machines): the rotor with 12 heme
+pockets, 12 [111] ligand arms and the housing, relaxed with the valence
+field and audited (ADR-0111). Hide the housing and set the clip to 0.5 to
+see the pockets in section. The attachment, cam, repair donor and tank are
+not in the model.
+
 ## How far to trust this
 
 Every number stacks model chemistry: proxy or idealized sites, UFF walls,

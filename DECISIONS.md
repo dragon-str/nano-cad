@@ -2993,3 +2993,52 @@ iron and forming the Fe-O2 bond, which the MD does not model. Myoglobin's
 k_on (about 1.5e7 per M per s) includes that step, so ADR-0109 stays the
 conservative design basis: about 1.2e5 sites. If bond formation in this
 pocket is faster than in myoglobin, the site count falls in proportion.
+
+## ADR-0111: The respirocyte O2 module as a relaxed CAD assembly
+
+Context. The oxygen chain passes its simulated tests (ADR-0086 to ADR-0110).
+This ADR builds the loading module as one audited, relaxed atomistic model.
+
+Parts. `HemeRotorGenerator` (`crates/parts/src/heme_rotor.rs`): a diamond
+disc (radius 4.0 nm, thickness 2.4 nm) with 12 radial pockets. Each pocket
+has a ring slot, a heme-like site (Fe-porphine, Fe-N 2.00 A) normal to the
+radius, a 5.6 A bore from the ring face to the rim, and a channel below the
+ring for a ligand arm. The arm is a diamond rod along [111], turned onto the
+pocket axis, so its end carbon bonds straight along the axis to an NH2 tip;
+the nitrogen lone pair faces the iron. A [100] rod could not do this: its
+end bond lies 55 degrees off the axis, and the NH2 hydrogens came within
+1.85 A of the iron. `module_housing` is a ring with end plates and one
+channel (inlet 345, outlet 165 degrees). Pockets 0-5 show the loaded state
+(tip 2.1 A from the iron, O2 end-on at 1.85 A); 6-11 show release (tip at
+4.0 A, empty).
+
+Surface. The module parts pair surface dimers only up to 2.1 A
+(`MODULE_MAX_DIMER_M`) and remove one carbon of any pair that still shares
+a cap site (a CH2 step), repeating until no two caps are closer than 0.9 A.
+With the global 2.6 A limit, closing 1.8-2.45 A step dimers bent the relaxed
+rim by up to 5.6 A; with 1.9 A the removal eroded the disc and the rotor
+collapsed in relaxation; 2.1 A settles in a few rounds.
+
+Relaxation (`module_scene::build_relaxed_module_scene`). The housing relaxes
+alone; the rotor, the 12 sites and the 12 arms relax together with the six
+Fe-N ligand bonds included, so the pockets stay fitted. `relax_valence`
+now keeps the built bond lengths and angles for any bond or angle with an
+atom other than C and H, or with a three-bonded (sp2) carbon, so the
+porphine keeps its quantum-chemistry geometry; a straight angle is skipped;
+Lennard-Jones between four-bonded carbons of one lattice is excluded (it
+double counts the crystal bond length). Converged: housing 867 iterations,
+RMS 0.77 A; rotor unit 939 iterations, RMS 0.98 A, max 2.8 A. Fe-N 2.00 A
+and Fe-O 1.85 A are kept; the rings buckle 0.11-0.18 A RMS.
+
+Audit of the relaxed model (55,550 atoms, 26 bodies, 25 joints): no overlap,
+no floating or disconnected body. Contacts under 2.2 A between any two
+bodies, joints included: the six Fe-N ligand bonds (2.10 A) and one H-H pair
+at 2.19 A. The unrelaxed model still has 12 cap pairs at 0.74 A on filled
+notch carbons; the relaxation removes them.
+
+Not in the model. The porphine-to-diamond attachment (a fixed joint stands
+in for it), the cam that slides the arms, the repair donor, the tank and its
+drain channels, and any solvent. The pocket above the ring (slot plus bore)
+is larger than the 5.6 A test pocket of ADR-0091, so its water count must be
+measured again. The viewer shows the module under Machines as
+"Respirocyte O2 module (relaxed)"; it is built on request in about 50 s.

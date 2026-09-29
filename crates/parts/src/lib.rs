@@ -23,6 +23,7 @@ mod group;
 mod group_data;
 mod guest;
 mod guest_data;
+pub mod heme_rotor;
 pub mod housing;
 pub mod lattice;
 pub mod lattice_fill;
@@ -62,6 +63,7 @@ pub use group::{FunctionalGroup, FUNCTIONAL_GROUPS};
 pub use guest::{
     build_guest, build_guest_part, guest, guests, Guest, GuestAtom, GuestBond, AVOGADRO_PER_MOL,
 };
+pub use heme_rotor::{module_housing, HemeRotorGenerator, HemeRotorSet, LIGAND_IN_M, LIGAND_OUT_M};
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;

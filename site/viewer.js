@@ -386,7 +386,11 @@
     var design = scene.design || {};
     var couplings = (scene.device && scene.device.gear_couplings) || [];
     motion.kind =
-      design.module_m > 0 ? "gears" : couplings.length > 0 ? "joints" : "rotor";
+      design.module_m > 0
+        ? "gears"
+        : couplings.length > 0 || scene.frame === "respirocyte_module"
+          ? "joints"
+          : "rotor";
     if (motion.kind === "joints") {
       motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
       motion.revolute = revoluteMotions(scene.device, motion.w_sun);
@@ -437,6 +441,13 @@
     var couplings = device.gear_couplings || [];
     if (couplings.length > 0) {
       rates[couplings[0].joint_a] = rate;
+    } else {
+      for (var r0 = 0; r0 < joints.length; r0 += 1) {
+        if (joints[r0].kind === "revolute") {
+          rates[r0] = rate;
+          break;
+        }
+      }
     }
     for (var pass = 0; pass < couplings.length; pass += 1) {
       for (var k = 0; k < couplings.length; k += 1) {
@@ -457,6 +468,16 @@
       }
       var anchor = joint.anchor_world_m || [0, 0, 0];
       out[joint.body_b] = { cx: anchor[0], cy: anchor[1], w: rates[j] };
+    }
+    // A body held to a turning body by a fixed or prismatic joint turns with
+    // it (the module's sites and arms ride the rotor).
+    for (var pass2 = 0; pass2 < 3; pass2 += 1) {
+      for (var q = 0; q < joints.length; q += 1) {
+        var jq = joints[q];
+        if ((jq.kind === "fixed" || jq.kind === "prismatic") && out[jq.body_a] && !out[jq.body_b]) {
+          out[jq.body_b] = out[jq.body_a];
+        }
+      }
     }
     return out;
   }
@@ -1647,7 +1668,19 @@
   function setReadout() {
     var d = scene.design;
     var lines;
-    if (motion.kind === "joints") {
+    if (motion.kind === "joints" && scene.frame === "respirocyte_module") {
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "mechanism: respirocyte O2 module (relaxed, simulated)",
+        "bodies: " + scene.device.body_count + " (housing, rotor, 12 heme sites, 12 ligand arms)",
+        "atoms: " + scene.atomistic.atom_count,
+        "pockets 0-5: ligand in (Fe-N 2.1 A), O2 bound",
+        "pockets 6-11: ligand withdrawn (4.0 A), site empty",
+        "site attachment to diamond: placeholder (fixed joint)",
+        "cam and repair donor: not built",
+        "hide the housing in Components to see the rotor",
+      ];
+    } else if (motion.kind === "joints") {
       var pitch = scene.device.gear_couplings[0].radius_a_m;
       lines = [
         "schema: " + scene.schema + " v" + scene.version,

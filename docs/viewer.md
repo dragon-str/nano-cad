@@ -193,6 +193,12 @@ the Components panel to see the mesh. Each tooth root holds one iron atom, the
 binding site, drawn in orange (M27-04). An element without a table colour gets
 a stable colour from its symbol.
 
+The library also lists **Respirocyte O2 module (relaxed)** (ADR-0111). It
+holds the housing, a rotor with 12 heme-like sites, and 12 ligand arms, all
+relaxed. The module is built on request, which takes about 50 s. The rotor
+turns about its joint, and the sites and arms turn with it. Hide the housing
+and set the clip near 0.5 to see the pockets in section.
+
 The rotor scene holds 27 bodies and 25 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for
 each pocket. Each rod lies along the radius of its pocket, sits in a radial bore

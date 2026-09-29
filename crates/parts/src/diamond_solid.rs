@@ -133,6 +133,15 @@ pub(crate) type CapPlan = HashMap<(u32, usize), crate::group::FunctionalGroup>;
 /// four bonds receives one hydrogen for each missing tetrahedral direction,
 /// so every carbon reaches a valence of four.
 pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec<u32>, PartError> {
+    bond_and_cap_limited(topology, atoms, MAX_STRAINED_DIMER_M)
+}
+
+/// As [`bond_and_cap`], with the longest strained dimer it will pair.
+pub(crate) fn bond_and_cap_limited(
+    topology: &mut Topology,
+    atoms: &[u32],
+    max_strained_m: f64,
+) -> Result<Vec<u32>, PartError> {
     bond_atoms(topology, atoms)?;
     let mut all: Vec<u32> = atoms.to_vec();
     let mut added: Vec<u32> = Vec::new();
@@ -140,7 +149,7 @@ pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec
     // sites that would still hold two caps, then plans again.
     for _ in 0..MAX_FILL_ROUNDS {
         let free = free_directions(topology, &all);
-        let plan = plan_dimers(topology, &free);
+        let plan = plan_dimers_limited(topology, &free, max_strained_m);
         if plan.clash_sites_m.is_empty() {
             break;
         }
@@ -153,7 +162,7 @@ pub(crate) fn bond_and_cap(topology: &mut Topology, atoms: &[u32]) -> Result<Vec
         added.extend(fresh);
     }
     let free = free_directions(topology, &all);
-    let plan = plan_dimers(topology, &free);
+    let plan = plan_dimers_limited(topology, &free, max_strained_m);
     let free = apply_dimers(topology, &free, &plan)?;
     added.extend(cap_free(topology, &free, &CapPlan::new())?);
     Ok(added)
@@ -215,7 +224,17 @@ pub(crate) struct DimerPlan {
 /// [`MAX_BACK_BOND_M`]. A host with more than two free directions is not
 /// paired. A site that would still take two caps is a clash site; the caller
 /// fills it with carbon.
+#[allow(dead_code)]
 pub(crate) fn plan_dimers(topology: &Topology, free: &[FreeDirection]) -> DimerPlan {
+    plan_dimers_limited(topology, free, MAX_STRAINED_DIMER_M)
+}
+
+/// As [`plan_dimers`], with the longest strained dimer it will pair.
+pub(crate) fn plan_dimers_limited(
+    topology: &Topology,
+    free: &[FreeDirection],
+    max_strained_m: f64,
+) -> DimerPlan {
     let bond_m = diamond_bond_length_m();
     let site_of = |direction: &FreeDirection| {
         topology.position_m(direction.host as usize).map(|host_m| {
@@ -314,7 +333,7 @@ pub(crate) fn plan_dimers(topology: &Topology, free: &[FreeDirection]) -> DimerP
         let full_m = 0.5 * (length_m - SURFACE_DIMER_M);
         let shift_u = allowed_shift(u, u_m, unit, full_m);
         let shift_v = allowed_shift(v, v_m, [-unit[0], -unit[1], -unit[2]], full_m);
-        if length_m - shift_u - shift_v > MAX_STRAINED_DIMER_M {
+        if length_m - shift_u - shift_v > max_strained_m {
             return None;
         }
         let mut new_u = u_m;
@@ -463,7 +482,7 @@ pub(crate) fn apply_dimers(
 }
 
 /// The integer key of a diamond site on the quarter-cell grid.
-fn site_key(point_m: [f64; 3]) -> (i64, i64, i64) {
+pub(crate) fn site_key(point_m: [f64; 3]) -> (i64, i64, i64) {
     let quarter_m = DIAMOND_LATTICE_CONSTANT_M / 4.0;
     (
         (point_m[0] / quarter_m).round() as i64,

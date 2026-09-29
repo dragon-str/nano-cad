@@ -38,6 +38,42 @@ const C_H_R0_M: f64 = 1.09e-10;
 const FE_C_K_N_PER_M: f64 = 200.0;
 /// The Fe-C sigma bond of a root site, in metres.
 const FE_C_R0_M: f64 = 1.95e-10;
+/// The stiffness of a bond with a rest length taken from the built
+/// geometry, in newtons per metre (an aromatic-bond scale).
+const FOREIGN_K_N_PER_M: f64 = 500.0;
+
+fn is_ch(element: Element) -> bool {
+    element == Element::CARBON || element == Element::HYDROGEN
+}
+
+fn is_fe_c(a: Element, b: Element) -> bool {
+    (a == Element::IRON && b == Element::CARBON) || (a == Element::CARBON && b == Element::IRON)
+}
+
+fn distance(flat: &[f64], u: usize, v: usize) -> f64 {
+    ((flat[3 * u] - flat[3 * v]).powi(2)
+        + (flat[3 * u + 1] - flat[3 * v + 1]).powi(2)
+        + (flat[3 * u + 2] - flat[3 * v + 2]).powi(2))
+    .sqrt()
+}
+
+fn angle(flat: &[f64], a: usize, b: usize, c: usize) -> f64 {
+    let d1 = [
+        flat[3 * a] - flat[3 * b],
+        flat[3 * a + 1] - flat[3 * b + 1],
+        flat[3 * a + 2] - flat[3 * b + 2],
+    ];
+    let d2 = [
+        flat[3 * c] - flat[3 * b],
+        flat[3 * c + 1] - flat[3 * b + 1],
+        flat[3 * c + 2] - flat[3 * b + 2],
+    ];
+    let dot = d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2];
+    let n = (d1[0] * d1[0] + d1[1] * d1[1] + d1[2] * d1[2]).sqrt()
+        * (d2[0] * d2[0] + d2[1] * d2[1] + d2[2] * d2[2]).sqrt();
+    (dot / n).clamp(-1.0, 1.0).acos()
+}
+
 /// C-C-C bend constant, in joules per radian squared (0.67 mdyn A/rad^2).
 const CCC_K_J_PER_RAD2: f64 = 0.67e-18;
 /// C-C-H bend constant, in joules per radian squared.
@@ -133,6 +169,18 @@ pub fn relax_valence(
     }
 
     let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); count];
+    // A carbon with three bonds is sp2 (a porphine carbon): its bonds and
+    // angles keep their built geometry. Every diamond carbon has four.
+    let mut degree = vec![0usize; count];
+    for bond in topology.bonds() {
+        if let (Some(u), Some(v)) = (local(bond.u), local(bond.v)) {
+            degree[u] += 1;
+            degree[v] += 1;
+        }
+    }
+    let sp2: Vec<bool> = (0..count)
+        .map(|a| elements[a] == Element::CARBON && degree[a] == 3)
+        .collect();
     let mut bonds = BondStretchTerm::new();
     let mut c_c_pairs = Vec::new();
     for bond in topology.bonds() {
@@ -141,7 +189,13 @@ pub fn relax_valence(
         };
         let hydrogen = elements[u] == Element::HYDROGEN || elements[v] == Element::HYDROGEN;
         let iron = elements[u] == Element::IRON || elements[v] == Element::IRON;
-        let (k_n_per_m, r0_m) = if iron {
+        // A bond to an atom other than C or H (the porphine N, a bound O2, an
+        // amine tip) keeps its built length: those geometries come from the
+        // quantum-chemistry models, and this field has no parameters for them.
+        let foreign = [u, v].iter().any(|&a| !is_ch(elements[a]) || sp2[a]);
+        let (k_n_per_m, r0_m) = if foreign && !(iron && is_fe_c(elements[u], elements[v])) {
+            (FOREIGN_K_N_PER_M, distance(&flat, u, v))
+        } else if iron {
             (FE_C_K_N_PER_M, FE_C_R0_M)
         } else if hydrogen {
             (C_H_K_N_PER_M, C_H_R0_M)
@@ -173,7 +227,21 @@ pub fn relax_valence(
                     1 => CCH_K_J_PER_RAD2,
                     _ => HCH_K_J_PER_RAD2,
                 };
-                angles.add_angle(left as u32, centre as u32, right as u32, k, tetrahedral_rad)?;
+                let rest_rad = if [left, centre, right]
+                    .iter()
+                    .any(|&a| !is_ch(elements[a]) || sp2[a])
+                {
+                    angle(&flat, left, centre, right)
+                } else {
+                    tetrahedral_rad
+                };
+                // A straight angle (trans N-Fe-N in a porphine) has no bend
+                // direction; the other angles hold that geometry.
+                if rest_rad > 172.0_f64.to_radians() {
+                    excluded.insert((left.min(right), left.max(right)));
+                    continue;
+                }
+                angles.add_angle(left as u32, centre as u32, right as u32, k, rest_rad)?;
                 excluded.insert((left.min(right), left.max(right)));
             }
         }
@@ -213,6 +281,62 @@ pub fn relax_valence(
     system.set_bond_stretch(bonds)?;
     system.set_angle_bend(angles)?;
     system.set_lennard_jones(lennard_jones)?;
+    // Inside one diamond lattice the bond rest length is already the crystal
+    // value, so a Lennard-Jones term between its carbons double counts and
+    // contracts the lattice by about 4 percent (ADR-0111). Exclude pairs of
+    // four-bonded carbons of the same connected piece within the cutoff.
+    {
+        let mut parent: Vec<usize> = (0..count).collect();
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        for (a, list) in neighbours.iter().enumerate() {
+            for &b in list {
+                let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                if ra != rb {
+                    parent[ra] = rb;
+                }
+            }
+        }
+        let lattice: Vec<usize> = (0..count)
+            .filter(|&a| elements[a] == Element::CARBON && degree[a] == 4)
+            .collect();
+        let cut = options.cutoff_m;
+        let key = |a: usize| {
+            (
+                (flat[3 * a] / cut).floor() as i64,
+                (flat[3 * a + 1] / cut).floor() as i64,
+                (flat[3 * a + 2] / cut).floor() as i64,
+            )
+        };
+        let mut grid: std::collections::HashMap<(i64, i64, i64), Vec<usize>> =
+            std::collections::HashMap::new();
+        for &a in &lattice {
+            grid.entry(key(a)).or_default().push(a);
+        }
+        for &a in &lattice {
+            let (x, y, z) = key(a);
+            let root_a = find(&mut parent, a);
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        for &b in grid.get(&(x + dx, y + dy, z + dz)).into_iter().flatten() {
+                            if b <= a || distance(&flat, a, b) > cut {
+                                continue;
+                            }
+                            if find(&mut parent, b) == root_a {
+                                excluded.insert((a, b));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     let mut pairs: Vec<_> = excluded.into_iter().collect();
     pairs.sort_unstable();
     for (i, j) in pairs {
