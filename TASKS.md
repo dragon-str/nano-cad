@@ -1700,4 +1700,4 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-21** Oxidation: Fe against Co, and repair. <!-- result: keep iron. Co switch 95 kJ/mol but autoxidation 22-24 kJ/mol more favourable and weaker loading. Oxidation costs 3e-10 per O2 and about 1e-20 W to repair; a donor station on the empty arc, within about 20 A of the iron, repairs 1e2-1e4 times faster than sites oxidize (ADR-0108). -->
 - [ ] **M28-22** Irreversible ring damage by superoxide and peroxide. <!-- result: open; sets the device lifetime. -->
 - [x] **M28-23** O2 loading rate. <!-- result: a site loads at about 2e3/s (k_on c), not on every pass. About 1.2e5 sites (9,700 rotors, 2x Freitas) at about 300 rev/s for a 20 s fill; 2.5 % of the volume (ADR-0109). -->
-- [ ] **M28-24** O2 on-rate into the snug pocket. <!-- result: open. MD or rate theory for entry into the 5.6 A bore. -->
+- [x] **M28-24** O2 on-rate into the snug pocket. <!-- result: MD arrival about 2.4e10 /M/s pooled (seed spread large), about 3e6/s at 130 uM: 1000x faster than the myoglobin basis. Bond formation, not arrival, limits; ADR-0109 stays the conservative basis (ADR-0110). -->

@@ -2972,3 +2972,24 @@ red cell), still negligible (ADR-0108).
 
 Limits. k_on in the snug diamond pocket is not computed; a slower on-rate
 raises the site count in proportion.
+
+## ADR-0110: O2 arrival at the snug pocket is fast; bond formation sets the rate
+
+M28-24. `scripts/pocket_entry_md.py`: the snug pocket (5.6 A bore, rod pulled
+back), frozen solid, SPC/E water, five mobile O2 at about 0.48 M, 2 ns per
+seed, 310 K, one process of 0.22 GB. O2 is kept 0.5 nm below the free water
+surface; without that wall it collected at the surface in some seeds.
+
+Seeds (entries, arrivals within 4 A of the iron): (66, 41), (17, 0), (0, 0),
+(42, 52). The spread is large: the hydrophobic O2 sits on the diamond faces,
+and whether it sits near the mouth decides the seed. Pooled over 8 ns: 93
+arrivals, k_arrival about 2.4e10 per M per s, about 3e6 per second at 130 uM.
+Even the pooled lower bound from the slow seeds stays above 1e5 per second.
+
+Conclusion. Arrival is about 1000x faster than the myoglobin-based load rate
+of ADR-0109 (2e3 per second), so diffusion into the pocket does not limit
+throughput. What limits it is bond formation: displacing the water on the
+iron and forming the Fe-O2 bond, which the MD does not model. Myoglobin's
+k_on (about 1.5e7 per M per s) includes that step, so ADR-0109 stays the
+conservative design basis: about 1.2e5 sites. If bond formation in this
+pocket is faster than in myoglobin, the site count falls in proportion.
