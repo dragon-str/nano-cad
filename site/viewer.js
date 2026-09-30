@@ -385,10 +385,13 @@
     }
     var design = scene.design || {};
     var couplings = (scene.device && scene.device.gear_couplings) || [];
+    var respirocyte =
+      typeof scene.frame === "string" &&
+      scene.frame.indexOf("respirocyte") === 0;
     motion.kind =
       design.module_m > 0
         ? "gears"
-        : couplings.length > 0 || scene.frame === "respirocyte_module"
+        : couplings.length > 0 || respirocyte
           ? "joints"
           : "rotor";
     if (motion.kind === "joints") {
@@ -1925,7 +1928,7 @@
   function load() {
     var served = location.protocol !== "file:";
     if (served && window.fetch) {
-      return loadRotor()
+      return loadPart("respirocyte_device", "Respirocyte device (module + tank + pump)")
         .catch(function () {
           return fromSceneJson();
         })

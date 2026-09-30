@@ -1707,3 +1707,4 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-30** Assembled device scene. <!-- result: `device_scene.rs`, `respirocyte_device`; module + tank + pump, 122,893 atoms, 29 bodies; relaxed, no overlap, no loose body (ADR-0115). -->
 - [ ] **M28-29** The arm cam. <!-- result: open. A static cam track on the housing that withdraws each ligand arm. -->
 - [x] **M28-28** Tank wall with drain channels as a CAD part. <!-- result: `respirocyte_tank` gains `drain_channel_count` and `drain_channel_radius_m`; each radial channel is hydroxyl-lined. Defaults: 72 lining oxygens, nearest atom 2.29 A from the axis (ADR-0114). -->
+- [x] **M28-31** Load the respirocyte device first. <!-- result: `site/viewer.js` loads `respirocyte_device` on start and treats any `respirocyte*` frame as joint motion; `app/server.py` caches each part response and warms the device at startup; `docs/viewer.md` updated. -->

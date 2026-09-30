@@ -48,6 +48,10 @@ _SCORE_LOCK = threading.Lock()
 _ROTOR_CACHE = None
 _ROTOR_CACHE_GZIP = None
 _ROTOR_LOCK = threading.Lock()
+# A part scene is deterministic too. The respirocyte device costs about 100 s
+# to build, so cache each part response by id and serve the same bytes.
+_PART_CACHE = {}
+_PART_LOCK = threading.Lock()
 
 _CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -191,6 +195,25 @@ def warm_rotor_cache() -> None:
         rotor_body()
     except (BuildError, subprocess.TimeoutExpired) as error:
         sys.stderr.write(f"app: rotor warm-up failed: {error}\n")
+
+
+def part_body(part_id: str) -> tuple[bytes, bytes]:
+    """Return a part response body as raw and gzip bytes, cached by part id."""
+    with _PART_LOCK:
+        cached = _PART_CACHE.get(part_id)
+        if cached is None:
+            body = json.dumps(part_result(part_id)).encode("utf-8")
+            cached = (body, gzip.compress(body, compresslevel=1))
+            _PART_CACHE[part_id] = cached
+    return cached
+
+
+def warm_default_scene() -> None:
+    """Build the first-load device scene off the request path."""
+    try:
+        part_body("respirocyte_device")
+    except (BuildError, subprocess.TimeoutExpired) as error:
+        sys.stderr.write(f"app: default scene warm-up failed: {error}\n")
 
 
 def scenes_result() -> dict:
@@ -382,11 +405,17 @@ class Handler(BaseHTTPRequestHandler):
                 part_id = values[0] if values and values[0] else ""
                 if not part_id:
                     raise BuildError("the part id is missing")
-                self._send_json(200, part_result(part_id))
+                raw, packed = part_body(part_id)
             except BuildError as error:
                 self._send_json(400, {"error": str(error)})
+                return
             except subprocess.TimeoutExpired:
                 self._send_json(504, {"error": "the part scene timed out"})
+                return
+            if "gzip" in self.headers.get("Accept-Encoding", ""):
+                self._send_bytes(200, packed, "application/json; charset=utf-8", "gzip")
+            else:
+                self._send_bytes(200, raw, "application/json; charset=utf-8")
             return
         if route == "/api/selectivity":
             try:
@@ -470,6 +499,7 @@ def main() -> int:
     print(f"nano-cad app on http://{arguments.host}:{arguments.port}/ (Ctrl-C stops)")
     print(f"engine profile: {CARGO_PROFILE.lstrip('-')}")
     threading.Thread(target=warm_rotor_cache, daemon=True).start()
+    threading.Thread(target=warm_default_scene, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
