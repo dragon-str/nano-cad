@@ -1704,5 +1704,6 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-25** Relaxed CAD assembly of the O2 module. <!-- result: `heme_rotor.rs`, `module_scene.rs`, `module_json`. 55,550 atoms, 26 bodies; relaxed to convergence; audit clean except the six intended Fe-N bonds; in the viewer library (ADR-0111). -->
 - [x] **M28-26** Water in the module pocket. <!-- result: `scripts/module_pocket_water.py`. Loaded as-built pocket carries about 1-2 waters (wet 2.0, dry 1.0 at 2 ns); the iron is never wetted; the arm channel needs a sealed-back model (ADR-0112). -->
 - [x] **M28-27** Porphine-to-diamond attachment. <!-- result: four two-carbon tethers, one per meso carbon, to the slot wall; relaxed bonds 1.42-1.55 A, audit clean (ADR-0113). -->
+- [x] **M28-30** Assembled device scene. <!-- result: `device_scene.rs`, `respirocyte_device`; module + tank + pump, 122,893 atoms, 29 bodies; relaxed, no overlap, no loose body (ADR-0115). -->
 - [ ] **M28-29** The arm cam. <!-- result: open. A static cam track on the housing that withdraws each ligand arm. -->
 - [x] **M28-28** Tank wall with drain channels as a CAD part. <!-- result: `respirocyte_tank` gains `drain_channel_count` and `drain_channel_radius_m`; each radial channel is hydroxyl-lined. Defaults: 72 lining oxygens, nearest atom 2.29 A from the axis (ADR-0114). -->

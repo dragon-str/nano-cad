@@ -3141,3 +3141,26 @@ from ADR-0098, which is a simulated estimate. The lining groups carry model
 charges (ADR-0063). The channel is equatorial in the model; the real device
 routes the drain to the blood side. The wall is left bare away from the
 channels, as before.
+
+## ADR-0115: The assembled device scene
+
+Context. The O2 module (ADR-0111), the gas tank with drain channels (ADR-0114)
+and the pump were separate parts. This ADR puts them in one scene.
+
+Design. Body 0 is the module housing, fixed. Body 1 is the rotor on a revolute
+joint about z. Bodies 2 to 25 are the 12 heme sites and the 12 ligand arms.
+Body 26 is the tank shell, which encloses the module: its inner radius is the
+module outer radius plus 0.6e-9 m, and its wall is 0.6e-9 m. Bodies 27 and
+28 are the pump cylinder and piston, parked above the module at z = 3.6e-9 m.
+The tank and the pump are fixed to the housing. Each subsystem relaxes on its
+own, because no two subsystems touch.
+
+Result. The scene holds 122,893 atoms, 29 bodies and 28 joints. It has no
+overlap, no loose body and no disjoint body. The only cross-body contacts are
+the 18 inside the module: the 12 tethers and the 6 Fe-N bonds.
+
+Limits. The layout is schematic. The tank and the pump are drawn at the scale
+of the module, not at the scale of a real respirocyte hull. The pump seal ring
+is left out: its radial thickness, 0.1e-9 m, is below one bond, so the
+lattice cut is not one connected body. The scene builds in about 100 s in a
+release build. This is a simulated estimate.

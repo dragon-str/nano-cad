@@ -18,6 +18,7 @@ mod anchor;
 mod assembly;
 mod design;
 mod device;
+mod device_scene;
 mod error;
 mod gear_pump_scene;
 mod jig;
@@ -44,6 +45,10 @@ pub use design::{
 pub use device::{
     ConstraintOptions, DeviceError, FixedJoint, GearConstraint, GearCoupling, GearTerm,
     PrismaticJoint, Quat, RevoluteJoint, RigidBody, RigidBodySystem,
+};
+pub use device_scene::{
+    build_relaxed_device_scene, device_parts, device_scene, DeviceParts, DEVICE_PUMP_OFFSET_M,
+    DEVICE_SCENE_ID, DEVICE_TANK_CLEARANCE_M, DEVICE_TANK_WALL_M,
 };
 pub use error::JigError;
 pub use gear_pump_scene::{

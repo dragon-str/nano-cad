@@ -202,7 +202,7 @@ pub fn build_module_scene() -> Result<Scene, SceneError> {
     Ok(module_scene(&module_parts()?))
 }
 
-fn relax_part(
+pub(crate) fn relax_part(
     part: &mut Part,
     options: &ValenceRelaxOptions,
 ) -> Result<ValenceRelaxReport, SceneError> {
@@ -224,6 +224,18 @@ pub fn build_relaxed_module_scene(
     options: &ValenceRelaxOptions,
 ) -> Result<(Scene, Vec<(String, ValenceRelaxReport)>), SceneError> {
     let mut parts = module_parts()?;
+    let reports = relax_module_parts(&mut parts, options)?;
+    Ok((module_scene(&parts), reports))
+}
+
+/// Relaxes the module parts in place. The housing relaxes alone. The rotor,
+/// the sites and the arms relax together as one system, with the Fe-N bond of
+/// each loaded pocket and every attachment tether included. Returns the
+/// reports, housing first then the rotor unit.
+pub fn relax_module_parts(
+    parts: &mut ModuleParts,
+    options: &ValenceRelaxOptions,
+) -> Result<Vec<(String, ValenceRelaxReport)>, SceneError> {
     let mut reports = Vec::new();
     let name = parts.housing.name.clone();
     reports.push((name, relax_part(&mut parts.housing, options)?));
@@ -284,7 +296,7 @@ pub fn build_relaxed_module_scene(
         }
     }
     reports.push(("rotor_sites_arms".to_string(), report));
-    Ok((module_scene(&parts), reports))
+    Ok(reports)
 }
 
 /// The least distance between every pair of bodies, joints included, as
