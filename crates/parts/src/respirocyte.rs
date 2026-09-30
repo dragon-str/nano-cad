@@ -34,6 +34,10 @@ const DIAMOND_LATTICE_CONSTANT_M: f64 = 3.567e-10;
 /// spur-gear generator in this crate.
 const DIAMONDOID_BOND_M: f64 = 1.544e-10;
 
+/// The step used to probe whether a free direction points into a channel, in
+/// metres. It is shorter than one bond, so the probe stays on the free site.
+const LINING_PROBE_M: f64 = 0.6e-10;
+
 /// The eight basis atoms of the diamond cubic cell, in fractional coordinates.
 /// Two interpenetrating FCC lattices, offset by (1/4, 1/4, 1/4).
 const DIAMOND_BASIS: [[f64; 3]; 8] = [
@@ -183,6 +187,24 @@ static TANK_PARAMETERS: &[ParameterSpec] = &[
         10.0e-9,
         false,
         "tank shell wall thickness in metres",
+    ),
+    ParameterSpec::new(
+        "drain_channel_count",
+        None,
+        1.0,
+        0.0,
+        12.0,
+        true,
+        "number of drain channels through the tank wall",
+    ),
+    ParameterSpec::new(
+        "drain_channel_radius_m",
+        Some(Unit::Metre),
+        3.4e-10,
+        1.0e-10,
+        1.0e-9,
+        false,
+        "radius of a drain channel to the wall carbon centres, in metres",
     ),
 ];
 
@@ -688,6 +710,10 @@ pub struct RespirocyteTank {
     pub outer_radius_m: f64,
     /// The shell wall thickness, in metres.
     pub wall_m: f64,
+    /// The number of drain channels through the wall.
+    pub channel_count: usize,
+    /// The drain-channel radius to the wall carbon centres, in metres.
+    pub channel_radius_m: f64,
 }
 
 /// Builds a hollow respirocyte gas tank.
@@ -700,6 +726,8 @@ impl RespirocyteTankGenerator {
         let resolved = self.resolve(parameters)?;
         let inner_radius_m = resolved.require("tank_inner_radius_m")?;
         let wall_m = resolved.require("tank_wall_m")?;
+        let channel_count = resolved.require("drain_channel_count")?.round() as usize;
+        let channel_radius_m = resolved.require("drain_channel_radius_m")?;
 
         if wall_m < DIAMONDOID_BOND_M {
             return Err(PartError::InvalidGeometry(format!(
@@ -711,19 +739,74 @@ impl RespirocyteTankGenerator {
                 "tank inner radius {inner_radius_m} m is below one bond length"
             )));
         }
+        if channel_radius_m < 1.0e-10 {
+            return Err(PartError::InvalidGeometry(format!(
+                "drain channel radius {channel_radius_m} m is below 1e-10 m"
+            )));
+        }
 
         let outer_radius_m = inner_radius_m + wall_m;
+        // Each channel is a radial hole in the equatorial plane. The cut takes
+        // every lattice carbon within one carbon-oxygen bond of the axis, so
+        // the lining oxygen can sit at the requested radius.
+        let axes: Vec<[f64; 3]> = (0..channel_count)
+            .map(|k| {
+                let azimuth_rad = std::f64::consts::TAU * k as f64 / channel_count as f64;
+                [azimuth_rad.cos(), azimuth_rad.sin(), 0.0]
+            })
+            .collect();
+        let cut_radius_m = channel_radius_m;
+
         let mut shell_topology = Topology::new();
         add_lattice_atoms(&mut shell_topology, outer_radius_m, |position_m| {
-            let radial_m = radial_m(position_m);
-            radial_m >= inner_radius_m && radial_m <= outer_radius_m
+            let radius_m = radial_m(position_m);
+            if radius_m < inner_radius_m || radius_m > outer_radius_m {
+                return false;
+            }
+            axes.iter()
+                .all(|axis| axis_distance_m(position_m, *axis) >= cut_radius_m)
         });
-        add_first_shell_bonds(&mut shell_topology, DIAMONDOID_BOND_M)?;
-        if shell_topology.atom_count() < MIN_BODY_ATOMS {
+        let carbons: Vec<u32> = (0..shell_topology.atom_count() as u32).collect();
+        if carbons.len() < MIN_BODY_ATOMS {
             return Err(PartError::InvalidGeometry(
                 "tank shell region cut no atoms from the diamond lattice".to_owned(),
             ));
         }
+        crate::diamond_solid::bond_atoms(&mut shell_topology, &carbons)?;
+
+        // Line every channel wall with hydroxyl groups. A free direction is a
+        // wall direction when a short probe along it enters a channel.
+        let free = crate::diamond_solid::free_directions(&shell_topology, &carbons);
+        let mut lined = 0usize;
+        for direction in &free {
+            let Some(host_m) = shell_topology.position_m(direction.host as usize) else {
+                continue;
+            };
+            let probe_m = [
+                host_m[0] + LINING_PROBE_M * direction.direction_m[0],
+                host_m[1] + LINING_PROBE_M * direction.direction_m[1],
+                host_m[2] + LINING_PROBE_M * direction.direction_m[2],
+            ];
+            if axes
+                .iter()
+                .any(|axis| axis_distance_m(probe_m, *axis) < cut_radius_m)
+            {
+                crate::group::add_group(
+                    &mut shell_topology,
+                    direction.host,
+                    host_m,
+                    direction.direction_m,
+                    crate::group::FunctionalGroup::Hydroxyl,
+                )?;
+                lined += 1;
+            }
+        }
+        if channel_count > 0 && lined == 0 {
+            return Err(PartError::InvalidGeometry(
+                "no free direction points into a drain channel".to_owned(),
+            ));
+        }
+        crate::pocket::charge_wall(&mut shell_topology, crate::group::FunctionalGroup::Hydroxyl);
 
         let mut shell = Part::new("respirocyte-tank", shell_topology).with_material("diamondoid");
         shell
@@ -735,12 +818,17 @@ impl RespirocyteTankGenerator {
         shell
             .metadata
             .insert("outer_radius_m".to_owned(), format!("{outer_radius_m:e}"));
+        shell
+            .metadata
+            .insert("channel_count".to_owned(), channel_count.to_string());
 
         Ok(RespirocyteTank {
             shell,
             inner_radius_m,
             outer_radius_m,
             wall_m,
+            channel_count,
+            channel_radius_m,
         })
     }
 }
@@ -904,6 +992,18 @@ fn radial_m(position_m: [f64; 3]) -> f64 {
         .sqrt()
 }
 
+/// Returns the distance from a point to the line through the origin along
+/// `axis_m`, which must be a unit vector.
+fn axis_distance_m(position_m: [f64; 3], axis_m: [f64; 3]) -> f64 {
+    let along_m = position_m[0] * axis_m[0] + position_m[1] * axis_m[1] + position_m[2] * axis_m[2];
+    let radial = [
+        position_m[0] - along_m * axis_m[0],
+        position_m[1] - along_m * axis_m[1],
+        position_m[2] - along_m * axis_m[2],
+    ];
+    (radial[0] * radial[0] + radial[1] * radial[1] + radial[2] * radial[2]).sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -911,6 +1011,12 @@ mod tests {
     fn assert_bonds_match_the_diamond_bond(part: &Part) {
         assert!(part.bond_count() > 0, "expected bonds");
         for bond in part.topology.bonds() {
+            // The lining groups carry their own bond lengths.
+            if part.topology.element(bond.u as usize) != Some(Element::CARBON)
+                || part.topology.element(bond.v as usize) != Some(Element::CARBON)
+            {
+                continue;
+            }
             let u_m = part.topology.position_m(bond.u as usize).expect("atom u");
             let v_m = part.topology.position_m(bond.v as usize).expect("atom v");
             let length_m = distance_m(u_m, v_m);
@@ -989,6 +1095,59 @@ mod tests {
             assert!(radius_m <= build.outer_radius_m + f64::EPSILON);
         }
         assert_bonds_match_the_diamond_bond(&build.shell);
+    }
+
+    #[test]
+    fn the_drain_channel_is_open_and_hydroxyl_lined() {
+        let build = RespirocyteTankGenerator
+            .build(&ParameterSet::new())
+            .expect("tank");
+        assert_eq!(build.channel_count, 1);
+        let axis = [1.0, 0.0, 0.0];
+        // The lining oxygen centres sit inward of the wall carbon centres.
+        let channel_low_m = build.channel_radius_m - 2.0e-10;
+        let mut lining = 0usize;
+        let mut free_m = f64::INFINITY;
+        for (index, atom) in build.shell.topology.atoms().enumerate() {
+            let axis_m = axis_distance_m(atom.position_m, axis);
+            free_m = free_m.min(axis_m);
+            if build.shell.topology.atom_type(index) == Some("O_hydroxyl") {
+                lining += 1;
+                assert!(
+                    (channel_low_m..=build.channel_radius_m).contains(&axis_m),
+                    "lining oxygen at {axis_m:e} m from the axis"
+                );
+            }
+        }
+        assert!(lining >= 4, "the channel carries {lining} lining oxygens");
+        assert!(
+            free_m >= 1.0e-10,
+            "the channel is blocked: nearest atom {free_m:e} m from the axis"
+        );
+        // A straight probe along the axis crosses the wall with clearance.
+        for step in 0..=10 {
+            let along_m = build.inner_radius_m
+                + (build.outer_radius_m - build.inner_radius_m) * step as f64 / 10.0;
+            let point_m = [along_m, 0.0, 0.0];
+            for atom in build.shell.topology.atoms() {
+                let gap_m = distance_m(point_m, atom.position_m);
+                assert!(
+                    gap_m > 1.0e-10,
+                    "the axis probe is blocked at {along_m:e} m"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_tank_without_channels_has_no_lining() {
+        let sealed = RespirocyteTankGenerator
+            .build(&ParameterSet::new().with("drain_channel_count", 0.0))
+            .expect("tank");
+        assert_eq!(sealed.channel_count, 0);
+        for index in 0..sealed.shell.atom_count() {
+            assert_ne!(sealed.shell.topology.atom_type(index), Some("O_hydroxyl"));
+        }
     }
 
     #[test]
@@ -1218,6 +1377,6 @@ mod tests {
         assert_eq!(RespirocytePumpGenerator.id(), "respirocyte_pump");
         assert_eq!(RespirocytePumpGenerator.parameters().len(), 8);
         assert_eq!(RespirocyteTankGenerator.id(), "respirocyte_tank");
-        assert_eq!(RespirocyteTankGenerator.parameters().len(), 2);
+        assert_eq!(RespirocyteTankGenerator.parameters().len(), 4);
     }
 }

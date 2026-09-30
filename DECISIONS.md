@@ -3113,3 +3113,31 @@ but does not fix its orientation. The production design should size the
 pocket (a counterbore matched to the ring plus one bond) so a short rigid
 link fits. The model draws the bond; it does not model the reaction that
 forms it. This is a simulated estimate.
+
+## ADR-0114: The tank wall carries hydroxyl-lined drain channels
+
+Context. ADR-0096 to ADR-0100 proposed that the tank drains its carried
+water through a single-file channel. The channel was tested as an isolated
+lined slab (M28-09, M28-10). The channel was not part of the tank CAD. This
+ADR adds it.
+
+Design. The tank generator takes two new parameters. `drain_channel_count`
+sets the number of channels (default 1). `drain_channel_radius_m` sets the
+cut radius to the wall carbon centres (default 3.4e-10 m). Each channel is a
+radial hole in the equatorial plane, spaced evenly in azimuth. The cut
+removes every lattice carbon within the cut radius of the channel axis. A
+free tetrahedral direction that probes into a channel takes a hydroxyl
+group; every other free direction stays bare, as the shell was before.
+
+Result. At the defaults the channel carries 72 lining oxygens. The nearest
+atom to the axis is a hydrogen at 2.29e-10 m, so the free radius to atom
+centres is about 2.3e-10 m and the accessible radius is about 1.2e-10 m.
+That is close to the 1.36e-10 m channel of the MD test (ADR-0098). A
+straight probe along the axis crosses the wall with more than 1.0e-10 m
+clearance. A tank with zero channels carries no lining.
+
+Limits. The channel is a geometric model. The flow and leak numbers stay
+from ADR-0098, which is a simulated estimate. The lining groups carry model
+charges (ADR-0063). The channel is equatorial in the model; the real device
+routes the drain to the blood side. The wall is left bare away from the
+channels, as before.
