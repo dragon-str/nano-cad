@@ -3042,3 +3042,38 @@ drain channels, and any solvent. The pocket above the ring (slot plus bore)
 is larger than the 5.6 A test pocket of ADR-0091, so its water count must be
 measured again. The viewer shows the module under Machines as
 "Respirocyte O2 module (relaxed)"; it is built on request in about 50 s.
+
+## ADR-0112: The as-built module pocket carries about 1-2 waters
+
+Context. ADR-0091 measured the snug test pocket of ADR-0086 at 5.2 waters,
+and ADR-0095 showed that diamond slots flood. The module pocket is neither:
+it is the ring slot (0.90 nm radius, 0.72 nm along the axis) plus the bore
+to the rim (0.56 nm radius) plus the arm channel behind it (0.81 nm radius,
+2.24 nm long). This ADR measures the water carried by that geometry.
+
+Method. `scripts/module_pocket_water.py` takes the relaxed module scene,
+cuts a cylinder of the rotor around pocket k (radius 1.6 nm, from 2.9 nm
+behind the iron to 1.0 nm past the rim), keeps that pocket's heme site and
+ligand arm, and freezes every solid atom. SPC/E water fills a periodic box
+around the piece. The iron keeps its Morse well for water (ADR-0086). Two
+starts bracket a slow filling or drying: `wet` fills the pocket and the arm
+at the start, `dry` leaves them empty. One job, about 9,000 particles,
+below 0.5 GB.
+
+Result (2 ns, 310 K). Loaded pocket (k=0): wet start 2.03 waters, dry start
+0.99. Released pocket (k=6): wet 1.99, dry 1.56 (1 ns). The iron is never
+wetted in any run (zero contacts under 3.2 A). So a pocket carries about one
+or two waters, not the four assumed in ADR-0086. The two starts still differ
+at 2 ns: the pocket is a tight hydrophobic cavity and exchanges water slowly.
+The design should use two waters per pocket.
+
+Carry is not a sizing problem. Twelve pockets at two waters per revolution,
+at 300 rev/s for 20 s, give about 144,000 waters per fill. The tank holds
+1.5e9 oxygen molecules. The water is 0.01 percent by count and 0.005 percent
+by mass.
+
+Open. The cut leaves the back of the arm channel open to the bath, so the
+arm count (0 to 60 waters, depending on the start) is not physical. In the
+device the cam seals that end. A sealed-back model is needed before the arm
+water is quoted. The result is a simulated estimate: frozen solid, UFF
+walls, and no water-carbon well fitted.

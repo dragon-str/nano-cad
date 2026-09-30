@@ -1705,3 +1705,4 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [ ] **M28-26** Water in the module pocket. <!-- result: open. Rerun the pocket-water MD on the as-built slot + bore. -->
 - [ ] **M28-27** Porphine attachment chemistry and the arm cam. <!-- result: open. -->
 - [ ] **M28-28** Tank wall with drain channels as a CAD part. <!-- result: open. -->
+- [x] **M28-26** Water in the module pocket. <!-- result: `scripts/module_pocket_water.py`. Loaded as-built pocket carries about 1-2 waters (wet 2.0, dry 1.0 at 2 ns); the iron is never wetted; the arm channel needs a sealed-back model (ADR-0112). -->
