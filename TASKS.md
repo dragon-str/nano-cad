@@ -1702,7 +1702,7 @@ Each tooth gap is a one-molecule site. The mesh forces the release. ADR-0086.
 - [x] **M28-23** O2 loading rate. <!-- result: a site loads at about 2e3/s (k_on c), not on every pass. About 1.2e5 sites (9,700 rotors, 2x Freitas) at about 300 rev/s for a 20 s fill; 2.5 % of the volume (ADR-0109). -->
 - [x] **M28-24** O2 on-rate into the snug pocket. <!-- result: MD arrival about 2.4e10 /M/s pooled (seed spread large), about 3e6/s at 130 uM: 1000x faster than the myoglobin basis. Bond formation, not arrival, limits; ADR-0109 stays the conservative basis (ADR-0110). -->
 - [x] **M28-25** Relaxed CAD assembly of the O2 module. <!-- result: `heme_rotor.rs`, `module_scene.rs`, `module_json`. 55,550 atoms, 26 bodies; relaxed to convergence; audit clean except the six intended Fe-N bonds; in the viewer library (ADR-0111). -->
-- [ ] **M28-26** Water in the module pocket. <!-- result: open. Rerun the pocket-water MD on the as-built slot + bore. -->
-- [ ] **M28-27** Porphine attachment chemistry and the arm cam. <!-- result: open. -->
-- [ ] **M28-28** Tank wall with drain channels as a CAD part. <!-- result: open. -->
 - [x] **M28-26** Water in the module pocket. <!-- result: `scripts/module_pocket_water.py`. Loaded as-built pocket carries about 1-2 waters (wet 2.0, dry 1.0 at 2 ns); the iron is never wetted; the arm channel needs a sealed-back model (ADR-0112). -->
+- [x] **M28-27** Porphine-to-diamond attachment. <!-- result: four two-carbon tethers, one per meso carbon, to the slot wall; relaxed bonds 1.42-1.55 A, audit clean (ADR-0113). -->
+- [ ] **M28-29** The arm cam. <!-- result: open. A static cam track on the housing that withdraws each ligand arm. -->
+- [ ] **M28-28** Tank wall with drain channels as a CAD part. <!-- result: open. -->

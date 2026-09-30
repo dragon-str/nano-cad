@@ -66,6 +66,9 @@ pub struct HemeRotorSet {
     pub site_iron: Vec<usize>,
     /// The NH2 nitrogen index inside each arm part.
     pub arm_tip: Vec<usize>,
+    /// For each site, the (site atom, rotor atom) pairs of the covalent
+    /// attachment tethers. The site atom is a tether end carbon.
+    pub site_anchor: Vec<Vec<(usize, usize)>>,
     /// The azimuth of each pocket, in radians.
     pub azimuth_rad: Vec<f64>,
     /// Whether each pocket shows the loaded state.
@@ -107,6 +110,23 @@ fn porphine_plane() -> Vec<(Element, [f64; 2])> {
 
 fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
     ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+fn normalize(v: [f64; 3]) -> [f64; 3] {
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if n == 0.0 {
+        [0.0; 3]
+    } else {
+        [v[0] / n, v[1] / n, v[2] / n]
+    }
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
 }
 
 /// Bonds every pair closer than the covalent sum times 1.2.
@@ -315,6 +335,7 @@ impl HemeRotorGenerator {
         let mut sites = Vec::with_capacity(count);
         let mut arms = Vec::with_capacity(count);
         let mut site_iron = Vec::with_capacity(count);
+        let mut site_anchor: Vec<Vec<(usize, usize)>> = Vec::with_capacity(count);
         let mut loaded = Vec::with_capacity(count);
         for (k, &az) in azimuths.iter().enumerate() {
             let (s, c) = az.sin_cos();
@@ -325,9 +346,18 @@ impl HemeRotorGenerator {
             loaded.push(is_loaded);
             let mut site = Topology::new();
             let fe_i = site.add_atom(Atom::new(Element::IRON, fe, 0.0, "Fe"));
-            for (e, [a, b]) in &ring {
+            // The porphine, less its four meso hydrogens: each meso carbon
+            // takes a two-carbon tether to the slot wall instead (below).
+            let mut meso_c: Vec<usize> = Vec::new();
+            for (idx, (e, [a, b])) in ring.iter().enumerate() {
+                if idx % 9 == 8 {
+                    continue;
+                }
                 let p = [fe[0] + a * t[0], fe[1] + a * t[1], *b];
-                site.add_atom(Atom::new(*e, p, 0.0, e.symbol().unwrap_or("X")));
+                let ai = site.add_atom(Atom::new(*e, p, 0.0, e.symbol().unwrap_or("X")));
+                if idx % 9 == 7 {
+                    meso_c.push(ai as usize);
+                }
             }
             if is_loaded {
                 let o1 = [fe[0] + FE_O_M * u[0], fe[1] + FE_O_M * u[1], 0.0];
@@ -341,6 +371,94 @@ impl HemeRotorGenerator {
                 site.add_atom(Atom::new(Element::OXYGEN, o2, 0.0, "O_O2"));
             }
             bond_by_distance(&mut site)?;
+            // A two-carbon tether at each meso carbon, to the nearest rotor
+            // wall carbon. The chain is a symmetric zigzag in the plane of the
+            // radial and the pocket axis, so its hydrogens stay clear of the
+            // ring. The end carbon is the anchor, bonded to the rotor atom when
+            // the unit is assembled (ADR-0113).
+            let mut anchors: Vec<(usize, usize)> = Vec::new();
+            for &mi in &meso_c {
+                let m = site.position_m(mi).unwrap_or([0.0; 3]);
+                let mut best = (f64::INFINITY, [0.0; 3], 0usize);
+                for j in 0..rotor.atom_count() {
+                    if rotor.element(j) != Some(Element::CARBON) {
+                        continue;
+                    }
+                    let q = rotor.position_m(j).unwrap_or([0.0; 3]);
+                    let d = dist(m, q);
+                    if d < best.0 {
+                        best = (d, q, j);
+                    }
+                }
+                let (l, w, wj) = best;
+                let b = 1.54e-10;
+                let mut nb = (l / b).ceil() as usize;
+                if nb < 2 {
+                    nb = 2;
+                }
+                if nb % 2 == 1 {
+                    nb += 1;
+                }
+                if nb > 6 {
+                    continue;
+                }
+                let uu = normalize([w[0] - m[0], w[1] - m[1], w[2] - m[2]]);
+                let dot = uu[2];
+                let nn = normalize([-dot * uu[0], -dot * uu[1], 1.0 - dot * dot]);
+                let cos_a = (l / (nb as f64 * b)).clamp(-1.0, 1.0);
+                let sin_a = (1.0 - cos_a * cos_a).sqrt();
+                let (mut axial, mut perp) = (0.0_f64, 0.0_f64);
+                let mut chain: Vec<usize> = Vec::new();
+                for i in 1..nb {
+                    axial += b * cos_a;
+                    perp += if i % 2 == 1 { b * sin_a } else { -b * sin_a };
+                    let cp = [
+                        m[0] + axial * uu[0] + perp * nn[0],
+                        m[1] + axial * uu[1] + perp * nn[1],
+                        m[2] + axial * uu[2] + perp * nn[2],
+                    ];
+                    chain.push(site.add_atom(Atom::new(Element::CARBON, cp, 0.0, "C")) as usize);
+                }
+                let mut prev = mi;
+                for &ci in &chain {
+                    site.add_bond(Bond::new(prev as u32, ci as u32, 1, BondType::Single))?;
+                    prev = ci;
+                }
+                for (idx, &ci) in chain.iter().enumerate() {
+                    let p = site.position_m(ci).unwrap_or([0.0; 3]);
+                    let n1 = if idx == 0 {
+                        m
+                    } else {
+                        site.position_m(chain[idx - 1]).unwrap_or([0.0; 3])
+                    };
+                    let n2 = if idx + 1 < chain.len() {
+                        site.position_m(chain[idx + 1]).unwrap_or([0.0; 3])
+                    } else {
+                        w
+                    };
+                    let a1 = normalize([n1[0] - p[0], n1[1] - p[1], n1[2] - p[2]]);
+                    let a2 = normalize([n2[0] - p[0], n2[1] - p[1], n2[2] - p[2]]);
+                    let s = normalize([-(a1[0] + a2[0]), -(a1[1] + a2[1]), -(a1[2] + a2[2])]);
+                    let q = normalize(cross(a1, a2));
+                    for sign in [1.0, -1.0] {
+                        let hdir =
+                            normalize([s[0] + sign * q[0], s[1] + sign * q[1], s[2] + sign * q[2]]);
+                        let h = site.add_atom(Atom::new(
+                            Element::HYDROGEN,
+                            [
+                                p[0] + 1.09e-10 * hdir[0],
+                                p[1] + 1.09e-10 * hdir[1],
+                                p[2] + 1.09e-10 * hdir[2],
+                            ],
+                            0.0,
+                            "H",
+                        ));
+                        site.add_bond(Bond::new(ci as u32, h, 1, BondType::Single))?;
+                    }
+                }
+                anchors.push((*chain.last().unwrap_or(&mi), wj));
+            }
+            site_anchor.push(anchors);
             site_iron.push(fe_i as usize);
             sites.push(
                 Part::new(format!("heme_site_{k}"), site).with_material("Fe-porphine (model)"),
@@ -364,6 +482,7 @@ impl HemeRotorGenerator {
             sites,
             arms,
             site_iron,
+            site_anchor,
             arm_tip: vec![cap; count],
             azimuth_rad: azimuths,
             loaded,
@@ -656,9 +775,38 @@ mod tests {
         let rotor: Vec<[f64; 3]> = (0..s.rotor.atom_count())
             .filter_map(|i| s.rotor.topology.position_m(i))
             .collect();
+        // The designed tether atoms reach the wall (ADR-0113). Walk out from
+        // each anchor carbon over the tether, stop at the porphyrin ring.
+        let ring_atoms = 36usize;
+        let mut tether = std::collections::HashSet::new();
+        for (k, anchors) in s.site_anchor.iter().enumerate() {
+            for &(si, _) in anchors {
+                let mut stack = vec![si];
+                while let Some(a) = stack.pop() {
+                    if !tether.insert(a) {
+                        continue;
+                    }
+                    for b in s.sites[k].topology.bonds() {
+                        let nb = if b.u as usize == a {
+                            b.v as usize
+                        } else if b.v as usize == a {
+                            b.u as usize
+                        } else {
+                            continue;
+                        };
+                        if nb >= ring_atoms {
+                            stack.push(nb);
+                        }
+                    }
+                }
+            }
+        }
         let mut worst = f64::INFINITY;
-        for part in s.sites.iter().chain(s.arms.iter()) {
+        for (k, part) in s.sites.iter().chain(s.arms.iter()).enumerate() {
             for i in 0..part.atom_count() {
+                if k < s.sites.len() && tether.contains(&i) {
+                    continue;
+                }
                 let p = part.topology.position_m(i).expect("p");
                 for q in &rotor {
                     if (p[0] - q[0]).abs() < 3e-10 && (p[1] - q[1]).abs() < 3e-10 {

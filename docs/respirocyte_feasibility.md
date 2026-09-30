@@ -26,6 +26,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Gear pump (rejected) | release at the mesh | geometry | the other gear never reaches the bound O2; each gap carries about 100 waters | none: the design fails | 0089, 0090 |
 | Site selects O2 over water | competition at alveolar pressures | Fe(NH3)4 proxy, PBE; Langmuir | O2 0.995, water 7e-12 | proxy site, PBE | 0084, 0086, 0089 |
 | Pocket size | water in the pocket | OpenMM, SPC/E, 1 ns | 20 waters (7.1 A bore), 3.8 beside bound O2 (5.6 A bore) | UFF walls, frozen solid | 0090, 0091 |
+| Porphine mount | ring-to-wall gap; tether | CAD build and valence relaxation | gap 0.55 nm; four 4-bond zigzag tethers, relaxed to 1.42-1.55 A, no overlap | flexible, not rigid; reaction not modelled | 0113 |
 | Module pocket water (as built) | water carried into the tank | OpenMM, SPC/E, 2 ns, as-built slot + bore | about 1-2 waters per loaded pocket; iron never wetted; carry is negligible | open cut at the arm back, frozen solid, UFF walls | 0112 |
 | Squeezing the water out | rod raised under the O2 | same MD | 3.6-3.7 waters remain | as above | 0096 |
 | Gas chamber (option A, rejected) | slot wetting | same MD, 1-2 nm slots | every dry slot floods | UFF carbon-water well not fitted | 0095 |
@@ -71,8 +72,8 @@ Not modelled:
 `respirocyte_module` in the viewer (Machines): the rotor with 12 heme
 pockets, 12 [111] ligand arms and the housing, relaxed with the valence
 field and audited (ADR-0111). Hide the housing and set the clip to 0.5 to
-see the pockets in section. The attachment, cam, repair donor and tank are
-not in the model.
+see the pockets in section. The attachment is four covalent tethers per site; the cam, repair donor
+and tank are not in the model.
 
 ## How far to trust this
 

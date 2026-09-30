@@ -3077,3 +3077,39 @@ arm count (0 to 60 waters, depending on the start) is not physical. In the
 device the cam seals that end. A sealed-back model is needed before the arm
 water is quoted. The result is a simulated estimate: frozen solid, UFF
 walls, and no water-carbon well fitted.
+
+## ADR-0113: The porphine mount is a flexible two-carbon tether
+
+Context. ADR-0111 left the porphine-to-diamond attachment as a placeholder
+fixed joint. This ADR measures the mount geometry and designs the link.
+
+Measured gap. In the as-built slot, the porphine meso carbons sit at radius
+0.344 nm and the nearest rotor carbon (the slot wall) at 0.52 to 0.61 nm. The
+gap is about 0.55 nm. A direct C-C bond (0.154 nm) and a single methylene
+bridge (0.31 nm) are both too short.
+
+A rigid aryl strap does not fit. A meso-phenyl reaches the wall, but its
+ortho and meta hydrogens clash with the ring's outer beta hydrogens: the
+closest H-H contact is 0.084 nm in a model build. Real meso-aryl porphyrins
+twist the aryl ring out of the porphyrin plane to avoid this clash, and that
+twist points the strap away from the wall, along the pocket axis. So an
+in-plane meso-aryl mount is not usable here.
+
+The mount. Each site carries four two-carbon tethers, one at each meso
+carbon. Each tether is a chain of four C-C bonds (meso-C, C-C, C-C, C-wall)
+built as a symmetric zigzag of 1.54 A bonds in the plane of the pocket
+radius and the pocket axis, so its hydrogens point away from the ring. The
+end carbon is bonded to the nearest rotor wall carbon. The chains bow
+(about 32 degrees off the direct line) and relax to bonds of 1.42 to
+1.55 A.
+
+Result. The relaxed module (55,934 atoms) has no overlap and no loose body.
+Contacts below 2.2 A between bodies are the twelve tether bonds (1.42 to
+1.55 A) and the six Fe-N ligand bonds (2.10 A). The rotor unit converges in
+2,481 iterations, RMS 1.2 A, max 5.1 A.
+
+Limits. A four-bond chain is flexible: this holds the ring near its place
+but does not fix its orientation. The production design should size the
+pocket (a counterbore matched to the ring plus one bond) so a short rigid
+link fits. The model draws the bond; it does not model the reaction that
+forms it. This is a simulated estimate.

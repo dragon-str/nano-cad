@@ -3,8 +3,9 @@
 //! Body 0 is the housing (fixed): a ring with end plates, an inlet opening at
 //! 345 degrees and an outlet opening at 165 degrees. Body 1 is the rotor,
 //! with a revolute joint about z. Bodies 2..2+n are the heme-like sites; each
-//! has a fixed joint to the rotor, a placeholder for the porphine-to-diamond
-//! attachment, which is not designed. Bodies 2+n..2+2n are the ligand arms,
+//! has a fixed joint to the rotor, and four two-carbon tethers covalently
+//! bond it to the slot wall when the unit is relaxed (ADR-0113). Bodies
+//! 2+n..2+2n are the ligand arms,
 //! each with a prismatic joint to the rotor along its pocket radius. Pockets
 //! 0-5 show the loaded state (NH2 tip 2.1 A from the iron, O2 bound); pockets
 //! 6-11 show the release state (tip withdrawn to 4.0 A, site empty). The
@@ -253,6 +254,20 @@ pub fn build_relaxed_module_scene(
                 .map_err(|e| SceneError::Part(e.to_string()))?;
         }
     }
+    // The covalent attachment: bond each site tether end carbon to its rotor
+    // wall carbon (ADR-0113).
+    for (base, anchors) in offsets.iter().zip(set.site_anchor.iter()) {
+        let base = *base as usize;
+        for &(si, rj) in anchors {
+            unit.add_bond(Bond::new(
+                (base + si) as u32,
+                rj as u32,
+                1,
+                BondType::Single,
+            ))
+            .map_err(|e| SceneError::Part(e.to_string()))?;
+        }
+    }
     let report = relax_valence(&unit, 0..unit.atom_count(), options)
         .map_err(|e| SceneError::Part(format!("the rotor unit did not relax: {e}")))?;
     let mut cursor = 0usize;
@@ -334,6 +349,21 @@ mod tests {
         assert_eq!(report.cross_body_bonds, 6);
     }
 
+    #[test]
+    fn every_site_has_four_attachment_tethers() {
+        let set = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("the rotor builds");
+        assert_eq!(set.site_anchor.len(), set.sites.len());
+        for (k, anchors) in set.site_anchor.iter().enumerate() {
+            assert_eq!(anchors.len(), 4, "site {k} has tethers");
+            for &(site_atom, rotor_atom) in anchors {
+                assert!(site_atom < set.sites[k].atom_count());
+                assert!(rotor_atom < set.rotor.atom_count());
+            }
+        }
+    }
+
     /// The relaxed module is the delivered CAD model: no overlap, no loose
     /// piece, and no contact under 2.2 A between bodies except the six Fe-N
     /// ligand bonds. About a minute in a release build; run with
@@ -347,7 +377,13 @@ mod tests {
         let report = sense_report(&scene);
         assert_eq!(report.overlap_count, 0, "{report:?}");
         assert!(report.disjoint_bodies.is_empty(), "{report:?}");
+        // Twelve tether bonds (one per site) plus the six Fe-N ligand bonds.
         let close: Vec<_> = body_contacts(&scene, 2.15e-10);
-        assert_eq!(close.len(), 6, "{close:?}");
+        assert_eq!(close.len(), 18, "{close:?}");
+        for (a, b, d) in &close {
+            if *a == 1 && (2..14).contains(b) {
+                assert!((1.35e-10..=1.65e-10).contains(d), "tether {a}-{b} {d}");
+            }
+        }
     }
 }
