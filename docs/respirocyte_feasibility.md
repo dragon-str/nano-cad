@@ -32,7 +32,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Squeezing the water out | rod raised under the O2 | same MD | 3.6-3.7 waters remain | as above | 0096 |
 | Gas chamber (option A, rejected) | slot wetting | same MD, 1-2 nm slots | every dry slot floods | UFF carbon-water well not fitted | 0095 |
 | Drain: size selection | rigid scan | UFF, all orientations | no size window: 3.6 A blocks both, 3.8 A passes both | lattice gives discrete sizes | 0097 |
-| Drain: water flow | pressure-driven MD | 2 ns at 0, 200, 500 MPa | about 9e9 water/s per channel at 1000 atm; one channel suffices | force-driven pressure model | 0098 |
+| Drain: water flow | pressure-driven MD | 2 ns at 0, 200, 500 MPa | about 9e9 water/s per channel at 1000 atm; one channel suffices | force-driven pressure model; the box held a vapour bubble (corrected run: 12-13.5 waters/ns at 200 MPa); frozen lining only, a mobile lining is untested for this channel | 0098, 0119 |
 | Drain: O2 loss while draining | Widom insertion | MD | about 0.5 % of pumped O2 | noisy insertion average | 0097 |
 | Drain: idle leak | umbrella sampling, forward and reverse | 82 windows, WHAM | 1-4 % of a full tank per 60 s cycle | assumed diffusion coefficient; end mismatch 7-9 kJ/mol | 0099 |
 | Release switch, proxy | strain scan | Fe(NH3)4, TPSSh and B3LYP | doming weakens the bond by about 100 kJ/mol | proxy, rigid | 0094 |
