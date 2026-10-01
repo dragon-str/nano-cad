@@ -23,9 +23,10 @@ lint:
 test:
     cargo test --workspace
 
-# Run the Python test suite (gate when the package is installed).
+# Run the Python test suite (gate). uv supplies pytest, numpy and scipy, so
+# the gate does not depend on the system Python having them (M28-37).
 py-test:
-    python3 -m pytest python/tests app/tests
+    uv run --quiet --no-project --python 3.12 --with pytest --with "numpy>=2" --with scipy env PYTHONPATH=python:app python -m pytest -q python/tests app/tests
 
 # Check the site and the generated scene (needs python3).
 site-check:
@@ -48,5 +49,5 @@ reproduce:
     ./scripts/reproduce.sh
 
 # Run every merge gate. Must return zero.
-verify: fmt-check lint test
+verify: fmt-check lint test py-test
     @echo "verify: all gates passed"
