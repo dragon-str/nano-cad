@@ -939,6 +939,13 @@ pub struct HullWallSpec {
     pub wall_margin_m: f64,
     /// The drain bore cut radius (to the wall carbon centres), in metres.
     pub drain_radius_m: f64,
+    /// The length of the narrow drain section, in metres. A long single-file
+    /// bore half-empties at idle and lets an O2 sit in it; the 1.0 nm channel
+    /// of ADR-0098 stays full (ADR-0119).
+    pub drain_narrow_length_m: f64,
+    /// The radius of the counterbore from each wall face to the narrow
+    /// section, in metres.
+    pub drain_counterbore_radius_m: f64,
 }
 
 impl Default for HullWallSpec {
@@ -952,7 +959,9 @@ impl Default for HullWallSpec {
             plate_overhang_m: 0.8e-9,
             wall_thickness_m: 2.4e-9,
             wall_margin_m: 1.6e-9,
-            drain_radius_m: 3.4e-10,
+            drain_radius_m: 4.2e-10,
+            drain_narrow_length_m: 1.0e-9,
+            drain_counterbore_radius_m: 7.0e-10,
         }
     }
 }
@@ -1044,16 +1053,27 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
             }),
         }),
     };
-    let drain = Placed {
-        inner: Box::new(RadialCylinder {
-            azimuth_rad: 0.0,
-            center_radius_m: 0.0,
-            radius_m: spec.drain_radius_m,
-            half_length_m: half_t + 1.0e-9,
-            center_z_m: 0.0,
+    let narrow_half = 0.5 * spec.drain_narrow_length_m;
+    let bore = |radius_m: f64, from_m: f64, to_m: f64| -> Box<dyn Solid> {
+        Box::new(Placed {
+            inner: Box::new(RadialCylinder {
+                azimuth_rad: 0.0,
+                center_radius_m: 0.5 * (from_m + to_m),
+                radius_m,
+                half_length_m: 0.5 * (to_m - from_m),
+                center_z_m: 0.0,
+            }),
+            rotation_rad: 0.0,
+            offset_m: [0.0, drain_y, 0.0],
+        })
+    };
+    let reach = half_t + 1.0e-9;
+    let drain = Union {
+        a: bore(spec.drain_radius_m, -reach, reach),
+        b: Box::new(Union {
+            a: bore(spec.drain_counterbore_radius_m, narrow_half, reach),
+            b: bore(spec.drain_counterbore_radius_m, -reach, -narrow_half),
         }),
-        rotation_rad: 0.0,
-        offset_m: [0.0, drain_y, 0.0],
     };
     let cuts = Union {
         a: Box::new(Union {
@@ -1084,7 +1104,11 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
 
     // Line the drain: each cap inside the bore becomes a hydroxyl group.
     let in_bore = |p: [f64; 3]| {
-        (p[1] - drain_y).hypot(p[2]) < spec.drain_radius_m && p[0].abs() < half_t + 2.0e-10
+        let r = (p[1] - drain_y).hypot(p[2]);
+        let x = p[0].abs();
+        x < half_t + 2.0e-10
+            && (r < spec.drain_radius_m
+                || (x > narrow_half - 1.0e-10 && r < spec.drain_counterbore_radius_m))
     };
     let caps: Vec<(usize, usize)> = topology
         .bonds()
@@ -1101,7 +1125,7 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
     // Atoms near the bore, for the hydroxyl hydrogen placement.
     let mut near: Vec<[f64; 3]> = (0..topology.atom_count())
         .filter_map(|i| topology.position_m(i))
-        .filter(|p| (p[1] - drain_y).hypot(p[2]) < spec.drain_radius_m + 6.0e-10)
+        .filter(|p| (p[1] - drain_y).hypot(p[2]) < spec.drain_counterbore_radius_m + 6.0e-10)
         .collect();
     for &(c, h) in &caps {
         let (Some(cp), Some(hp)) = (topology.position_m(c), topology.position_m(h)) else {
@@ -1119,8 +1143,11 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
         near.retain(|q| dist(*q, hp) > 1.0e-14);
         near.push(o);
         // The hydroxyl hydrogen sits on the C-O-H cone (108.5 degrees), at
-        // the one of 24 turns about the C-O axis farthest from its
-        // neighbours, so the bore does not crowd.
+        // the one of 24 turns about the C-O axis farthest from every
+        // neighbour. A real hydroxyl turns about C-O in picoseconds, and the
+        // drain MD lets it turn (ADR-0119), so the start only has to be free
+        // of clashes. Pointing it away from the bore pressed it to 1.9 A
+        // from the wall carbons.
         let helper = if d[0].abs() < 0.9 {
             [1.0, 0.0, 0.0]
         } else {
@@ -1387,9 +1414,13 @@ mod tests {
         // The drain: open along its axis, lined with hydroxyl oxygens.
         assert!(wall.drain_lining >= 8, "{}", wall.drain_lining);
         let mut nearest = f64::INFINITY;
-        for q in &atoms {
-            if q[0].abs() < 1.0e-9 {
-                nearest = nearest.min((q[1] - wall.drain_y_m).hypot(q[2]));
+        for (i, q) in atoms.iter().enumerate() {
+            if wall.part.topology.element(i) == Some(Element::HYDROGEN) {
+                continue;
+            }
+            if q[0].abs() < 0.4e-9 {
+                let r = (q[1] - wall.drain_y_m).hypot(q[2]);
+                nearest = nearest.min(r);
             }
         }
         eprintln!(
@@ -1399,7 +1430,9 @@ mod tests {
             nearest * 1e10,
             wall.part.atom_count()
         );
-        assert!(nearest > 1.5e-10, "{nearest:e}");
+        // The bottleneck at the heavy atoms, against the channel tested by MD
+        // (ADR-0098, lining O 2.91 A from the axis). The hydrogens turn.
+        assert!(nearest > 2.9e-10, "{nearest:e}");
         // Every pocket's state follows the cam profile.
         for (k, &az) in s.azimuth_rad.iter().enumerate() {
             let f = ArmCamTrack::loaded_fraction(az);

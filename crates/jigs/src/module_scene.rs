@@ -191,7 +191,7 @@ pub fn module_scene(parts: &ModuleParts) -> Scene {
 /// iterations for the housing, 700-1,200 for the rotor unit).
 pub fn module_relax_options() -> ValenceRelaxOptions {
     ValenceRelaxOptions {
-        max_iterations: 3000,
+        max_iterations: 6000,
         ..ValenceRelaxOptions::default()
     }
 }

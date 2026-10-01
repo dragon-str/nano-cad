@@ -3267,3 +3267,57 @@ transport rests on ADR-0098's MD of a wider channel (M28-35). The face seals
 rub at contact all round; their friction is not estimated. Simulated
 estimate.
 
+## ADR-0119: The as-built drain does not carry water; two MD faults fixed
+
+Context. M28-35. ADR-0118 left the hull-wall drain unproven: a 3.4 A bore
+whose hydroxyl hydrogens narrowed it to 1.6 A. The water transport rests on
+ADR-0098's MD of a 3.8 A, 1 nm channel.
+
+Geometry changes. The bore cut radius is 4.2 A, and the narrow section is
+1.0 nm long, the length of the tested channel; 7 A counterbores lead to it
+from both wall faces. Each hydroxyl hydrogen starts at its clearest turn
+about C-O. Pointing it away from the bore had pressed it to 1.9 A from the
+wall carbons. Lining oxygens sit 3.08 A from the axis (tested channel 2.91).
+`drain_patch_json` cuts the as-built bore out of the wall for the MD.
+
+Two faults in `drain_transit_md.py`, both fixed:
+1. Under-filled box. The water grid floored its row count on each axis, so
+   a 1.8 nm box lost up to 14 percent of its water. A vapour bubble formed
+   at every pressure, and the push force moved it to the low-pressure face.
+   The rows are now rounded and stretched to fill the box.
+2. Low side below zero. The constant force splits dP about the mean
+   pressure. The water is now packed denser by 1 + kappa dP / 2.
+After the fixes the ADR-0098 channel carries 12-13.5 waters/ns at 200 MPa
+(was 18.5), with no cavity. The 200 and 500 MPa numbers of ADR-0098 came
+from a box with a bubble; they are now a rough estimate.
+
+Results, as-built drain, 2 ns each:
+
+| Lining | dP | Net water | Narrow section |
+|---|---|---|---|
+| frozen | 100 MPa | 0 (101 up, 101 down) | 3 fixed water sites, 3 A apart |
+| frozen | 200 MPa | 0 (104 / 104) | same |
+| mobile OH | 100 MPa | 0 (0 / 0) | dry |
+| mobile OH | 200 MPa | 0 (14 / 12) | dry |
+| mobile OH | 0 | 0 (2 / 2) | dry; no O2 crossed |
+
+Mobile OH (`--mobile-oh`): each lining hydrogen keeps a stiff O-H bond and a
+C-O-H angle and turns about C-O. It has mass 4 amu, and the step is 1 fs,
+because a 2 fs step blew up after 50-100 ps. 113 of 134 hydroxyls turn; 21
+start within 2 A of a carbon or a cap hydrogen and stay frozen.
+
+Finding. Neither lining model carries water at the tank pressure. A frozen
+lining traps single waters in fixed pockets. A mobile lining turns its
+hydrogens into the bore and fills it. The tested channel conducted only with
+a frozen lining: all 16 of its hydroxyls start near cap hydrogens, so none
+turned in the control. No channel has yet been shown to conduct with a
+lining that can move. The drain, which ADR-0100 relies on, is unproven.
+
+Also: the rotor relaxation needed 3934 iterations after this change. The
+budget is now 6000. The rim seal stops a probe of 1.55 A or more, so water
+passes it (M28-36). The O2 seal holds at 1.0x and 0.9x radii.
+
+Next (M28-38). Scan the drain with a mobile lining: lining density (every
+cap, every other cap, H-capped), bore radius 3.8-5 A, and length 0.5-1 nm.
+Measure water flux at 100 MPa and O2 entry at idle. Simulated estimates.
+

@@ -26,7 +26,7 @@
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo bench            # timing only, not a gate
-pytest python/tests
+just py-test           # pytest through uv (numpy&gt;=2, scipy)
 just verify            # runs all gates</code></pre>
 <h2>Resource limits (hard rule)</h2>
 <p>The development machine is a Mac mini with 16 GB of memory. On 2026-09-25 a quantum-chemistry run started 10 PySCF workers at 3 GB each, used 27 GB and crashed the machine.</p>

@@ -1,4 +1,4 @@
-"""Drain transit test (M28-10): count water and oxygen that cross a lined
+"""Drain transit test (M28-10, M28-35): count water and oxygen that cross a lined
 single-file channel, with and without a pressure difference.
 
 Geometry from `channel_json`: a frozen diamond slab with one lined
@@ -61,6 +61,15 @@ def main() -> int:
     p.add_argument("--reverse", action="store_true", help="walk the windows from the far side back")
     p.add_argument("--save", default=None, help="write the window series to this .npz")
     p.add_argument("--combine", nargs="+", default=None, help="WHAM over saved .npz files; no MD")
+    p.add_argument("--density-scale", type=float, default=None,
+                   help="pack the water this much denser than bulk; default 1 + kappa dP / 2 "
+                        "(kappa 4.6e-10 /Pa, SPC/E), so the low-pressure side stays above zero")
+    p.add_argument("--dt-fs", type=float, default=2.0,
+                   help="time step in fs; use 1 with --mobile-oh (a 2 fs step blew up once in 50-100 ps)")
+    p.add_argument("--mobile-oh", action="store_true",
+                   help="let each lining hydroxyl hydrogen turn about its C-O bond (heavy atoms stay frozen)")
+    p.add_argument("--profile", action="store_true",
+                   help="also print the mean water count near the axis (r < 0.25 nm) in 1 A slices along the bore")
     a = p.parse_args()
 
     g = json.load(open(a.geometry))
@@ -92,12 +101,23 @@ def main() -> int:
 
     rng = np.random.default_rng(a.seed)
     tree = cKDTree(solid)
-    spacing = (WATER_VOLUME_A3 ** (1 / 3)) / 10.0
+    # The constant force splits dP about the mean box pressure, so the low
+    # side sits near -dP/2 and cavitates in an NVT box at bulk density
+    # (found in M28-35: a vacuum gap opened above the slab at 500 MPa).
+    # Packing the water denser raises the mean pressure by about dP/2.
+    if a.density_scale is None:
+        a.density_scale = 1.0 + 4.6e-10 * a.dp_mpa * 1e6 / 2.0
+    spacing = (WATER_VOLUME_A3 / a.density_scale) ** (1 / 3) / 10.0
+    # Round, not floor, the row count on each axis and stretch the rows to
+    # fill the box. Flooring on a 1.8 nm box lost up to 14 percent of the
+    # water per axis and left a vapour bubble at every pressure (M28-35).
+    nx, ny, nz = (max(1, round(length / spacing)) for length in (box_x, box_y, box_z))
+    sx, sy, sz = box_x / nx, box_y / ny, box_z / nz
     sites = []
-    for ix in range(int(box_x / spacing)):
-        for iy in range(int(box_y / spacing)):
-            for iz in range(int(box_z / spacing)):
-                o = np.array([(ix + 0.5) * spacing, (iy + 0.5) * spacing, (iz + 0.5) * spacing])
+    for ix in range(nx):
+        for iy in range(ny):
+            for iz in range(nz):
+                o = np.array([(ix + 0.5) * sx, (iy + 0.5) * sy, (iz + 0.5) * sz])
                 if tree.query(o)[0] >= 0.26:
                     sites.append(o)
     sites = np.array(sites)
@@ -110,14 +130,49 @@ def main() -> int:
         n_o2 = 1
     o2_sites = set(rng.choice(tank, size=min(n_o2, len(tank)), replace=False).tolist())
 
+    # Mobile hydroxyl hydrogens (M28-35). A frozen lining fixes each OH
+    # hydrogen in one arbitrary direction, and the water transport hung on
+    # that choice. Each lining H keeps a stiff O-H bond and a C-O-H angle and
+    # turns freely about C-O. Mass 4 amu keeps the 2 fs step stable; it does
+    # not change the equilibrium orientations.
+    mobile = {}
+    crowded = 0
+    if a.mobile_oh:
+        el = np.array(elements)
+        heavy = np.where(el != "H")[0]
+        heavy_tree = cKDTree(solid[heavy])
+        lining = {}
+        for hi in np.where(el == "H")[0]:
+            d_h, k_h = heavy_tree.query(solid[hi])
+            o_i = int(heavy[k_h])
+            if el[o_i] != "O" or d_h > 0.11:
+                continue
+            carbons = [c for c in tree.query_ball_point(solid[o_i], 0.16) if el[c] == "C"]
+            if carbons:
+                c_i = int(min(carbons, key=lambda c: np.linalg.norm(solid[c] - solid[o_i])))
+                lining[int(hi)] = (o_i, c_i)
+        for hi, (o_i, c_i) in lining.items():
+            # A hydrogen within 0.2 nm of a carbon or a cap hydrogen sits in a
+            # crowded corner of the as-built lining and stays frozen. An
+            # oxygen that close is a hydrogen bond; another hydroxyl hydrogen
+            # turns away.
+            others = [
+                j for j in tree.query_ball_point(solid[hi], 0.2)
+                if j not in (hi, o_i, c_i) and el[j] != "O" and j not in lining
+            ]
+            if others:
+                crowded += 1
+                continue
+            mobile[hi] = (o_i, c_i)
+
     system = mm.System()
     system.setDefaultPeriodicBoxVectors(mm.Vec3(box_x, 0, 0), mm.Vec3(0, box_y, 0), mm.Vec3(0, 0, box_z))
     nb = mm.NonbondedForce()
     nb.setNonbondedMethod(mm.NonbondedForce.PME)
     nb.setCutoffDistance(0.9)
     pos = list(solid)
-    for e, q in zip(elements, charges):
-        system.addParticle(0.0)
+    for idx, (e, q) in enumerate(zip(elements, charges)):
+        system.addParticle(4.0 if idx in mobile else 0.0)
         x1, d1 = UFF[e]
         nb.addParticle(float(q), x1 / LJ_FACTOR / 10.0, d1 * KCAL)
     water_o, o2_a = [], []
@@ -152,8 +207,25 @@ def main() -> int:
         pos += [o, o + OH * (math.cos(h) * d + math.sin(h) * r), o + OH * (math.cos(h) * d - math.sin(h) * r)]
         water_o.append(i)
     for i, j in tree.query_pairs(0.9):
-        nb.addException(int(i), int(j), 0.0, 0.1, 0.0)
+        i, j = int(i), int(j)
+        # A mobile H feels the rest of the solid, except its own O and C.
+        if i in mobile and j not in mobile[i]:
+            continue
+        if j in mobile and i not in mobile[j]:
+            continue
+        nb.addException(i, j, 0.0, 0.1, 0.0)
     system.addForce(nb)
+    if mobile:
+        bonds = mm.HarmonicBondForce()
+        angles = mm.HarmonicAngleForce()
+        for h_i, (o_i, c_i) in mobile.items():
+            r0 = float(np.linalg.norm(solid[h_i] - solid[o_i]))
+            v1, v2 = solid[c_i] - solid[o_i], solid[h_i] - solid[o_i]
+            th0 = float(np.arccos(np.dot(v1, v2) / np.linalg.norm(v1) / np.linalg.norm(v2)))
+            bonds.addBond(o_i, h_i, r0, 4.6e5)
+            angles.addAngle(c_i, o_i, h_i, th0, 400.0)
+        system.addForce(bonds)
+        system.addForce(angles)
 
     area_m2 = box_x * box_y * 1e-18
     force_n = a.dp_mpa * 1e6 * area_m2 / len(water_o)
@@ -187,7 +259,7 @@ def main() -> int:
         um.addBond([0], [])
         system.addForce(um)
 
-    integ = mm.LangevinMiddleIntegrator(310 * unit.kelvin, 1 / unit.picosecond, 0.002 * unit.picoseconds)
+    integ = mm.LangevinMiddleIntegrator(310 * unit.kelvin, 1 / unit.picosecond, a.dt_fs * 1e-3 * unit.picoseconds)
     integ.setRandomNumberSeed(a.seed)
     try:
         plat = mm.Platform.getPlatformByName(a.platform)
@@ -197,7 +269,7 @@ def main() -> int:
     ctx.setPositions(np.array(pos) * unit.nanometer)
     mm.LocalEnergyMinimizer.minimize(ctx, 10.0, 1000)
     ctx.setVelocitiesToTemperature(310 * unit.kelvin, a.seed)
-    integ.step(int(a.equilibrate_ps / 0.002))
+    integ.step(int(a.equilibrate_ps / (a.dt_fs * 1e-3)))
 
     if a.umbrella:
         return umbrella(a, ctx, integ, o2_a[0], slab_lo, slab_hi, zc, k_z, r_cyl, g)
@@ -228,14 +300,33 @@ def main() -> int:
 
     wt, ot = tracker(len(water_o)), tracker(len(o2_a))
     o2_in_channel, water_in_channel, o2_above = [], [], []
+    # Net crossings of the mid-plane near the axis: robust to a long bore.
+    edges = np.arange(slab_lo - 0.5, slab_hi + 0.5001, 0.1)
+    profile = np.zeros(len(edges) - 1)
+    full_edges = np.linspace(0.0, box_z, 41)
+    full = np.zeros(len(full_edges) - 1)
+    mid_side = None
+    mid_up = mid_down = 0
     for _ in range(int(a.production_ps / a.sample_ps)):
-        integ.step(int(a.sample_ps / 0.002))
+        integ.step(int(a.sample_ps / (a.dt_fs * 1e-3)))
         xyz = ctx.getState(getPositions=True).getPositions(asNumpy=True).value_in_unit(unit.nanometer)
         w = xyz[water_o]
         o = 0.5 * (xyz[o2_a] + xyz[np.array(o2_a) + 1])
         lw, lo2 = labels(w[:, 2], w[:, 0], w[:, 1]), labels(o[:, 2], o[:, 0], o[:, 1])
         update(wt, lw)
         update(ot, lo2)
+        dx = (w[:, 0] - ax + box_x / 2) % box_x - box_x / 2
+        dy = (w[:, 1] - ay + box_y / 2) % box_y - box_y / 2
+        zz = w[:, 2] % box_z
+        axial = np.hypot(dx, dy) < 0.25
+        profile += np.histogram(zz[axial], bins=edges)[0]
+        full += np.histogram(zz, bins=full_edges)[0]
+        side = np.sign(zz - zc)
+        if mid_side is not None:
+            near_mid = (np.abs(zz - zc) < 0.3) & (np.hypot(dx, dy) < 0.4)
+            mid_up += int(np.sum(near_mid & (mid_side < 0) & (side > 0)))
+            mid_down += int(np.sum(near_mid & (mid_side > 0) & (side < 0)))
+        mid_side = side
         water_in_channel.append(int((lw == 2).sum()))
         o2_in_channel.append(int((lo2 == 2).sum()))
         o2_above.append(int((o[:, 2] > slab_hi).sum()))
@@ -244,6 +335,9 @@ def main() -> int:
     print(json.dumps({
         "radius_A": g["radius"],
         "dp_mpa": a.dp_mpa,
+        "density_scale": round(a.density_scale, 4),
+        "mobile_oh": len(mobile),
+        "crowded_oh_frozen": crowded,
         "force_kj_per_mol_nm": round(force_kj_nm, 4),
         "waters": len(water_o),
         "o2": len(o2_a),
@@ -256,8 +350,18 @@ def main() -> int:
         "o2_above_slab_final": o2_above[-1],
         "mean_water_in_channel": round(float(np.mean(water_in_channel)), 2),
         "fraction_o2_in_channel": round(float(np.mean(np.array(o2_in_channel) > 0)), 4),
+        "mid_plane_up": mid_up,
+        "mid_plane_down": mid_down,
         "platform": plat.getName(),
     }))
+    if a.profile:
+        n = int(a.production_ps / a.sample_ps)
+        for lo_e, c in zip(edges[:-1], profile / n):
+            print(f"z {10 * (lo_e - zc):+6.1f} A  axial waters {c:5.2f}")
+        slab_vol = box_x * box_y * (full_edges[1] - full_edges[0])
+        bulk = 1.0 / (WATER_VOLUME_A3 / 1000.0)
+        for lo_e, c in zip(full_edges[:-1], full / n):
+            print(f"box z {10 * (lo_e - zc):+6.1f} A  water density {c / slab_vol / bulk:4.2f} of bulk")
     return 0
 
 

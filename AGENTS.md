@@ -49,7 +49,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo bench            # timing only, not a gate
-pytest python/tests
+just py-test           # pytest through uv (numpy>=2, scipy)
 just verify            # runs all gates
 ```
 
