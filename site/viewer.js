@@ -1673,20 +1673,19 @@
     var lines;
     var respirocyte = /^respirocyte/.test(scene.frame || "");
     if (motion.kind === "joints" && respirocyte) {
-      var device = scene.frame === "respirocyte_device";
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
-        "mechanism: respirocyte O2 " + (device ? "device: module + gas tank" : "module") +
-          " (relaxed, simulated)",
-        "bodies: " + scene.device.body_count + " (housing, rotor, 12 heme sites, 12 ligand arms" +
-          (device ? ", tank)" : ")"),
+        "mechanism: respirocyte O2 rotor in a hull-wall section (relaxed, simulated)",
+        "bodies: " + scene.device.body_count + " (hull wall, rotor, 12 heme sites, 12 ligand arms)",
         "atoms: " + scene.atomistic.atom_count,
-        "pockets 0-5: ligand in (Fe-N 2.1 A), O2 bound",
-        "pockets 6-11: ligand withdrawn (4.0 A or more), site empty",
-        "arm cam: pin on each arm runs in a groove in the housing end plate",
-        "site attachment: four two-carbon tethers per site",
-        "repair donor and discharge path: not built",
-        "hide the housing" + (device ? " and the tank" : "") + " in Components to see the rotor",
+        "hull wall on x = 0: blood at +x, tank at -x; rotor axis in the wall",
+        "seals: the rim at 90 and 270 deg, and a face-seal ring on each plate",
+        "rotor turns +z: load in blood (arm in), cross the seal at 90 deg,",
+        "  arm out at 120 deg (release into the tank), arm in at 270 deg (in the seal)",
+        "arm cam: a pin on each arm runs in a groove in the end plate",
+        "drain: one OH-lined bore through the wall beside the rotor",
+        "not built: repair donor, discharge rotor",
+        "hide the hull wall in Components to see the rotor",
       ];
     } else if (motion.kind === "joints") {
       var couplings = scene.device.gear_couplings || [];
@@ -1934,7 +1933,7 @@
   function load() {
     var served = location.protocol !== "file:";
     if (served && window.fetch) {
-      return loadPart("respirocyte_device", "Respirocyte device (module + tank)")
+      return loadPart("respirocyte_module", "Respirocyte O2 rotor in the hull wall")
         .catch(function () {
           return fromSceneJson();
         })

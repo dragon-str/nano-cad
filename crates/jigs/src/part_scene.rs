@@ -10,7 +10,6 @@ use serde::Serialize;
 use nanocad_model::Part;
 use nanocad_parts::{library, ParameterSet};
 
-use crate::device_scene::{build_relaxed_device_scene, DEVICE_SCENE_ID};
 use crate::gear_pump_scene::{build_gear_pump_scene, GEAR_PUMP_SCENE_ID};
 use crate::module_scene::{build_relaxed_module_scene, module_relax_options, MODULE_SCENE_ID};
 use crate::rotor_scene::zero_design;
@@ -69,13 +68,7 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
         },
         SceneCatalogEntry {
             id: MODULE_SCENE_ID.to_string(),
-            name: "Respirocyte O2 module (relaxed)".to_string(),
-            kind: "machine".to_string(),
-            category: "machines".to_string(),
-        },
-        SceneCatalogEntry {
-            id: DEVICE_SCENE_ID.to_string(),
-            name: "Respirocyte device (module + tank)".to_string(),
+            name: "Respirocyte O2 rotor in the hull wall".to_string(),
             kind: "machine".to_string(),
             category: "machines".to_string(),
         },
@@ -103,11 +96,8 @@ pub fn build_part_scene(id: &str) -> Result<Scene, SceneError> {
         return build_gear_pump_scene();
     }
     if id == MODULE_SCENE_ID {
-        // Relaxed on request: about 50 s in a release build.
+        // Relaxed on request: about 150 s in a release build.
         return build_relaxed_module_scene(&module_relax_options()).map(|(scene, _)| scene);
-    }
-    if id == DEVICE_SCENE_ID {
-        return build_relaxed_device_scene(&module_relax_options()).map(|(scene, _)| scene);
     }
     let part = nanocad_parts::generate(id, &ParameterSet::new())?;
     let name = nanocad_parts::generator(id)
@@ -229,8 +219,7 @@ mod tests {
                 ROTOR_SCENE_ID,
                 GEARBOX_SCENE_ID,
                 GEAR_PUMP_SCENE_ID,
-                MODULE_SCENE_ID,
-                DEVICE_SCENE_ID
+                MODULE_SCENE_ID
             ]
         );
         assert_eq!(catalog.len(), library().len() - 1 + machines.len());

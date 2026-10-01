@@ -18,7 +18,6 @@ mod anchor;
 mod assembly;
 mod design;
 mod device;
-mod device_scene;
 mod error;
 mod gear_pump_scene;
 mod jig;
@@ -46,10 +45,6 @@ pub use device::{
     ConstraintOptions, DeviceError, FixedJoint, GearConstraint, GearCoupling, GearTerm,
     PrismaticJoint, Quat, RevoluteJoint, RigidBody, RigidBodySystem,
 };
-pub use device_scene::{
-    build_relaxed_device_scene, device_parts, device_scene, DeviceParts, DEVICE_SCENE_ID,
-    DEVICE_TANK_CLEARANCE_M, DEVICE_TANK_WALL_M,
-};
 pub use error::JigError;
 pub use gear_pump_scene::{
     build_gear_pump_scene, build_relaxed_gear_pump_scene, gear_pump_scene, relaxed_gear_pump_scene,
@@ -59,8 +54,7 @@ pub use gear_pump_scene::{
 pub use jig::{Jig, JigKind};
 pub use module_scene::{
     body_contacts, build_module_scene, build_relaxed_module_scene, module_parts,
-    module_relax_options, module_scene, ModuleParts, MODULE_AXIAL_CLEARANCE_M, MODULE_CLEARANCE_M,
-    MODULE_SCENE_ID,
+    module_relax_options, module_scene, ModuleParts, MODULE_SCENE_ID,
 };
 pub use motor::MotorJig;
 pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineError, SliceResult};

@@ -50,9 +50,9 @@ static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("arm_radius_m", Some(Unit::Metre), 2.6e-10, 1.5e-10, 1.0e-9, false, "radius of the ligand arm lattice"),
     ParameterSpec::new("arm_clearance_m", Some(Unit::Metre), 5.5e-10, 3.0e-10, 1.0e-9, false, "carbon gap between the arm and its channel"),
     ParameterSpec::new("arm_length_m", Some(Unit::Metre), 1.4e-9, 5.0e-10, 3.0e-9, false, "length of the ligand arm"),
-    ParameterSpec::new("loaded_pockets", None, 6.0, 0.0, 64.0, true, "pockets 0..n-1 show the loaded state (ligand in, O2 bound); the rest show release (ligand out, empty)"),
+    ParameterSpec::new("pocket_phase_rad", None, 0.261_799_387_799_149_4, -3.2, 3.2, false, "azimuth of pocket 0; the cam profile then sets each pocket's state (ligand in and O2 bound, or ligand out and empty)"),
     ParameterSpec::new("cam_pin_offset_m", Some(Unit::Metre), 3.0e-10, 2.6e-10, 1.0e-9, false, "distance of the cam pin axis from the back end of the arm"),
-    ParameterSpec::new("cam_pin_top_m", Some(Unit::Metre), 2.4e-9, 1.4e-9, 5.0e-9, false, "height of the cam pin end above the disc mid-plane"),
+    ParameterSpec::new("cam_pin_top_m", Some(Unit::Metre), 2.5e-9, 1.4e-9, 5.0e-9, false, "height of the cam pin end above the disc mid-plane"),
     ParameterSpec::new("cam_release_margin_m", Some(Unit::Metre), 2.0e-10, 0.0, 1.0e-9, false, "extra withdrawal of the release track beyond the 4.0 A design, taken up by the lattice steps of the groove wall"),
 ];
 
@@ -60,10 +60,12 @@ static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
 /// hydrogen caps at van der Waals contact (1.09 + 2.4 + 1.09 A, rounded up to
 /// the running clearance of the module).
 pub const CAM_CONTACT_M: f64 = 4.6e-10;
-/// The azimuth where the cam pushes the arm in (the inlet), in radians.
-pub const CAM_INLET_RAD: f64 = 345.0 * PI / 180.0;
-/// The azimuth where the cam pulls the arm out (the outlet), in radians.
-pub const CAM_OUTLET_RAD: f64 = 165.0 * PI / 180.0;
+/// The azimuth where the cam pushes the arm in, in radians: inside the seal
+/// the pocket crosses from the tank back to the blood (ADR-0117).
+pub const CAM_INLET_RAD: f64 = 270.0 * PI / 180.0;
+/// The azimuth where the cam pulls the arm out, in radians: just inside the
+/// tank, after the loaded pocket has crossed the seal from the blood.
+pub const CAM_OUTLET_RAD: f64 = 120.0 * PI / 180.0;
 /// The half-width of each cam ramp, in radians.
 pub const CAM_RAMP_HALF_RAD: f64 = 12.0 * PI / 180.0;
 
@@ -305,7 +307,7 @@ impl HemeRotorGenerator {
         let arm_r_m = r.require("arm_radius_m")?;
         let arm_clr_m = r.require("arm_clearance_m")?;
         let arm_len_m = r.require("arm_length_m")?;
-        let loaded_n = r.require("loaded_pockets")?.round() as usize;
+        let phase_rad = r.require("pocket_phase_rad")?;
         let release_margin_m = r.require("cam_release_margin_m")?;
         let pin_offset_m = r.require("cam_pin_offset_m")?;
         let pin_top_m = r.require("cam_pin_top_m")?;
@@ -328,7 +330,7 @@ impl HemeRotorGenerator {
         // The disc and its cuts.
         let mut cuts: Option<Box<dyn Solid>> = None;
         let azimuths: Vec<f64> = (0..count)
-            .map(|k| 2.0 * PI * k as f64 / count as f64)
+            .map(|k| (phase_rad + 2.0 * PI * k as f64 / count as f64).rem_euclid(2.0 * PI))
             .collect();
         for &az in &azimuths {
             let outer = disc_m + 1.0e-9;
@@ -566,7 +568,7 @@ impl HemeRotorGenerator {
             let u = [c, s, 0.0];
             let t = [-s, c, 0.0];
             let fe = [iron_r_m * c, iron_r_m * s, 0.0];
-            let is_loaded = k < loaded_n;
+            let is_loaded = ArmCamTrack::loaded_fraction(az) >= 0.5;
             loaded.push(is_loaded);
             let mut site = Topology::new();
             let fe_i = site.add_atom(Atom::new(Element::IRON, fe, 0.0, "Fe"));
@@ -905,53 +907,265 @@ fn apply3(m: &[[f64; 3]; 3], p: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-/// Builds the module housing: a ring around the rotor with two end plates and
-/// one straight channel through the ring at `channel_angle_rad`, which opens
-/// the ring on both sides (inlet and outlet, 180 degrees apart), plus an
-/// optional `extra_cut` (the arm-cam grooves in the end plates). Loose
-/// lattice carbons are removed before capping, so no two caps share a site.
-pub fn module_housing(
-    chamber_radius_m: f64,
-    wall_m: f64,
-    inner_half_height_m: f64,
-    plate_m: f64,
-    channel_width_m: f64,
-    channel_angle_rad: f64,
-    extra_cut: Option<Box<dyn Solid>>,
-) -> Result<Part, PartError> {
-    let outer_r = chamber_radius_m + wall_m;
-    let shell = Cylinder {
-        center_m: [0.0; 3],
-        radius_m: outer_r,
-        height_m: 2.0 * (inner_half_height_m + plate_m),
-    };
-    let chamber = Cylinder {
-        center_m: [0.0; 3],
-        radius_m: chamber_radius_m,
-        height_m: 2.0 * inner_half_height_m,
-    };
-    let reach = outer_r + 1.0e-9;
-    let channel = Placed {
-        inner: Box::new(Box3 {
-            min_m: [-reach, -0.5 * channel_width_m, -inner_half_height_m],
-            max_m: [reach, 0.5 * channel_width_m, inner_half_height_m],
-        }),
-        rotation_rad: channel_angle_rad,
-        offset_m: [0.0; 3],
-    };
-    let mut inner: Box<dyn Solid> = Box::new(Union {
-        a: Box::new(chamber),
-        b: Box::new(channel),
-    });
-    if let Some(cut) = extra_cut {
-        inner = Box::new(Union { a: inner, b: cut });
+/// The hull-wall section that holds the O2 rotor (ADR-0117).
+///
+/// The wall is a diamond slab on the plane x = 0: blood on the +x side, the
+/// tank on the -x side. The rotor axis (z) lies in the wall plane, so half the
+/// rim faces the blood and half the tank. Two end plates cover the rotor faces
+/// and carry the arm-cam grooves. The slab closes the chamber only where the
+/// rim crosses the wall: those two arcs are the seals. Everywhere else the rim
+/// is open to the blood or to the tank. One drain bore through the slab,
+/// beside the plates, returns water from the tank to the blood; the
+/// hydrogens facing into it are hydroxyl groups (ADR-0114).
+#[derive(Clone, Debug)]
+pub struct HullWallSpec {
+    /// The carbon gap between the rotor rim and the chamber wall, in metres.
+    pub rim_gap_m: f64,
+    /// The carbon gap between the rotor faces and the end plates, in metres.
+    pub face_gap_m: f64,
+    /// The carbon gap of the face seal: a ring on each plate at the outer
+    /// edge of the rotor face, at H-H contact, so the face gap (with the cam
+    /// grooves and pin slots) is closed to both blood and tank, in metres.
+    pub face_seal_gap_m: f64,
+    /// The radial width of the face seal ring, in metres.
+    pub face_seal_width_m: f64,
+    /// The lattice behind each cam groove floor, in metres.
+    pub plate_backing_m: f64,
+    /// How far the end plates reach past the chamber radius, in metres.
+    pub plate_overhang_m: f64,
+    /// The slab thickness along x, in metres. It sets the seal arcs.
+    pub wall_thickness_m: f64,
+    /// How far the slab reaches past the end plates along y, in metres.
+    pub wall_margin_m: f64,
+    /// The drain bore cut radius (to the wall carbon centres), in metres.
+    pub drain_radius_m: f64,
+}
+
+impl Default for HullWallSpec {
+    fn default() -> Self {
+        Self {
+            rim_gap_m: 4.2e-10,
+            face_gap_m: 7.0e-10,
+            face_seal_gap_m: 4.6e-10,
+            face_seal_width_m: 0.5e-9,
+            plate_backing_m: 0.5e-9,
+            plate_overhang_m: 0.8e-9,
+            wall_thickness_m: 2.4e-9,
+            wall_margin_m: 1.6e-9,
+            drain_radius_m: 3.4e-10,
+        }
     }
-    let solid = Difference {
-        outer: Box::new(shell),
-        inner,
+}
+
+/// A built hull-wall section.
+#[derive(Clone, Debug)]
+pub struct HullWall {
+    /// The wall, end plates and seals, one body.
+    pub part: Part,
+    /// The chamber radius, in metres.
+    pub chamber_radius_m: f64,
+    /// The chamber half-height (the plate inner faces), in metres.
+    pub chamber_half_m: f64,
+    /// The half-angle of each seal arc about 90 and 270 degrees, in radians.
+    pub seal_half_rad: f64,
+    /// The y of the drain bore axis (it runs along x at z = 0), in metres.
+    pub drain_y_m: f64,
+    /// The number of hydroxyl groups lining the drain bore.
+    pub drain_lining: usize,
+    /// The inner radius of the face seal ring, in metres.
+    pub face_seal_inner_radius_m: f64,
+}
+
+/// Builds the hull-wall section around `set` (ADR-0117).
+pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, PartError> {
+    let chamber_r = set.disc_radius_m + spec.rim_gap_m;
+    let chamber_half = set.half_thickness_m + spec.face_gap_m;
+    let [top, bottom] = set.cam_tracks(chamber_half);
+    let plate_top = top.z_max_m + spec.plate_backing_m;
+    let plate_r = chamber_r + spec.plate_overhang_m;
+    let half_t = 0.5 * spec.wall_thickness_m;
+    let seal_half_rad = (half_t / chamber_r).asin();
+    // The cam ramps must sit in the right places: the arm goes in inside the
+    // tank-to-blood seal at 270 degrees, and comes out only once the pocket is
+    // in the tank, past the seal at 90 degrees.
+    let wrap = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
+    if wrap(CAM_INLET_RAD - 1.5 * PI).abs() + CAM_RAMP_HALF_RAD > seal_half_rad {
+        return Err(PartError::InvalidGeometry(
+            "the arm-in ramp is not inside the seal".to_owned(),
+        ));
+    }
+    if CAM_OUTLET_RAD - CAM_RAMP_HALF_RAD < 0.5 * PI + seal_half_rad {
+        return Err(PartError::InvalidGeometry(
+            "the arm-out ramp starts before the pocket is in the tank".to_owned(),
+        ));
+    }
+    // The chamber: full height inside the face seal ring, contact height
+    // (the face seal) from the ring to the rim gap. A CSG face does not land
+    // on a lattice plane, so the seal is set by measured layers: the first
+    // plate layer sits a whole number of (001) layers beyond the outermost
+    // rotor carbon layer in the seal band. The rotor and the wall are cut
+    // from the same lattice, so the gap is exact.
+    let seal_inner_r = set.disc_radius_m - spec.face_seal_width_m;
+    let layer = 0.25 * crate::diamond_solid::DIAMOND_LATTICE_CONSTANT_M;
+    let (mut face_top, mut face_bottom) = (f64::NEG_INFINITY, f64::INFINITY);
+    for i in 0..set.rotor.atom_count() {
+        if set.rotor.topology.element(i) != Some(Element::CARBON) {
+            continue;
+        }
+        if let Some(p) = set.rotor.topology.position_m(i) {
+            if p[0].hypot(p[1]) >= seal_inner_r {
+                face_top = face_top.max(p[2]);
+                face_bottom = face_bottom.min(p[2]);
+            }
+        }
+    }
+    let layers = (spec.face_seal_gap_m / layer).round();
+    let seal_top = face_top + (layers - 0.3) * layer;
+    let seal_bottom = face_bottom - (layers - 0.3) * layer;
+    let wall_y = plate_r + spec.wall_margin_m;
+    let drain_y = plate_r + 0.5 * spec.wall_margin_m;
+    let body = Union {
+        a: Box::new(Box3 {
+            min_m: [-half_t, -wall_y, -plate_top],
+            max_m: [half_t, wall_y, plate_top],
+        }),
+        b: Box::new(Union {
+            // The plates reach down to the face seal; the chamber cut opens
+            // them again inside the seal ring.
+            a: Box::new(Cylinder {
+                center_m: [0.0, 0.0, 0.5 * (seal_top + plate_top)],
+                radius_m: plate_r,
+                height_m: plate_top - seal_top,
+            }),
+            b: Box::new(Cylinder {
+                center_m: [0.0, 0.0, 0.5 * (seal_bottom - plate_top)],
+                radius_m: plate_r,
+                height_m: plate_top + seal_bottom,
+            }),
+        }),
     };
-    let topology = capped_lattice(fill_solid(&solid))?;
-    Ok(Part::new("module_housing", topology).with_material("diamond"))
+    let drain = Placed {
+        inner: Box::new(RadialCylinder {
+            azimuth_rad: 0.0,
+            center_radius_m: 0.0,
+            radius_m: spec.drain_radius_m,
+            half_length_m: half_t + 1.0e-9,
+            center_z_m: 0.0,
+        }),
+        rotation_rad: 0.0,
+        offset_m: [0.0, drain_y, 0.0],
+    };
+    let cuts = Union {
+        a: Box::new(Union {
+            a: Box::new(Cylinder {
+                center_m: [0.0; 3],
+                radius_m: seal_inner_r,
+                height_m: 2.0 * chamber_half,
+            }),
+            b: Box::new(Cylinder {
+                center_m: [0.0, 0.0, 0.5 * (seal_top + seal_bottom)],
+                radius_m: chamber_r,
+                height_m: seal_top - seal_bottom,
+            }),
+        }),
+        b: Box::new(Union {
+            a: Box::new(Union {
+                a: Box::new(top),
+                b: Box::new(bottom),
+            }),
+            b: Box::new(drain),
+        }),
+    };
+    let solid = Difference {
+        outer: Box::new(body),
+        inner: Box::new(cuts),
+    };
+    let mut topology = capped_lattice(fill_solid(&solid))?;
+
+    // Line the drain: each cap inside the bore becomes a hydroxyl group.
+    let in_bore = |p: [f64; 3]| {
+        (p[1] - drain_y).hypot(p[2]) < spec.drain_radius_m && p[0].abs() < half_t + 2.0e-10
+    };
+    let caps: Vec<(usize, usize)> = topology
+        .bonds()
+        .filter_map(|b| {
+            let (u, v) = (b.u as usize, b.v as usize);
+            match (topology.element(u), topology.element(v)) {
+                (Some(Element::CARBON), Some(Element::HYDROGEN)) => Some((u, v)),
+                (Some(Element::HYDROGEN), Some(Element::CARBON)) => Some((v, u)),
+                _ => None,
+            }
+        })
+        .filter(|&(_, h)| topology.position_m(h).is_some_and(in_bore))
+        .collect();
+    // Atoms near the bore, for the hydroxyl hydrogen placement.
+    let mut near: Vec<[f64; 3]> = (0..topology.atom_count())
+        .filter_map(|i| topology.position_m(i))
+        .filter(|p| (p[1] - drain_y).hypot(p[2]) < spec.drain_radius_m + 6.0e-10)
+        .collect();
+    for &(c, h) in &caps {
+        let (Some(cp), Some(hp)) = (topology.position_m(c), topology.position_m(h)) else {
+            continue;
+        };
+        let d = normalize([hp[0] - cp[0], hp[1] - cp[1], hp[2] - cp[2]]);
+        let o = [
+            cp[0] + 1.43e-10 * d[0],
+            cp[1] + 1.43e-10 * d[1],
+            cp[2] + 1.43e-10 * d[2],
+        ];
+        topology.set_element(h, Element::OXYGEN)?;
+        topology.set_atom_type(h, crate::group::FunctionalGroup::Hydroxyl.heavy_type())?;
+        topology.set_position_m(h, o)?;
+        near.retain(|q| dist(*q, hp) > 1.0e-14);
+        near.push(o);
+        // The hydroxyl hydrogen sits on the C-O-H cone (108.5 degrees), at
+        // the one of 24 turns about the C-O axis farthest from its
+        // neighbours, so the bore does not crowd.
+        let helper = if d[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let e1 = normalize(cross(d, helper));
+        let e2 = cross(d, e1);
+        let (sa, ca) = (71.5_f64.to_radians().sin(), 71.5_f64.to_radians().cos());
+        let mut best = (f64::NEG_INFINITY, o);
+        for step in 0..24 {
+            let phi = 2.0 * PI * step as f64 / 24.0;
+            let (sp, cp2) = phi.sin_cos();
+            let w = [
+                cp2 * e1[0] + sp * e2[0],
+                cp2 * e1[1] + sp * e2[1],
+                cp2 * e1[2] + sp * e2[2],
+            ];
+            let hh = [
+                o[0] + 0.96e-10 * (ca * d[0] + sa * w[0]),
+                o[1] + 0.96e-10 * (ca * d[1] + sa * w[1]),
+                o[2] + 0.96e-10 * (ca * d[2] + sa * w[2]),
+            ];
+            let clear = near
+                .iter()
+                .filter(|q| dist(**q, o) > 1.0e-12)
+                .map(|q| dist(*q, hh))
+                .fold(f64::INFINITY, f64::min);
+            if clear > best.0 {
+                best = (clear, hh);
+            }
+        }
+        let hi = topology.add_atom(Atom::new(Element::HYDROGEN, best.1, 0.0, "H"));
+        topology.add_bond(Bond::new(h as u32, hi, 1, BondType::Single))?;
+        near.push(best.1);
+    }
+    crate::pocket::charge_wall(&mut topology, crate::group::FunctionalGroup::Hydroxyl);
+    Ok(HullWall {
+        part: Part::new("hull_wall", topology).with_material("diamond"),
+        chamber_radius_m: chamber_r,
+        chamber_half_m: chamber_half,
+        seal_half_rad,
+        drain_y_m: drain_y,
+        drain_lining: caps.len(),
+        face_seal_inner_radius_m: seal_inner_r,
+    })
 }
 
 impl PartGenerator for HemeRotorGenerator {
@@ -1012,13 +1226,15 @@ mod tests {
             .collect();
         // The designed tether atoms reach the wall (ADR-0113). Walk out from
         // each anchor carbon over the tether, stop at the porphyrin ring.
-        let ring_atoms = 36usize;
+        // A site is the iron and 32 porphine atoms, then the O2 (two atoms)
+        // when loaded, then the tethers.
         let mut tether = std::collections::HashSet::new();
         for (k, anchors) in s.site_anchor.iter().enumerate() {
+            let ring_atoms = if s.loaded[k] { 35usize } else { 33 };
             for &(si, _) in anchors {
                 let mut stack = vec![si];
                 while let Some(a) = stack.pop() {
-                    if !tether.insert(a) {
+                    if !tether.insert((k, a)) {
                         continue;
                     }
                     for b in s.sites[k].topology.bonds() {
@@ -1039,7 +1255,7 @@ mod tests {
         let mut worst = f64::INFINITY;
         for (k, part) in s.sites.iter().chain(s.arms.iter()).enumerate() {
             for i in 0..part.atom_count() {
-                if k < s.sites.len() && tether.contains(&i) {
+                if k < s.sites.len() && tether.contains(&(k, i)) {
                     continue;
                 }
                 let p = part.topology.position_m(i).expect("p");
@@ -1064,23 +1280,9 @@ mod tests {
         let stroke = s.pin_loaded_radius_m - s.pin_released_radius_m;
         let want = LIGAND_OUT_M + s.release_margin_m - LIGAND_IN_M;
         assert!((stroke - want).abs() < 2e-12, "{stroke:e}");
-        // The module geometry of `nanocad_jigs::module_scene`: rim gap 4.6 A,
-        // face gap 6.0 A, 0.5 nm of plate behind each groove.
-        let chamber_half = s.half_thickness_m + 6.0e-10;
-        let [top, bottom] = s.cam_tracks(chamber_half);
-        let housing = module_housing(
-            s.disc_radius_m + 4.6e-10,
-            0.8e-9,
-            chamber_half,
-            top.z_max_m - chamber_half + 0.5e-9,
-            1.6e-9,
-            -15.0_f64.to_radians(),
-            Some(Box::new(Union {
-                a: Box::new(top.clone()),
-                b: Box::new(bottom),
-            })),
-        )
-        .expect("housing");
+        let wall = hull_wall(&s, &HullWallSpec::default()).expect("wall");
+        let chamber_half = wall.chamber_half_m;
+        let housing = wall.part;
         let contact = 2.2e-10;
         let step = 0.05e-10;
         // One loaded arm per side, in its pocket frame (radial, tangential,
@@ -1153,5 +1355,57 @@ mod tests {
                 LIGAND_OUT_M + s.release_margin_m - worst_release
             );
         }
+    }
+
+    /// The hull wall (ADR-0117): the rim is closed only on the two seal arcs,
+    /// open to the blood (+x) and the tank (-x) elsewhere; the drain bore is
+    /// open and hydroxyl-lined.
+    #[test]
+    fn the_hull_wall_seals_the_rim_only_where_it_crosses() {
+        let s = set();
+        let wall = hull_wall(&s, &HullWallSpec::default()).expect("wall");
+        let atoms: Vec<[f64; 3]> = (0..wall.part.atom_count())
+            .filter_map(|i| wall.part.topology.position_m(i))
+            .collect();
+        // Wall atoms within 1 nm outside the chamber, at the rim mid-plane.
+        let covered = |theta: f64| {
+            let r = wall.chamber_radius_m + 0.3e-9;
+            let p = [r * theta.cos(), r * theta.sin(), 0.0];
+            atoms.iter().any(|q| dist(p, *q) < 2.0e-10)
+        };
+        for deg in [90.0_f64, 270.0] {
+            assert!(covered(deg.to_radians()), "no seal at {deg}");
+        }
+        for deg in [0.0_f64, 45.0, 135.0, 180.0, 225.0, 315.0] {
+            assert!(!covered(deg.to_radians()), "rim closed at {deg}");
+        }
+        assert!(
+            wall.seal_half_rad.to_degrees() > 12.0,
+            "{}",
+            wall.seal_half_rad.to_degrees()
+        );
+        // The drain: open along its axis, lined with hydroxyl oxygens.
+        assert!(wall.drain_lining >= 8, "{}", wall.drain_lining);
+        let mut nearest = f64::INFINITY;
+        for q in &atoms {
+            if q[0].abs() < 1.0e-9 {
+                nearest = nearest.min((q[1] - wall.drain_y_m).hypot(q[2]));
+            }
+        }
+        eprintln!(
+            "seal half-angle {:.1} deg, drain lining {}, nearest atom to the drain axis {:.2} A, atoms {}",
+            wall.seal_half_rad.to_degrees(),
+            wall.drain_lining,
+            nearest * 1e10,
+            wall.part.atom_count()
+        );
+        assert!(nearest > 1.5e-10, "{nearest:e}");
+        // Every pocket's state follows the cam profile.
+        for (k, &az) in s.azimuth_rad.iter().enumerate() {
+            let f = ArmCamTrack::loaded_fraction(az);
+            assert!(f == 0.0 || f == 1.0, "pocket {k} is mid-ramp");
+            assert_eq!(s.loaded[k], f == 1.0);
+        }
+        assert_eq!(s.loaded.iter().filter(|&&l| l).count(), 7);
     }
 }

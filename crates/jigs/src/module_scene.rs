@@ -1,20 +1,27 @@
-//! The respirocyte oxygen-loading module (ADR-0111).
+//! The respirocyte oxygen-loading module in a hull-wall section (ADR-0111,
+//! ADR-0117).
 //!
-//! Body 0 is the housing (fixed): a ring with end plates, an inlet opening at
-//! 345 degrees and an outlet opening at 165 degrees. Body 1 is the rotor,
-//! with a revolute joint about z. Bodies 2..2+n are the heme-like sites; each
-//! has a fixed joint to the rotor, and four two-carbon tethers covalently
-//! bond it to the slot wall when the unit is relaxed (ADR-0113). Bodies
-//! 2+n..2+2n are the ligand arms,
-//! each with a prismatic joint to the rotor along its pocket radius. Pockets
-//! 0-5 show the loaded state (NH2 tip 2.1 A from the iron, O2 bound); pockets
-//! 6-11 show the release state (tip withdrawn to 4.0 A, site empty). The
-//! cam that moves the arms and the repair donor on the 180-330 degree arc
-//! are not built.
+//! Body 0 is the hull wall (fixed): a diamond slab on the plane x = 0 with
+//! blood on the +x side and the tank on the -x side, two end plates over the
+//! rotor faces carrying the arm-cam grooves (ADR-0116), the two seal arcs
+//! where the rim crosses the wall, and one hydroxyl-lined drain bore. Body 1
+//! is the rotor, with a revolute joint about z (its axis lies in the wall
+//! plane). Bodies 2..2+n are the heme-like sites; each has a fixed joint to
+//! the rotor, and four two-carbon tethers covalently bond it to the slot wall
+//! when the unit is relaxed (ADR-0113). Bodies 2+n..2+2n are the ligand arms,
+//! each with a prismatic joint to the rotor along its pocket radius.
+//!
+//! The cam profile sets each pocket's state. The rotor turns +z: a pocket
+//! loads in the blood with the arm in, crosses the seal at 90 degrees with
+//! the arm in, releases in the tank after the arm comes out at 120 degrees,
+//! and returns through the seal at 270 degrees, where the arm goes in again.
+//! The repair donor and the discharge rotor are not built.
 
 use nanocad_meter::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 use nanocad_model::{Bond, BondType, Part};
-use nanocad_parts::{module_housing, HemeRotorGenerator, HemeRotorSet, ParameterSet, Union};
+use nanocad_parts::{
+    hull_wall, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec, ParameterSet,
+};
 
 use crate::rotor_scene::zero_design;
 use crate::scene::{
@@ -25,49 +32,24 @@ use crate::scene::{
 /// The scene id of the module.
 pub const MODULE_SCENE_ID: &str = "respirocyte_module";
 
-/// The gap between the rotor rim carbons and the housing, in metres.
-pub const MODULE_CLEARANCE_M: f64 = 4.6e-10;
-
-/// The gap between the rotor faces and the housing end plates, in metres.
-/// Wider than the rim gap: the relaxed disc bulges about 1 A at its faces,
-/// and at 4.6 A the plates pressed it to 1.9 A H-H contacts (ADR-0116).
-pub const MODULE_AXIAL_CLEARANCE_M: f64 = 6.0e-10;
-
-/// The lattice left behind each cam groove floor in the end plate, in metres.
-pub const MODULE_CAM_BACKING_M: f64 = 0.5e-9;
-
 const Z: [f64; 3] = [0.0, 0.0, 1.0];
 
 /// The generated bodies of the module, in body order.
 pub struct ModuleParts {
     /// The rotor set (rotor, sites, arms).
     pub set: HemeRotorSet,
-    /// The housing.
+    /// The hull wall that holds the rotor (body 0).
     pub housing: Part,
+    /// The hull-wall geometry.
+    pub wall: HullWall,
 }
 
 /// Generates the module parts, unrelaxed.
 pub fn module_parts() -> Result<ModuleParts, SceneError> {
     let set = HemeRotorGenerator.build(&ParameterSet::new())?;
-    let half = set.half_thickness_m;
-    // The end plates carry the arm-cam grooves (ADR-0116); each plate keeps
-    // MODULE_CAM_BACKING_M of lattice behind the groove floor.
-    let chamber_half = half + MODULE_AXIAL_CLEARANCE_M;
-    let [top, bottom] = set.cam_tracks(chamber_half);
-    let plate = (top.z_max_m - chamber_half + MODULE_CAM_BACKING_M).max(0.6e-9);
-    let housing = module_housing(
-        set.disc_radius_m + MODULE_CLEARANCE_M,
-        0.8e-9,
-        chamber_half,
-        plate,
-        1.6e-9,
-        -15.0_f64.to_radians(),
-        Some(Box::new(Union {
-            a: Box::new(top),
-            b: Box::new(bottom),
-        })),
-    )?;
-    Ok(ModuleParts { set, housing })
+    let wall = hull_wall(&set, &HullWallSpec::default())?;
+    let housing = wall.part.clone();
+    Ok(ModuleParts { set, housing, wall })
 }
 
 fn atoms_of(part: &Part, body: usize, name: &str) -> Vec<SceneAtom> {
@@ -130,10 +112,10 @@ fn joint(
 pub fn module_scene(parts: &ModuleParts) -> Scene {
     let set = &parts.set;
     let n = set.sites.len();
-    let mut atoms = atoms_of(&parts.housing, 0, "module_housing");
+    let mut atoms = atoms_of(&parts.housing, 0, "hull_wall");
     atoms.extend(atoms_of(&set.rotor, 1, "heme_rotor"));
     let mut bodies = vec![
-        body(0, "housing", "module_housing", true),
+        body(0, "housing", "hull_wall", true),
         body(1, "rotor", "heme_rotor", false),
     ];
     let mut joints = vec![joint("rotor_axis", "revolute", 0, 1, [0.0; 3], Z)];
@@ -443,13 +425,17 @@ mod tests {
 
     #[test]
     fn the_module_has_its_bodies_and_joints() {
-        let scene = build_module_scene().expect("the module builds");
+        let parts = module_parts().expect("the module builds");
+        let scene = module_scene(&parts);
         assert_eq!(scene.device.body_count, 26);
         assert_eq!(scene.device.joints.len(), 25);
         let report = sense_report(&scene);
         assert!(report.floating_bodies.is_empty(), "{report:?}");
-        // The six loaded pockets carry the Fe-NH2 ligand bond across bodies.
-        assert_eq!(report.cross_body_bonds, 6);
+        // The loaded pockets (seven, set by the cam profile) carry the
+        // Fe-NH2 ligand bond across bodies.
+        let loaded = parts.set.loaded.iter().filter(|&&l| l).count();
+        assert_eq!(loaded, 7);
+        assert_eq!(report.cross_body_bonds, loaded);
     }
 
     #[test]
@@ -468,7 +454,7 @@ mod tests {
     }
 
     /// The relaxed module is the delivered CAD model: no overlap, no loose
-    /// piece, and no contact under 2.2 A between bodies except the six Fe-N
+    /// piece, and no contact under 2.2 A between bodies except the seven Fe-N
     /// ligand bonds. About a minute in a release build; run with
     /// `cargo test --release -p nanocad-jigs -- --ignored relaxed_module`.
     #[test]
@@ -499,9 +485,44 @@ mod tests {
         let report = sense_report(&scene);
         assert_eq!(report.overlap_count, 0, "{report:?}");
         assert!(report.disjoint_bodies.is_empty(), "{report:?}");
-        // Twelve tether bonds (one per site) plus the six Fe-N ligand bonds.
-        let close: Vec<_> = body_contacts(&scene, 2.15e-10);
-        assert_eq!(close.len(), 18, "{close:?}");
+        // Twelve tether bonds (one per site) plus the seven Fe-N ligand bonds.
+        // The wall touches the rotor only at the seals (the two rim arcs and
+        // the face seal rings), which are set at H-H contact (ADR-0117).
+        let seal = parts.wall.seal_half_rad;
+        let wall: Vec<[f64; 3]> = (0..parts.housing.atom_count())
+            .filter_map(|i| parts.housing.topology.position_m(i))
+            .collect();
+        let mut rubs = 0usize;
+        for i in 0..parts.set.rotor.atom_count() {
+            let p = parts.set.rotor.topology.position_m(i).expect("p");
+            for q in &wall {
+                let d =
+                    ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt();
+                if d < 2.15e-10 {
+                    let theta = p[1].atan2(p[0]);
+                    let off = (theta.abs() - 0.5 * std::f64::consts::PI).abs();
+                    eprintln!(
+                        "wall-rotor {:.2} A at {:.1} deg, r {:.3} nm, z {:.3} nm",
+                        d * 1e10,
+                        theta.to_degrees(),
+                        p[0].hypot(p[1]) * 1e9,
+                        p[2] * 1e9
+                    );
+                    let at_rim_seal = off <= seal + 0.05;
+                    let at_face_seal = p[0].hypot(p[1])
+                        >= parts.wall.face_seal_inner_radius_m - 2.0e-10
+                        && p[2].abs() >= parts.set.half_thickness_m - 1.0e-10;
+                    assert!(at_rim_seal || at_face_seal, "a rub outside the seals");
+                    assert!(d > 1.9e-10, "the seal is pressed: {d:e}");
+                    rubs += 1;
+                }
+            }
+        }
+        let close: Vec<_> = body_contacts(&scene, 2.15e-10)
+            .into_iter()
+            .filter(|&(a, b, _)| !(a == 0 && b == 1 && rubs > 0))
+            .collect();
+        assert_eq!(close.len(), 19, "{close:?}");
         for (a, b, d) in &close {
             if *a == 1 && (2..14).contains(b) {
                 assert!((1.35e-10..=1.65e-10).contains(d), "tether {a}-{b} {d}");

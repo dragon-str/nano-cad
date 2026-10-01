@@ -44,6 +44,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | O2 loading rate | k_on c budget; MD arrival count | myoglobin-like k_on; OpenMM | arrival into the pocket about 3e6/s (MD), so bond formation limits; design basis 2e3/s per site: about 9,700 rotors at about 300 rev/s | bond-formation step not modelled; large seed spread | 0109, 0110 |
 | Tank start-up | nucleation | classical nucleation theory | needs 850-1700 atm supersaturation; use a 10 atm gas cushion | rate prefactor | 0102 |
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
+| Hull wall and seals | relaxed CAD section; rigid-probe flood fill of the free space | valence relax; `scripts/seal_audit.py` | rotor in a hull-wall slab, seals at H-H contact; O2 probe (1.73 A) finds no path blood to tank, also at 0.9x radii; water (1.40 A) passes the rim seal, closed at 1.50 A | static rigid-sphere test; leak rates need MD; the as-built drain bore does not pass a rigid water probe | 0117, 0118 |
 
 ## What passes, what fails, what is open
 

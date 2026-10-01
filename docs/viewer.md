@@ -144,8 +144,9 @@ chat always show engine output, never an invented number.
 python3 app/server.py --port 8000
 ```
 
-Then open `http://localhost:8000/`. The page loads the **Respirocyte device
-(module + tank)** scene first (ADR-0115, ADR-0117). The device is a large build, so
+Then open `http://localhost:8000/`. The page loads the **Respirocyte O2 rotor
+in the hull wall** scene first (ADR-0117, ADR-0118). The scene is a large build
+(about 150 s), so
 the server caches the response and warms it at startup. To open another scene,
 pick it in the library rail. The page shows numeric fields for the
 module, the tooth counts, the planet count, and the number of atomic layers.
@@ -196,11 +197,19 @@ the Components panel to see the mesh. Each tooth root holds one iron atom, the
 binding site, drawn in orange (M27-04). An element without a table colour gets
 a stable colour from its symbol.
 
-The library also lists **Respirocyte O2 module (relaxed)** (ADR-0111). It
-holds the housing, a rotor with 12 heme-like sites, and 12 ligand arms, all
-relaxed. The module is built on request, which takes about 50 s. The rotor
-turns about its joint, and the sites and arms turn with it. Hide the housing
-and set the clip near 0.5 to see the pockets in section.
+The library lists **Respirocyte O2 rotor in the hull wall** (ADR-0111,
+ADR-0116 to ADR-0118). The hull wall is a diamond slab on the plane x = 0, with
+blood on the +x side and the tank on the -x side. The rotor axis lies in the
+wall, so half the rim faces the blood and half the tank. The wall closes the
+rim only where the rim crosses it: the seals at 90 and 270 degrees. A face-seal
+ring on each end plate closes the face gap, so the cam grooves sit in a closed
+cavity. Each ligand arm carries a pin that runs in a groove in an end plate. The
+cam pushes the arm in inside the seal at 270 degrees and pulls it out at 120
+degrees, in the tank. One hydroxyl-lined drain bore passes through the wall
+beside the rotor. Seven pockets show the loaded state and five the released
+state, as the cam profile sets them. The rotor turns about its joint, and the
+sites and arms turn with it. Hide the hull wall and set the clip near 0.5 to
+see the pockets in section.
 
 The rotor scene holds 27 bodies and 25 joints: the housing, the rotor on a
 revolute joint, the fixed cam hub below the rotor, and 12 ejection rods, one for

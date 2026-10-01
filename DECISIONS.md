@@ -3226,3 +3226,44 @@ with reversed cam phases (M28-33).
 The piston pump is removed from the device: no step of the drained-tank design
 (ADR-0100) uses it.
 
+## ADR-0118: The O2 rotor sits in a hull-wall section with contact seals
+
+Context. ADR-0117 fixed the layout: the hull wall separates blood from tank,
+and the rotor sits in it with its axis in the wall plane. M28-32 builds it and
+asks whether it seals.
+
+Design. `hull_wall` builds one fixed body: a 2.4 nm diamond slab on x = 0
+(blood on +x, tank on -x), two end plates over the rotor faces carrying the
+cam grooves, and one OH-lined drain bore through the slab beside the plates.
+The slab closes the rim only where the rim crosses it: two seal arcs of +-15.6
+degrees about 90 and 270 degrees, rim gap 4.2 A. The cam is re-phased to the
+seals: the arm goes in at 270 degrees (ramp 258-282, inside the seal) and comes
+out at 120 degrees (ramp 108-132, in the tank). Pockets sit at 15 + 30k
+degrees, so none is mid-ramp, and the cam profile sets each state (7 loaded,
+5 released). The separate device scene and the tank shell are removed; the
+module scene is the section.
+
+Seal audit. `scripts/seal_audit.py` voxelizes the relaxed scene (0.5 A),
+blocks every voxel within a Bondi radius plus a probe radius of an atom,
+masks the drain, and flood-fills from the blood face. The first section
+leaked O2: the axis lies in the wall, so every closed path around it crosses
+the wall, and the 7 A face gap and the cam grooves joined the blood window to
+the tank window. Masking showed the disc interior (pockets, arm channels) was
+already sealed. Fix: a face-seal ring on each plate at the outer edge of the
+rotor face. A CSG face does not land on a lattice plane, so the first ring
+left up to 6.4 A between carbons and passed a 2.0 A probe; the ring is now set
+by measured layers, five (001) layers (4.46 A) beyond the outermost rotor
+layer. The rotor and the wall share one lattice, so the gap is exact.
+
+Results (relaxed). 77,353 atoms. No overlap, no loose or disjoint body. The
+wall touches the rotor only on the face-seal rings, at 2.01-2.14 A. O2 probe
+(1.73 A): no path from blood to tank, also with every radius scaled by 0.9.
+Water probe (1.40 A): passes the rim seal; closed at 1.50 A. The as-built
+drain bore does not pass a rigid water probe.
+
+Limits. Static, rigid-sphere, one rotor pose. A path found is real; a pass is
+necessary, not sufficient: leak rates need MD (M28-36). The drain's water
+transport rests on ADR-0098's MD of a wider channel (M28-35). The face seals
+rub at contact all round; their friction is not estimated. Simulated
+estimate.
+

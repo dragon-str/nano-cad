@@ -213,7 +213,7 @@ def part_body(part_id: str) -> tuple[bytes, bytes]:
 def warm_default_scene() -> None:
     """Build the first-load device scene off the request path."""
     try:
-        part_body("respirocyte_device")
+        part_body("respirocyte_module")
     except (BuildError, subprocess.TimeoutExpired) as error:
         sys.stderr.write(f"app: default scene warm-up failed: {error}\n")
 
