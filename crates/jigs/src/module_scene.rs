@@ -14,7 +14,7 @@
 
 use nanocad_meter::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 use nanocad_model::{Bond, BondType, Part};
-use nanocad_parts::{module_housing, HemeRotorGenerator, HemeRotorSet, ParameterSet};
+use nanocad_parts::{module_housing, HemeRotorGenerator, HemeRotorSet, ParameterSet, Union};
 
 use crate::rotor_scene::zero_design;
 use crate::scene::{
@@ -27,6 +27,14 @@ pub const MODULE_SCENE_ID: &str = "respirocyte_module";
 
 /// The gap between the rotor rim carbons and the housing, in metres.
 pub const MODULE_CLEARANCE_M: f64 = 4.6e-10;
+
+/// The gap between the rotor faces and the housing end plates, in metres.
+/// Wider than the rim gap: the relaxed disc bulges about 1 A at its faces,
+/// and at 4.6 A the plates pressed it to 1.9 A H-H contacts (ADR-0116).
+pub const MODULE_AXIAL_CLEARANCE_M: f64 = 6.0e-10;
+
+/// The lattice left behind each cam groove floor in the end plate, in metres.
+pub const MODULE_CAM_BACKING_M: f64 = 0.5e-9;
 
 const Z: [f64; 3] = [0.0, 0.0, 1.0];
 
@@ -42,13 +50,22 @@ pub struct ModuleParts {
 pub fn module_parts() -> Result<ModuleParts, SceneError> {
     let set = HemeRotorGenerator.build(&ParameterSet::new())?;
     let half = set.half_thickness_m;
+    // The end plates carry the arm-cam grooves (ADR-0116); each plate keeps
+    // MODULE_CAM_BACKING_M of lattice behind the groove floor.
+    let chamber_half = half + MODULE_AXIAL_CLEARANCE_M;
+    let [top, bottom] = set.cam_tracks(chamber_half);
+    let plate = (top.z_max_m - chamber_half + MODULE_CAM_BACKING_M).max(0.6e-9);
     let housing = module_housing(
         set.disc_radius_m + MODULE_CLEARANCE_M,
         0.8e-9,
-        half + MODULE_CLEARANCE_M,
-        0.6e-9,
+        chamber_half,
+        plate,
         1.6e-9,
         -15.0_f64.to_radians(),
+        Some(Box::new(Union {
+            a: Box::new(top),
+            b: Box::new(bottom),
+        })),
     )?;
     Ok(ModuleParts { set, housing })
 }
@@ -228,10 +245,17 @@ pub fn build_relaxed_module_scene(
     Ok((module_scene(&parts), reports))
 }
 
-/// Relaxes the module parts in place. The housing relaxes alone. The rotor,
-/// the sites and the arms relax together as one system, with the Fe-N bond of
-/// each loaded pocket and every attachment tether included. Returns the
-/// reports, housing first then the rotor unit.
+/// The housing atoms within this distance of the rotor unit form the fixed
+/// wall of the second relaxation stage, in metres.
+pub const MODULE_WALL_REACH_M: f64 = 1.0e-9;
+
+/// Relaxes the module parts in place, in two stages. The housing relaxes
+/// alone. Then the rotor, the sites and the arms relax as one system, with
+/// the Fe-N bond of each loaded pocket and every attachment tether, against
+/// the relaxed housing atoms near them held fixed. The fixed wall matters
+/// because the cam grooves hold each arm pin at contact (ADR-0116): relaxed
+/// apart, the pins bent and the released arms drifted into the groove walls.
+/// Returns the reports, housing first then the rotor unit.
 pub fn relax_module_parts(
     parts: &mut ModuleParts,
     options: &ValenceRelaxOptions,
@@ -280,9 +304,33 @@ pub fn relax_module_parts(
             .map_err(|e| SceneError::Part(e.to_string()))?;
         }
     }
-    let report = relax_valence(&unit, 0..unit.atom_count(), options)
+
+    // The fixed wall: the housing atoms near the unit, placed first.
+    let wall = near_atoms(&parts.housing, &unit, MODULE_WALL_REACH_M);
+    let mut system = nanocad_model::Topology::new();
+    for &i in &wall {
+        if let Some(atom) = parts.housing.topology.atom(i) {
+            system.add_atom(atom);
+        }
+    }
+    let off = system.atom_count() as u32;
+    for i in 0..unit.atom_count() {
+        if let Some(atom) = unit.atom(i) {
+            system.add_atom(atom);
+        }
+    }
+    for b in unit.bonds() {
+        system
+            .add_bond(Bond::new(b.u + off, b.v + off, b.order, b.bond_type))
+            .map_err(|e| SceneError::Part(e.to_string()))?;
+    }
+    let staged = ValenceRelaxOptions {
+        frozen_atoms: wall.len(),
+        ..*options
+    };
+    let report = relax_valence(&system, 0..system.atom_count(), &staged)
         .map_err(|e| SceneError::Part(format!("the rotor unit did not relax: {e}")))?;
-    let mut cursor = 0usize;
+    let mut cursor = wall.len();
     let parts_mut: Vec<&mut Part> = std::iter::once(&mut set.rotor)
         .chain(set.sites.iter_mut())
         .chain(set.arms.iter_mut())
@@ -297,6 +345,49 @@ pub fn relax_module_parts(
     }
     reports.push(("rotor_sites_arms".to_string(), report));
     Ok(reports)
+}
+
+/// The atoms of `part` within `reach_m` of any atom of `other`.
+fn near_atoms(part: &Part, other: &nanocad_model::Topology, reach_m: f64) -> Vec<usize> {
+    use std::collections::HashSet;
+    let cell = |p: [f64; 3]| {
+        (
+            (p[0] / reach_m).floor() as i64,
+            (p[1] / reach_m).floor() as i64,
+            (p[2] / reach_m).floor() as i64,
+        )
+    };
+    let mut grid: std::collections::HashMap<(i64, i64, i64), Vec<[f64; 3]>> =
+        std::collections::HashMap::new();
+    for i in 0..other.atom_count() {
+        if let Some(p) = other.position_m(i) {
+            grid.entry(cell(p)).or_default().push(p);
+        }
+    }
+    let mut out = HashSet::new();
+    for i in 0..part.atom_count() {
+        let Some(p) = part.topology.position_m(i) else {
+            continue;
+        };
+        let (x, y, z) = cell(p);
+        'search: for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    for q in grid.get(&(x + dx, y + dy, z + dz)).into_iter().flatten() {
+                        let d2 =
+                            (p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2);
+                        if d2 <= reach_m * reach_m {
+                            out.insert(i);
+                            break 'search;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut v: Vec<usize> = out.into_iter().collect();
+    v.sort_unstable();
+    v
 }
 
 /// The least distance between every pair of bodies, joints included, as
@@ -383,9 +474,28 @@ mod tests {
     #[test]
     #[ignore]
     fn the_relaxed_module_passes_the_audit() {
-        let (scene, reports) =
-            build_relaxed_module_scene(&module_relax_options()).expect("the module relaxes");
+        let mut parts = module_parts().expect("parts");
+        let reports =
+            relax_module_parts(&mut parts, &module_relax_options()).expect("the module relaxes");
         assert!(reports.iter().all(|(_, r)| r.converged));
+        // The cam states survive the relaxation (ADR-0116): each loaded arm
+        // stays on its iron, each released arm at 4.0 A or more.
+        let set = &parts.set;
+        for k in 0..set.sites.len() {
+            let fe = set.sites[k]
+                .topology
+                .position_m(set.site_iron[k])
+                .expect("fe");
+            let n = set.arms[k].topology.position_m(set.arm_tip[k]).expect("n");
+            let d =
+                ((fe[0] - n[0]).powi(2) + (fe[1] - n[1]).powi(2) + (fe[2] - n[2]).powi(2)).sqrt();
+            if set.loaded[k] {
+                assert!((d - 2.1e-10).abs() < 0.05e-10, "pocket {k} Fe-N {d:e}");
+            } else {
+                assert!(d >= 4.0e-10, "pocket {k} Fe-N {d:e}");
+            }
+        }
+        let scene = module_scene(&parts);
         let report = sense_report(&scene);
         assert_eq!(report.overlap_count, 0, "{report:?}");
         assert!(report.disjoint_bodies.is_empty(), "{report:?}");

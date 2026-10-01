@@ -33,7 +33,9 @@ import chat  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
-BUILD_TIMEOUT_S = 240
+# The respirocyte device relaxes in about 150 s in a release build (ADR-0116),
+# and the first request after a code change also compiles the example.
+BUILD_TIMEOUT_S = 600
 
 # The engine runs as a release build. The default gear set has 142091 atoms,
 # and the release binary is far faster than the debug one. Set `--debug-engine`

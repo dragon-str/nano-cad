@@ -75,7 +75,7 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
         },
         SceneCatalogEntry {
             id: DEVICE_SCENE_ID.to_string(),
-            name: "Respirocyte device (module + tank + pump)".to_string(),
+            name: "Respirocyte device (module + tank)".to_string(),
             kind: "machine".to_string(),
             category: "machines".to_string(),
         },

@@ -3,20 +3,20 @@
 //! Body 0 is the module housing (fixed). Body 1 is the oxygen-loading rotor,
 //! with a revolute joint about z. Bodies 2..2+n are the heme sites and bodies
 //! 2+n..2+2n are the ligand arms, as in the module scene. Body 2+2n is the
-//! gas-tank shell, which encloses the module. Bodies 2+2n+1..2+2n+3 are the
-//! pump cylinder and piston, parked above the module. The pump seal ring is
-//! a sub-bond-thickness lattice cut, so it is not one connected body; it is
-//! left out of the scene (see ADR-0115).
+//! gas-tank shell, which encloses the module.
 //!
-//! Every subsystem relaxes on its own, because the parts do not touch. The
-//! layout is schematic: the tank and the pump are drawn at the scale of the
-//! module, not at the scale of a real respirocyte hull.
+//! The piston pump of ADR-0115 is gone (ADR-0117): no step of the drained-tank
+//! design (ADR-0100) uses it. The rotor fills the tank and the drain channels
+//! return the water. The discharge path from the tank to the blood is not
+//! built yet.
+//!
+//! The module and the tank relax on their own, because they do not touch.
+//! The layout is schematic: the tank is drawn at the scale of the module, not
+//! at the scale of a real respirocyte hull.
 
 use nanocad_meter::ValenceRelaxOptions;
 use nanocad_model::Part;
-use nanocad_parts::{
-    respirocyte_pump, respirocyte_tank, ParameterSet, RespirocytePump, RespirocyteTank,
-};
+use nanocad_parts::{respirocyte_tank, ParameterSet, RespirocyteTank};
 
 use crate::module_scene::{module_parts, relax_module_parts, relax_part, ModuleParts};
 use crate::rotor_scene::zero_design;
@@ -34,9 +34,6 @@ pub const DEVICE_TANK_CLEARANCE_M: f64 = 0.6e-9;
 /// The tank shell wall thickness in the device, in metres.
 pub const DEVICE_TANK_WALL_M: f64 = 0.6e-9;
 
-/// The world position of the pump cylinder centre, in metres.
-pub const DEVICE_PUMP_OFFSET_M: [f64; 3] = [0.0, 0.0, 3.6e-9];
-
 const Z: [f64; 3] = [0.0, 0.0, 1.0];
 
 /// The generated bodies of the device.
@@ -45,11 +42,9 @@ pub struct DeviceParts {
     pub module: ModuleParts,
     /// The gas tank.
     pub tank: RespirocyteTank,
-    /// The pump cylinder, piston and seal.
-    pub pump: RespirocytePump,
 }
 
-/// Generates the device parts, unrelaxed, with the pump placed above the module.
+/// Generates the device parts, unrelaxed.
 pub fn device_parts() -> Result<DeviceParts, SceneError> {
     let module = module_parts()?;
     let module_radius_m = module_radius_m(&module);
@@ -61,11 +56,7 @@ pub fn device_parts() -> Result<DeviceParts, SceneError> {
             )
             .with("tank_wall_m", DEVICE_TANK_WALL_M),
     )?;
-    let mut pump = respirocyte_pump(&ParameterSet::new())?;
-    translate_part(&mut pump.cylinder, DEVICE_PUMP_OFFSET_M)?;
-    translate_part(&mut pump.piston, DEVICE_PUMP_OFFSET_M)?;
-    translate_part(&mut pump.seal, DEVICE_PUMP_OFFSET_M)?;
-    Ok(DeviceParts { module, tank, pump })
+    Ok(DeviceParts { module, tank })
 }
 
 fn module_radius_m(module: &ModuleParts) -> f64 {
@@ -82,20 +73,6 @@ fn module_radius_m(module: &ModuleParts) -> f64 {
         }
     }
     radius_m
-}
-
-fn translate_part(part: &mut Part, offset_m: [f64; 3]) -> Result<(), SceneError> {
-    for i in 0..part.atom_count() {
-        if let Some(p) = part.topology.position_m(i) {
-            part.topology
-                .set_position_m(
-                    i,
-                    [p[0] + offset_m[0], p[1] + offset_m[1], p[2] + offset_m[2]],
-                )
-                .map_err(|e| SceneError::Part(e.to_string()))?;
-        }
-    }
-    Ok(())
 }
 
 fn atoms_of(part: &Part, body: usize, name: &str) -> Vec<SceneAtom> {
@@ -159,8 +136,6 @@ pub fn device_scene(parts: &DeviceParts) -> Scene {
     let set = &parts.module.set;
     let n = set.sites.len();
     let tank_body = 2 + 2 * n;
-    let pump_cylinder_body = tank_body + 1;
-    let pump_piston_body = tank_body + 2;
 
     let mut atoms = atoms_of(&parts.module.housing, 0, "module_housing");
     atoms.extend(atoms_of(&set.rotor, 1, "heme_rotor"));
@@ -204,39 +179,6 @@ pub fn device_scene(parts: &DeviceParts) -> Scene {
     bodies.push(body(tank_body, "tank", "gas_tank", true));
     joints.push(joint("tank_mount", "fixed", 0, tank_body, [0.0; 3], Z));
 
-    atoms.extend(atoms_of(
-        &parts.pump.cylinder,
-        pump_cylinder_body,
-        "pump_cylinder",
-    ));
-    bodies.push(body(
-        pump_cylinder_body,
-        "pump_cylinder",
-        "pump_cylinder",
-        true,
-    ));
-    joints.push(joint(
-        "pump_mount",
-        "fixed",
-        0,
-        pump_cylinder_body,
-        DEVICE_PUMP_OFFSET_M,
-        Z,
-    ));
-    atoms.extend(atoms_of(
-        &parts.pump.piston,
-        pump_piston_body,
-        "pump_piston",
-    ));
-    bodies.push(body(pump_piston_body, "pump_piston", "pump_piston", false));
-    joints.push(joint(
-        "piston_stroke",
-        "prismatic",
-        pump_cylinder_body,
-        pump_piston_body,
-        DEVICE_PUMP_OFFSET_M,
-        Z,
-    ));
     let coarse = vec![
         CoarseBody {
             index: 1,
@@ -260,18 +202,6 @@ pub fn device_scene(parts: &DeviceParts) -> Scene {
                 axis: Z,
                 radius_m: parts.tank.outer_radius_m,
                 half_length_m: parts.tank.outer_radius_m,
-            }),
-        },
-        CoarseBody {
-            index: pump_cylinder_body,
-            name: "pump_cylinder".to_string(),
-            role: "pump_cylinder".to_string(),
-            pitch_circle: None,
-            bounding_cylinder: Some(CoarseCylinder {
-                center_m: DEVICE_PUMP_OFFSET_M,
-                axis: Z,
-                radius_m: parts.pump.outer_radius_m,
-                half_length_m: 0.5 * parts.pump.cylinder_length_m,
             }),
         },
     ];
@@ -312,42 +242,36 @@ pub fn build_relaxed_device_scene(
     }
     reports.push("gas_tank".to_string());
     relax_part(&mut parts.tank.shell, options)?;
-    for part in [&mut parts.pump.cylinder, &mut parts.pump.piston] {
-        reports.push(part.name.clone());
-        relax_part(part, options)?;
-    }
     Ok((device_scene(&parts), reports))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::module_scene::module_relax_options;
     use crate::sense::sense_report;
 
     #[test]
     fn the_device_has_its_bodies_and_joints() {
         let scene = device_scene(&device_parts().expect("the device builds"));
-        assert_eq!(scene.device.body_count, 29);
-        assert_eq!(scene.device.joints.len(), 28);
+        assert_eq!(scene.device.body_count, 27);
+        assert_eq!(scene.device.joints.len(), 26);
         let report = sense_report(&scene);
         assert!(report.floating_bodies.is_empty(), "{report:?}");
     }
 
     #[test]
-    #[ignore = "builds and relaxes about 110,000 atoms"]
+    #[ignore = "builds and relaxes about 120,000 atoms"]
     fn the_relaxed_device_passes_the_audit() {
-        let options = ValenceRelaxOptions {
-            max_iterations: 3000,
-            ..ValenceRelaxOptions::default()
-        };
-        let (scene, reports) = build_relaxed_device_scene(&options).expect("the device relaxes");
-        assert_eq!(reports.len(), 5, "{reports:?}");
+        let (scene, reports) =
+            build_relaxed_device_scene(&module_relax_options()).expect("the device relaxes");
+        assert_eq!(reports.len(), 3, "{reports:?}");
         let report = sense_report(&scene);
         assert_eq!(report.overlap_count, 0, "{report:?}");
         assert!(report.disjoint_bodies.is_empty(), "{report:?}");
         assert!(report.floating_bodies.is_empty(), "{report:?}");
         // Only the module has intended cross-body contacts: twelve tethers and
-        // six Fe-N bonds. The tank and the pump touch nothing.
+        // six Fe-N bonds. The tank touches nothing.
         let contacts = crate::module_scene::body_contacts(&scene, 2.2e-10);
         assert_eq!(contacts.len(), 18, "{contacts:?}");
         assert!(contacts.iter().all(|(a, b, _)| *a < 26 && *b < 26));

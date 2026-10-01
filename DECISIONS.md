@@ -3164,3 +3164,65 @@ of the module, not at the scale of a real respirocyte hull. The pump seal ring
 is left out: its radial thickness, 0.1e-9 m, is below one bond, so the
 lattice cut is not one connected body. The scene builds in about 100 s in a
 release build. This is a simulated estimate.
+
+## ADR-0116: The arm cam is a closed groove in the housing end plates
+
+Context. M28-29. Each ligand arm sat in a closed channel in the disc with
+nothing to drive it. The Fe-N bond already joins each loaded arm to its iron
+in the relaxation (`relax_module_parts`).
+
+Design. Each arm carries a follower pin along z, a [1-10] diamond rod of the
+arm radius: up on even pockets, down on odd ones, so the slots in the disc
+skins stay apart. The pin passes through a radial slot in the skin and runs in
+a groove cut in the housing end plate (`ArmCamTrack`). Both groove walls stand
+at H-H contact from the measured pin carbons (`CAM_CONTACT_M`, 4.6 A between
+carbon centres), so the cam drives the arm both ways. The arm grows from 1.2
+to 1.4 nm so the pin slot clears the ring slot.
+
+Finding: the groove, not the pin, sets the release distance. The Fe-N bond
+still pulls the arm at 3-4 A (ADR-0106: 19.6 to 45.9 kJ/mol over 1 A, about
+0.4 nN), so a released arm rests on the groove wall nearest its iron. Diamond
+cut surfaces step by about 0.9 A and the step pattern changes with azimuth,
+so the free travel toward the iron was 0.75-1.4 A; the nitrogen would have
+rested at 2.6-3.25 A, where the switch is about 26 kJ/mol (32 needed). The
+release track is therefore withdrawn by a 2.0 A margin.
+
+Results. A 2 degree sweep over a full turn (`the_arm_cam_holds_every_arm_over
+_a_turn`): on the loading arc the arm can always reach 2.1 A (free travel
+toward the iron >= 0.2 A); on the return arc the nitrogen stays >= 4.9 A. The
+relaxed module: 0 overlaps, no disjoint body, only the 18 intended contacts,
+loaded Fe-N 2.10 A, released 5.4-7.1 A (the valence model has no Fe-N pull, so
+released arms rest anywhere in the play). The relaxation runs in two stages:
+the housing alone, then the rotor unit against the housing atoms within 1 nm
+held fixed (`ValenceRelaxOptions::frozen_atoms`; pairs of two frozen atoms are
+dropped). Relaxed apart, the pins bent 4 A into the groove walls. The face gap
+grows from 4.6 to 6.0 A because the relaxed disc bulges about 1 A. Module
+relax 149 s, device 144 s; the server build limit is now 600 s.
+
+Limits. The cam phases (arm in at 345 deg, out at 165 deg) follow the old
+housing, which is wrong (ADR-0117); M28-32 re-phases them to the hull-wall
+seals. Cam stroke 3.9 A; cam work is not recomputed past 4.0 A. Simulated
+estimate.
+
+## ADR-0117: The device layout was wrong; the piston pump is removed
+
+Context. The device scene of ADR-0115 put a gas-tank shell around the whole
+O2 module. Every pocket then saw only tank gas: no pocket met blood, and the
+housing inlet and outlet both opened into the tank. The drain channels sat in
+that shell, not between the tank and the blood. Calling the layout schematic
+hid a topological fault.
+
+Decision. The hull wall is the boundary between blood and tank (Freitas). The
+rotor sits in the wall with its axis parallel to the wall surface: half the
+rim in blood, half in the tank, with the housing sealing the rim at the two
+crossings. A pocket loads with the arm in on the blood side, crosses the seal
+with the arm in, releases with the arm out in the tank, and returns through
+the second seal with the arm out; the arm goes in inside that seal. The water
+carried in leaves through OH-lined drain channels in the hull wall. A flat
+wall slab is used: over a few nanometres the curvature of a 1 um hull is about
+0.1 percent. Built in M28-32. Discharge at the tissues needs a second rotor
+with reversed cam phases (M28-33).
+
+The piston pump is removed from the device: no step of the drained-tank design
+(ADR-0100) uses it.
+

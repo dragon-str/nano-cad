@@ -56,6 +56,7 @@ pub struct System {
     periodic_box: PeriodicBox,
     verlet: Option<VerletList>,
     nonbonded_pairs: Vec<u32>,
+    frozen: Vec<bool>,
 }
 
 impl System {
@@ -78,7 +79,25 @@ impl System {
             periodic_box: PeriodicBox::non_periodic(),
             verlet: None,
             nonbonded_pairs: Vec::new(),
+            frozen: Vec::new(),
         }
+    }
+
+    /// Holds atoms fixed during a minimization: `energy_and_gradient_j`
+    /// returns a zero gradient for every atom whose mask entry is true, so a
+    /// minimizer never moves them. They still act on the other atoms. The
+    /// non-bonded pairs between two frozen atoms are dropped, so the energy
+    /// leaves out their constant. An empty mask frees every atom.
+    pub fn set_frozen_atoms(&mut self, mask: Vec<bool>) -> Result<(), EngineError> {
+        if !mask.is_empty() && mask.len() != self.atom_count {
+            return Err(EngineError::BufferSizeMismatch {
+                len: mask.len(),
+                expected: self.atom_count,
+            });
+        }
+        self.frozen = mask;
+        self.verlet = None;
+        Ok(())
     }
 
     /// Creates a system with one mass per atom, in kilograms.
@@ -340,6 +359,9 @@ impl System {
 
         self.accumulate_bonded(positions_m, &mut energy_j, &mut gradient)?;
         self.accumulate_nonbonded_blocked(positions_m, &mut energy_j, &mut gradient)?;
+        for (atom, _) in self.frozen.iter().enumerate().filter(|(_, f)| **f) {
+            gradient[3 * atom..3 * atom + 3].fill(0.0);
+        }
         Ok((energy_j, gradient))
     }
 
@@ -650,11 +672,16 @@ impl System {
         let Some(list) = &self.verlet else {
             return Vec::new();
         };
-        if self.exclusions.is_empty() {
+        if self.exclusions.is_empty() && self.frozen.is_empty() {
             return list.pairs().to_vec();
         }
+        // A pair of two frozen atoms adds only a constant, so it is dropped.
+        let frozen = |a: u32| self.frozen.get(a as usize).copied().unwrap_or(false);
         let mut kept = Vec::with_capacity(list.pairs().len());
         for chunk in list.pairs().as_chunks::<2>().0 {
+            if frozen(chunk[0]) && frozen(chunk[1]) {
+                continue;
+            }
             if !self.exclusions.contains(&exclusion_key(chunk[0], chunk[1])) {
                 kept.push(chunk[0]);
                 kept.push(chunk[1]);

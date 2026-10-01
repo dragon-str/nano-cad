@@ -145,7 +145,7 @@ python3 app/server.py --port 8000
 ```
 
 Then open `http://localhost:8000/`. The page loads the **Respirocyte device
-(module + tank + pump)** scene first (ADR-0115). The device is a large build, so
+(module + tank)** scene first (ADR-0115, ADR-0117). The device is a large build, so
 the server caches the response and warms it at startup. To open another scene,
 pick it in the library rail. The page shows numeric fields for the
 module, the tooth counts, the planet count, and the number of atomic layers.

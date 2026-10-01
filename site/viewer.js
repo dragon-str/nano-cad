@@ -1671,20 +1671,26 @@
   function setReadout() {
     var d = scene.design;
     var lines;
-    if (motion.kind === "joints" && scene.frame === "respirocyte_module") {
+    var respirocyte = /^respirocyte/.test(scene.frame || "");
+    if (motion.kind === "joints" && respirocyte) {
+      var device = scene.frame === "respirocyte_device";
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
-        "mechanism: respirocyte O2 module (relaxed, simulated)",
-        "bodies: " + scene.device.body_count + " (housing, rotor, 12 heme sites, 12 ligand arms)",
+        "mechanism: respirocyte O2 " + (device ? "device: module + gas tank" : "module") +
+          " (relaxed, simulated)",
+        "bodies: " + scene.device.body_count + " (housing, rotor, 12 heme sites, 12 ligand arms" +
+          (device ? ", tank)" : ")"),
         "atoms: " + scene.atomistic.atom_count,
         "pockets 0-5: ligand in (Fe-N 2.1 A), O2 bound",
-        "pockets 6-11: ligand withdrawn (4.0 A), site empty",
-        "site attachment to diamond: placeholder (fixed joint)",
-        "cam and repair donor: not built",
-        "hide the housing in Components to see the rotor",
+        "pockets 6-11: ligand withdrawn (4.0 A or more), site empty",
+        "arm cam: pin on each arm runs in a groove in the housing end plate",
+        "site attachment: four two-carbon tethers per site",
+        "repair donor and discharge path: not built",
+        "hide the housing" + (device ? " and the tank" : "") + " in Components to see the rotor",
       ];
     } else if (motion.kind === "joints") {
-      var pitch = scene.device.gear_couplings[0].radius_a_m;
+      var couplings = scene.device.gear_couplings || [];
+      var pitch = couplings.length > 0 ? couplings[0].radius_a_m : NaN;
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: " + (scene.frame === "gear_pump" ? "selective gear pump" : scene.frame),
@@ -1928,7 +1934,7 @@
   function load() {
     var served = location.protocol !== "file:";
     if (served && window.fetch) {
-      return loadPart("respirocyte_device", "Respirocyte device (module + tank + pump)")
+      return loadPart("respirocyte_device", "Respirocyte device (module + tank)")
         .catch(function () {
           return fromSceneJson();
         })

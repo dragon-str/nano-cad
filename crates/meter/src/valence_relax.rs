@@ -94,6 +94,9 @@ pub struct ValenceRelaxOptions {
     pub gradient_tolerance_n: f64,
     /// The first line-search step, in metres.
     pub initial_step_m: f64,
+    /// The first `frozen_atoms` atoms of the range stay fixed: they act on
+    /// the others (bonds, angles, contacts) but never move. A fixed wall.
+    pub frozen_atoms: usize,
 }
 
 impl Default for ValenceRelaxOptions {
@@ -103,6 +106,7 @@ impl Default for ValenceRelaxOptions {
             max_iterations: 300,
             gradient_tolerance_n: 1.0e-11,
             initial_step_m: 1.0e-12,
+            frozen_atoms: 0,
         }
     }
 }
@@ -281,6 +285,9 @@ pub fn relax_valence(
     system.set_bond_stretch(bonds)?;
     system.set_angle_bend(angles)?;
     system.set_lennard_jones(lennard_jones)?;
+    if options.frozen_atoms > 0 {
+        system.set_frozen_atoms((0..count).map(|a| a < options.frozen_atoms).collect())?;
+    }
     // Inside one diamond lattice the bond rest length is already the crystal
     // value, so a Lennard-Jones term between its carbons double counts and
     // contracts the lattice by about 4 percent (ADR-0111). Exclude pairs of
@@ -473,5 +480,24 @@ mod tests {
             report.max_c_c_m
         );
         assert!(report.final_energy_j < report.initial_energy_j);
+    }
+
+    /// A frozen atom holds its place; the free end of the bond relaxes onto
+    /// it alone.
+    #[test]
+    fn a_frozen_atom_does_not_move() {
+        let mut topology = Topology::new();
+        let a = topology.add_atom(Atom::new(Element::CARBON, [0.0, 0.0, 0.0], 0.0, "C"));
+        let b = topology.add_atom(Atom::new(Element::CARBON, [2.0e-10, 0.0, 0.0], 0.0, "C"));
+        topology
+            .add_bond(Bond::new(a, b, 1, BondType::Single))
+            .expect("bond");
+        let options = ValenceRelaxOptions {
+            frozen_atoms: 1,
+            ..ValenceRelaxOptions::default()
+        };
+        let report = relax_valence(&topology, 0..2, &options).expect("relax");
+        assert_eq!(report.positions_m[0], [0.0, 0.0, 0.0]);
+        assert!((report.positions_m[1][0] - C_C_R0_M).abs() < 1.0e-12);
     }
 }

@@ -63,7 +63,10 @@ pub use group::{FunctionalGroup, FUNCTIONAL_GROUPS};
 pub use guest::{
     build_guest, build_guest_part, guest, guests, Guest, GuestAtom, GuestBond, AVOGADRO_PER_MOL,
 };
-pub use heme_rotor::{module_housing, HemeRotorGenerator, HemeRotorSet, LIGAND_IN_M, LIGAND_OUT_M};
+pub use heme_rotor::{
+    module_housing, ArmCamTrack, HemeRotorGenerator, HemeRotorSet, CAM_CONTACT_M, CAM_INLET_RAD,
+    CAM_OUTLET_RAD, CAM_RAMP_HALF_RAD, LIGAND_IN_M, LIGAND_OUT_M,
+};
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};
 pub use lattice_fill::fill_solid;
