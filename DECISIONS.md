@@ -3321,3 +3321,127 @@ Next (M28-38). Scan the drain with a mobile lining: lining density (every
 cap, every other cap, H-capped), bore radius 3.8-5 A, and length 0.5-1 nm.
 Measure water flux at 100 MPa and O2 entry at idle. Simulated estimates.
 
+## ADR-0120: No drain channel; every bore tested fails one test
+
+Context. M28-38. ADR-0119 found the OH-lined drain carries no water when its
+hydroxyls can turn. This ADR screens the alternatives with
+`drain_transit_md.py` on bores cut from the hull wall (`drain_patch_json`,
+raw, 1.0 nm narrow section, 7 A counterbores), 0.5 ns at 200 MPa.
+
+| Bore (cut radius) | Lining | Net water | O2 in the channel |
+|---|---|---|---|
+| 4.6 A | H-capped | 38 /ns | 0 % of samples |
+| 4.2 A | H-capped | 36 /ns | 0 % |
+| 3.8 A | H-capped | 18 /ns | 16 % |
+| 3.6 A | H-capped | 10 /ns | 41 % |
+| 3.4 A | H-capped | 0 | 0 % |
+| 4.2 A | OH, every 2nd cap, mobile | 0 | 0 % |
+| 4.6, 5.0 A | OH, mobile | 0 | 1-3 % |
+
+A mobile hydroxyl lining always turns into the bore and blocks it. An
+H-capped bore that carries water also takes up O2: the umbrella PMF of O2 in
+the 3.6 A bore (40 windows, 150 ps, forward only, ends mismatched by 6 kJ/mol)
+puts the channel 10 kJ/mol below bulk. That is an idle leak of about 2.4e8
+O2/s per channel from a 1 M tank, the whole tank in seconds. Wider bores carry
+water without O2 in 0.5 ns, but any continuous wet path also passes
+dissolved O2 by diffusion: about D c A / L = 4e8 /s for a 1 nm pore 2.4 nm
+long at 1 M (an estimate).
+
+Decision. The hull wall has no drain (`HullWallSpec::drain` is false). The
+tank side must not hold a continuous wet path to the blood. Water leaves in
+sealed packets instead (ADR-0122). Simulated estimates.
+
+## ADR-0121: The O2 rotor: arm collar, eight pockets, a 4 A bore
+
+Context. The rigid-probe audit of ADR-0118 is blind to a path that a real
+molecule finds through soft contacts. `seal_audit.py --energy` computes the
+Lennard-Jones energy of a one-site O2 or water probe on a 0.5 A grid (UFF
+solid, Lorentz-Berthelot) and bisects the lowest barrier on any blood-to-tank
+path, or between two points (`--pair`).
+
+Findings and fixes.
+1. Every pocket opened into the rotor interior through its arm channel, and
+   the interior joins all pockets: no barrier from blood to tank through the
+   rotor. The arm now enters the ring slot through a collar, a contact-gap bore
+   (arm radius + 4.6 A, 0.4 nm long). At 12 pockets the ring slots of
+   neighbours overlapped, so the rotor has 8.
+2. The bore from the iron to the rim shrinks from 5.6 to 4.0 A. A loaded pocket
+   coming from blood carries 0.41 waters into the tank (1 ns MD; 1.38 with the
+   5.6 A bore). A free O2 still reaches the iron with no barrier (the pair
+   path from the mouth ends at -12 kJ/mol).
+3. The bore above the iron does not connect to the slot below the ring (no
+   path below 200 kJ/mol for O2 or water): the ring and its tethers close it.
+
+Results (relaxed, 80,620 atoms). No overlap, no loose body. Blood to tank:
+O2 barrier 146 kJ/mol, water 57 kJ/mol (22 kT). Rigid O2 and water probes
+find no path. The ramps of the cam groove are now checked as well (nearest
+wall atom 1.99 A), and the groove width is measured normal to its
+centreline (ADR-0122). Simulated estimates; one rotor pose.
+
+## ADR-0122: Water returns by a plunger rotor
+
+Context. The rotor carries water into the tank and no drain works (ADR-0120).
+A closed hydroxyl-lined cup carries about 18 waters and no O2 from O2-rich
+water (pocket MD), but it carries the same 18 back from the blood: a cup moves
+no net water. Net transport needs a pocket whose volume changes with phase.
+
+Design (`water_rotor`, `WaterRotorSpec`). The disc of the O2 rotor with 6
+radial bores, each holding a plunger on the arm-cam mechanism (ADR-0116). A
+plunger is a [111] diamond rod, radius 2.6 A, 1.9 nm long, with a cam pin at
+its back. In the tank sump the cam withdraws it (at 165 degrees) and the
+0.6 nm pocket fills with sump water; it crosses the 270 degree seal full;
+in the blood it is pushed flush (at 345 degrees) and the water leaves; it
+crosses the 90 degree seal flush, with no volume. Ramps are +-20 degrees,
+midway between pockets: a pin spans about +-11 degrees, and a pocket 3
+degrees past a ramp touched it.
+
+Faults found and fixed on the way. (1) The skin slot of a pin reached the
+withdrawn pocket and opened it to the face cavity: a guard now requires the
+slot to end 2 A behind the withdrawn tip. (2) A 4.6 A plunger gap leaked:
+the [111] plunger and a bore along an arbitrary lattice direction do not
+match, so the real gap varies round the bore. At 4.0 A the section seals.
+(3) On a steep ramp a radial-width groove pinches a round pin; the groove
+width is now measured normal to its centreline, and the cam sweep checks the
+ramps (nearest wall atom 2.16 A over a full turn in 2 degree steps).
+
+Results. Relaxed: no overlap, no loose body. Blood to tank: no O2 path below
+200 kJ/mol, water 149 kJ/mol. Pocket MD as built (1 ns each): withdrawn in
+tank-sump water with dissolved O2, 7.35 waters and no O2 in 1000 samples;
+flush in blood, 1.42 waters counted in front of the tip. Net 5.9 waters per
+pocket pass, tank to blood.
+
+Limits and open points. The dissolved O2 in the sump run settled at about
+0.03 M away from the walls (O2 adsorbs on diamond), not the intended 1 M; the
+zero is at that concentration. The pocket must meet liquid: in 1000 atm gas a
+lined cup took 4.7 O2. The sump therefore needs a hydrophilic wick between
+tank gas and sump water, whose 1 nm pores hold liquid against gas up to
+about 2 gamma / r = 2400 atm (Laplace, an estimate). The wick and sump are not
+built. Simulated estimates.
+
+## ADR-0123: The pump balance; the top stage is the problem
+
+Context. M28-41. Does the O2 rotor (ADR-0121) raise O2 from blood to 1000
+atm? `pocket_carry_md.py` puts one pocket of the relaxed scene in O2 gas and
+counts the free O2 in the pocket; `pump_balance.py` combines the runs. The
+O2 equation of state of this force field (barostat MD, 310 K): 3.1, 6.8 and
+14.1 molecules/nm^3 at 100, 300 and 1000 atm.
+
+Balance. One pass from a low side to a high side moves
+net = 1 + n_loaded(low) - n_released(high). From blood (liquid, no free gas)
+a released pocket carries back n = 0.106 rho (11 runs): a single stage stalls
+near 550 atm. In a cascade the loaded pocket also carries gas forward.
+
+Same-pocket comparison (0.6 ns each):
+
+| Pocket | loaded, rho 9.5 | released, rho 14 | net 600->1000 atm |
+|---|---|---|---|
+| 0 | 0.43 | 2.51 | about -1.0 |
+| 1 | 0.39 | 1.46 | about -0.1 |
+| 5 | 1.18 | 1.53 | about +0.6 |
+
+Finding. Below about 500 atm every stage pumps (0.6-0.8 net per pass). At
+the top stage the cavity that the released O2 leaves fills with free gas,
+and the net per pass is near zero or negative and depends on each pocket's
+atomic surface. Single short runs, several restarted after NaN starts; the
+trend is clear, the numbers are not converged. Simulated estimates.
+

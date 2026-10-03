@@ -71,6 +71,11 @@ def main() -> int:
                    help="nm, the gas start lattice; 0.29 reaches a 1000 atm bulk after adsorption")
     p.add_argument("--cut-radius", type=float, default=1.6)
     p.add_argument("--bore-len", type=float, default=0.30, help="nm, the rotor's bore_length_m")
+    p.add_argument("--add-bound-o2", action="store_true",
+                   help="put a frozen O2 on the iron at the bound geometry (Fe-O 1.85 A on the pocket "
+                        "axis, O-O 1.23 A at 60 degrees): the loaded state in the same pocket lattice")
+    p.add_argument("--remove-bound-o2", action="store_true",
+                   help="drop the site's bound O2 atoms: the released cavity in a loaded pocket's lattice")
     p.add_argument("--map", action="store_true", help="print where the O2 sits in the pocket (r, lz)")
     p.add_argument("--water-rotor", action="store_true",
                    help="the scene is the water-return rotor (no sites): take the pocket frame from the "
@@ -123,8 +128,16 @@ def main() -> int:
     keep |= (body == site_body) | (body == arm_body)
     if a.hydrophilic:
         keep &= body != site_body
+    if a.remove_bound_o2:
+        keep &= ~((body == site_body) & (np.array(element) == "O"))
     solid = local[keep]
     solid_el = [element[i] for i in np.where(keep)[0]]
+    if a.add_bound_o2:
+        # The local frame has the iron at the origin and +z toward the rim.
+        o1 = np.array([0.0, 0.0, 0.185])
+        o2b = o1 + 0.123 * np.array([math.sin(math.radians(60)), 0.0, math.cos(math.radians(60))])
+        solid = np.vstack([solid, o1, o2b])
+        solid_el = solid_el + ["O", "O"]
     solid_q = np.zeros(len(solid))
     iron = solid_el.index("Fe") if "Fe" in solid_el else None
     if a.water_rotor:
@@ -347,6 +360,8 @@ def main() -> int:
         "pockets": 6 if a.water_rotor else pockets,
         "azimuth_deg": round(math.degrees(az) % 360, 1),
         "fe_n_A": None if a.water_rotor else round(fe_n * 10, 2),
+        "bound_o2_added": a.add_bound_o2,
+        "bound_o2_removed": a.remove_bound_o2,
         "hydrophilic": a.hydrophilic,
         "medium": a.medium,
         "o2": len(o2_first),
