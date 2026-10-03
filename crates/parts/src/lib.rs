@@ -64,8 +64,9 @@ pub use guest::{
     build_guest, build_guest_part, guest, guests, Guest, GuestAtom, GuestBond, AVOGADRO_PER_MOL,
 };
 pub use heme_rotor::{
-    hull_wall, ArmCamTrack, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec,
-    CAM_CONTACT_M, CAM_INLET_RAD, CAM_OUTLET_RAD, CAM_RAMP_HALF_RAD, LIGAND_IN_M, LIGAND_OUT_M,
+    hull_wall, water_rotor, ArmCamTrack, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec,
+    WaterRotorSpec, CAM_CONTACT_M, CAM_INLET_RAD, CAM_OUTLET_RAD, CAM_RAMP_HALF_RAD, LIGAND_IN_M,
+    LIGAND_OUT_M,
 };
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};

@@ -53,8 +53,9 @@ pub use gear_pump_scene::{
 };
 pub use jig::{Jig, JigKind};
 pub use module_scene::{
-    body_contacts, build_module_scene, build_relaxed_module_scene, module_parts,
-    module_relax_options, module_scene, ModuleParts, MODULE_SCENE_ID,
+    body_contacts, build_module_scene, build_module_scene_with, build_relaxed_module_scene,
+    build_relaxed_water_scene, module_parts, module_parts_with, module_relax_options, module_scene,
+    water_module_parts, ModuleParts, MODULE_SCENE_ID,
 };
 pub use motor::MotorJig;
 pub use nanomedicine::{run_slice, HostEnvironment, NanoMachine, NanoMedicineError, SliceResult};

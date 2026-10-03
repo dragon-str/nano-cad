@@ -73,6 +73,26 @@ def main():
         "disc (|z| < disc half inside the chamber)",
     )
     parser.add_argument(
+        "--energy",
+        choices=["o2", "water"],
+        help="instead of a hard probe, find the lowest Lennard-Jones energy barrier of a one-site "
+        "probe (O2: sigma 3.467 A, eps 0.887 kJ/mol; water: SPC/E O) on any blood-to-tank path",
+    )
+    parser.add_argument(
+        "--pair",
+        nargs=6,
+        type=float,
+        metavar=("X1", "Y1", "Z1", "X2", "Y2", "Z2"),
+        help="with --energy: the barrier between two points (A) instead of blood to tank",
+    )
+    parser.add_argument(
+        "--box",
+        nargs=6,
+        type=float,
+        metavar=("XMIN", "XMAX", "YMIN", "YMAX", "ZMIN", "ZMAX"),
+        help="restrict the grid to this box (A); faster local checks",
+    )
+    parser.add_argument(
         "--where",
         nargs=2,
         type=float,
@@ -91,6 +111,9 @@ def main():
     # box edge outside the last lattice layer.
     lo = np.array([xyz[:, 0].min() - margin, lo[1] + 3.0, lo[2] + 3.0])
     hi = np.array([xyz[:, 0].max() + margin, hi[1] - 3.0, hi[2] - 3.0])
+    if args.box:
+        lo = np.array(args.box[0::2], dtype=float)
+        hi = np.array(args.box[1::2], dtype=float)
     shape = np.ceil((hi - lo) / args.grid).astype(int) + 1
     voxels = int(np.prod(shape))
     print(f"atoms {len(xyz)}, grid {args.grid} A, shape {tuple(shape)}, {voxels / 1e6:.1f} M voxels")
@@ -114,13 +137,27 @@ def main():
             blocked[p[:, 0], p[:, 1], p[:, 2]] = True
 
     if not args.keep_drain:
-        oxy = xyz[wall & (znum == 8)]
-        if len(oxy):
-            dy = oxy[:, 1].mean()
+        # The drain bore: a clear line along x through the wall at z = 0,
+        # beyond the rotor chamber (lined or H-capped).
+        from scipy.spatial import cKDTree
+
+        tree = cKDTree(xyz[wall])
+        rotor_reach = np.hypot(xyz[body == 1][:, 0], xyz[body == 1][:, 1]).max()
+        best = None
+        for y in np.arange(rotor_reach + 10.0, xyz[wall][:, 1].max(), 0.25):
+            for sign in (1.0, -1.0):
+                line = np.column_stack([np.linspace(-10, 10, 41), np.full(41, sign * y), np.zeros(41)])
+                clear = tree.query(line)[0].min()
+                if best is None or clear > best[0]:
+                    best = (clear, sign * y)
+        if best and best[0] > 2.0:
+            dy = best[1]
             ys = lo[1] + np.arange(shape[1]) * args.grid
             band = np.abs(ys - dy) < 10.0
             blocked[:, band, :] = True
-            print(f"drain bore masked: y = {dy / 10:.2f} nm +- 1 nm")
+            print(f"drain bore masked: y = {dy / 10:.2f} nm +- 1 nm (axis clearance {best[0]:.2f} A)")
+        else:
+            print("no drain bore found")
 
     xs = lo[0] + np.arange(shape[0]) * args.grid
     ys = lo[1] + np.arange(shape[1]) * args.grid
@@ -134,6 +171,8 @@ def main():
         if name == "disc":
             blocked |= (rr < rotor_r + 5.0) & (np.abs(gz) < DISC_HALF_A)
         print(f"masked: {name}")
+    if args.energy:
+        return energy_barrier(args, xyz, znum, blocked, lo, shape)
     free = ~blocked
     labels, count = ndimage.label(free)
     blood = set(np.unique(labels[-1, :, :])) - {0}
@@ -170,6 +209,118 @@ def main():
                 print(f"  in band r {args.where[0]}..{args.where[1]} A: {len(ix)} voxels, z {zs[iz].min():.1f}..{zs[iz].max():.1f} A")
                 print("  by azimuth (15 deg bins): " + " ".join(f"{int(e)}:{h}" for e, h in zip(edges[:-1], hist) if h))
     return 1
+
+
+# UFF sigma (A) and epsilon (kJ/mol) of the solid atoms.
+UFF_LJ = {1: (2.571, 0.184), 6: (3.431, 0.439), 7: (3.261, 0.289), 8: (3.118, 0.251), 26: (2.594, 0.054)}
+PROBES = {"o2": (3.467, 0.887), "water": (3.166, 0.650)}
+KT_KJ = 0.0083145 * 310.0
+
+
+def energy_barrier(args, xyz, znum, blocked, lo, shape):
+    """Bisect the energy at which the region U < E first joins blood to tank.
+
+    `blocked` here comes from a small hard probe, so it only removes voxels
+    deep inside atoms; the energy decides the rest. Voxels farther than the
+    cutoff from every atom have U = 0 (bulk).
+    """
+    from scipy.spatial import cKDTree
+
+    sig_p, eps_p = PROBES[args.energy]
+    sig = np.array([0.5 * (UFF_LJ.get(int(n), UFF_LJ[6])[0] + sig_p) for n in znum])
+    eps = np.array([np.sqrt(UFF_LJ.get(int(n), UFF_LJ[6])[1] * eps_p) for n in znum])
+    tree = cKDTree(xyz)
+    grid = args.grid
+    free_idx = np.argwhere(~blocked)
+    cutoff = 8.0
+    u = np.zeros(blocked.shape, dtype=np.float32)
+    chunk = 100_000
+    for start in range(0, len(free_idx), chunk):
+        idx = free_idx[start:start + chunk]
+        pts = lo + idx * grid
+        d, j = tree.query(pts, k=96, distance_upper_bound=cutoff)
+        ok = np.isfinite(d)
+        jj = np.where(ok, j, 0)
+        dd = np.where(ok, d, cutoff)
+        sr6 = (sig[jj] / dd) ** 6
+        e = np.where(ok, 4.0 * eps[jj] * (sr6 * sr6 - sr6), 0.0).sum(axis=1)
+        u[idx[:, 0], idx[:, 1], idx[:, 2]] = e
+    u[blocked] = np.inf
+
+    def voxel(pt):
+        # The lowest-energy voxel within 3 A of the point.
+        c = np.round((np.array(pt) - lo) / grid).astype(int)
+        r = int(round(3.0 / grid))
+        sl = tuple(slice(max(0, c[i] - r), min(u.shape[i], c[i] + r + 1)) for i in range(3))
+        sub = u[sl]
+        k = np.unravel_index(np.argmin(sub), sub.shape)
+        return tuple(sl[i].start + k[i] for i in range(3))
+
+    def joined(e_max):
+        labels, _ = ndimage.label(u < e_max)
+        if args.pair:
+            a_lab = labels[voxel(args.pair[:3])]
+            b_lab = labels[voxel(args.pair[3:])]
+            ok = a_lab != 0 and a_lab == b_lab
+            return ok, labels, {a_lab} if ok else set()
+        blood = set(np.unique(labels[-1, :, :])) - {0}
+        tank = set(np.unique(labels[0, :, :])) - {0}
+        return bool(blood & tank), labels, blood & tank
+
+    if args.pair:
+        for name, pt in (("from", args.pair[:3]), ("to", args.pair[3:])):
+            v = voxel(pt)
+            print(f"  {name} {pt} -> {np.round(lo + np.array(v) * grid, 1)}: U {u[v]:.2f} kJ/mol")
+    lo_e, hi_e = -40.0, 200.0
+    if not joined(hi_e)[0]:
+        print(f"{args.energy}: no path below {hi_e} kJ/mol")
+        return 0
+    while hi_e - lo_e > 0.1:
+        mid = 0.5 * (lo_e + hi_e)
+        if joined(mid)[0]:
+            hi_e = mid
+        else:
+            lo_e = mid
+    _, labels, comps = joined(hi_e)
+    # The saddle: voxels of the joining component within kT of the barrier.
+    comp = np.isin(labels, list(comps))
+    saddle = comp & (u > hi_e - KT_KJ)
+    sx, sy, sz = np.nonzero(saddle)
+    pts = lo + np.stack([sx, sy, sz], 1) * grid
+    print(f"{args.energy}: barrier {hi_e:.1f} kJ/mol ({hi_e / KT_KJ:.1f} kT) above bulk")
+    # Where the joining component crosses the wall plane, by radius from
+    # the rotor axis (z).
+    xs_ = lo[0] + np.arange(u.shape[0]) * grid
+    band_x = np.abs(xs_) < 1.0
+    if band_x.any() and not args.pair:
+        sub = comp[band_x]
+        bi, by, bz = np.nonzero(sub)
+        yy, zz = lo[1] + by * grid, lo[2] + bz * grid
+        rr_ = np.abs(yy)
+        for name, sel in (("r < 33 A (rotor interior)", rr_ < 33), ("33-41 A (rim zone)", (rr_ >= 33) & (rr_ < 41)), ("r >= 41 A (wall)", rr_ >= 41)):
+            if sel.any():
+                print(f"  crossing x=0, {name}: {int(sel.sum())} voxels, |y| {rr_[sel].min():.1f}..{rr_[sel].max():.1f}, z {zz[sel].min():.1f}..{zz[sel].max():.1f}")
+    plane = int(round((0.0 - lo[0]) / grid))
+    cy, cz = (np.nonzero(comp[plane]) if 0 <= plane < u.shape[0] else (np.array([]), np.array([])))
+    if len(cy) and not args.pair:
+        py, pz = lo[1] + cy * grid, lo[2] + cz * grid
+        near = tree.query(np.column_stack([np.zeros(len(py)), py, pz]))[0]
+        print(f"  at the wall plane: {len(cy)} voxels, y {py.min():.1f}..{py.max():.1f} A, "
+              f"z {pz.min():.1f}..{pz.max():.1f} A, nearest atom {near.min():.2f}..{near.max():.2f} A")
+        order = np.argsort(near)[:5]
+        for k in order:
+            v = lo + np.array([plane, cy[k], cz[k]]) * grid
+            dd, jj = tree.query(v, k=400, distance_upper_bound=cutoff)
+            okk = np.isfinite(dd)
+            sr = (sig[jj[okk]] / dd[okk]) ** 6
+            direct = float((4.0 * eps[jj[okk]] * (sr * sr - sr)).sum())
+            print(f"    voxel {np.round(v, 2)}: nearest atom {tree.query(v)[0]:.2f} A, "
+                  f"U grid {u[plane, cy[k], cz[k]]:.2f}, U direct {direct:.2f}")
+    if len(pts):
+        th = np.degrees(np.arctan2(pts[:, 1], pts[:, 0])) % 360
+        print(f"  saddle voxels {len(pts)}: x {pts[:, 0].min():.1f}..{pts[:, 0].max():.1f} A, "
+              f"azimuth {th.min():.0f}..{th.max():.0f} deg, z {pts[:, 2].min():.1f}..{pts[:, 2].max():.1f} A")
+    return 0
 
 
 if __name__ == "__main__":

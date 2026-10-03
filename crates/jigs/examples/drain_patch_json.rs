@@ -7,10 +7,13 @@
 //! around the drain axis is cut out, with each atom's charge, and turned so
 //! the bore runs along z: (x, y, z) -> (y - y_drain, z, x).
 //!
-//! Usage: `drain_patch_json [half_width_m] [path] [raw|relaxed]`.
+//! Usage: `drain_patch_json [half_width_m] [path] [raw|relaxed]
+//! [radius_m] [narrow_length_m] [hydroxyl_every]`. The last three set the
+//! drain of the hull wall (M28-38); the defaults are `HullWallSpec`'s.
 
-use nanocad_jigs::{module_parts, module_relax_options};
+use nanocad_jigs::module_relax_options;
 use nanocad_meter::relax_valence;
+use nanocad_parts::{hull_wall, HemeRotorGenerator, HullWallSpec, ParameterSet};
 
 const ELEMENTARY_CHARGE_C: f64 = 1.602_176_634e-19;
 
@@ -22,14 +25,27 @@ fn main() {
         .cloned()
         .unwrap_or_else(|| "drain.json".to_string());
     let raw = args.get(2).is_some_and(|mode| mode == "raw");
-    let mut parts = match module_parts() {
-        Ok(parts) => parts,
+    let mut spec = HullWallSpec::default();
+    if let Some(v) = args.get(3).and_then(|v| v.parse().ok()) {
+        spec.drain_radius_m = v;
+    }
+    if let Some(v) = args.get(4).and_then(|v| v.parse().ok()) {
+        spec.drain_narrow_length_m = v;
+    }
+    if let Some(v) = args.get(5).and_then(|v| v.parse().ok()) {
+        spec.drain_hydroxyl_every = v;
+    }
+    let built = HemeRotorGenerator
+        .build(&ParameterSet::new())
+        .and_then(|set| hull_wall(&set, &spec));
+    let hull = match built {
+        Ok(hull) => hull,
         Err(error) => {
-            eprintln!("the module failed: {error}");
+            eprintln!("the wall failed: {error}");
             std::process::exit(1);
         }
     };
-    let wall = &mut parts.housing;
+    let wall = &hull.part;
     let (positions, converged) = if raw {
         let positions: Vec<[f64; 3]> = (0..wall.atom_count())
             .map(|i| wall.topology.position_m(i).unwrap_or([0.0; 3]))
@@ -48,7 +64,7 @@ fn main() {
             }
         }
     };
-    let drain_y = parts.wall.drain_y_m;
+    let drain_y = hull.drain_y_m;
     let mut atoms = Vec::new();
     let mut thickness_m: f64 = 0.0;
     for (i, p) in positions.iter().enumerate() {
@@ -71,7 +87,7 @@ fn main() {
     }
     let json = format!(
         "{{\"units\":\"angstrom\",\"radius\":{:.4},\"thickness\":{:.4},\"converged\":{},\"atoms\":[{}]}}",
-        nanocad_parts::HullWallSpec::default().drain_radius_m * 1e10,
+        spec.drain_radius_m * 1e10,
         thickness_m * 1e10,
         converged,
         atoms.join(",")

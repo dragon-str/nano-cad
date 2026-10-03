@@ -42,8 +42,8 @@ const A: f64 = 1.0e-10;
 static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("disc_radius_m", Some(Unit::Metre), 4.0e-9, 2.5e-9, 2.0e-8, false, "rim radius of the rotor disc"),
     ParameterSpec::new("thickness_m", Some(Unit::Metre), 2.4e-9, 1.6e-9, 1.0e-8, false, "axial thickness of the disc"),
-    ParameterSpec::new("pocket_count", None, 12.0, 1.0, 64.0, true, "number of heme pockets on the rim"),
-    ParameterSpec::new("bore_radius_m", Some(Unit::Metre), 5.6e-10, 4.0e-10, 2.0e-9, false, "radius of the bore from the ring face to the rim (carbon centres)"),
+    ParameterSpec::new("pocket_count", None, 8.0, 1.0, 64.0, true, "number of heme pockets on the rim; at 12 the ring slots of neighbours overlap (ADR-0121)"),
+    ParameterSpec::new("bore_radius_m", Some(Unit::Metre), 4.0e-10, 4.0e-10, 2.0e-9, false, "radius of the bore from the ring face to the rim (carbon centres)"),
     ParameterSpec::new("bore_length_m", Some(Unit::Metre), 3.0e-10, 0.0, 2.0e-9, false, "length of the bore above the ring slot"),
     ParameterSpec::new("slot_radius_m", Some(Unit::Metre), 9.0e-10, 7.0e-10, 2.0e-9, false, "radius of the slot that holds the ring"),
     ParameterSpec::new("slot_half_m", Some(Unit::Metre), 3.6e-10, 3.0e-10, 1.0e-9, false, "half-thickness of the ring slot along the radius"),
@@ -53,6 +53,8 @@ static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("pocket_phase_rad", None, 0.261_799_387_799_149_4, -3.2, 3.2, false, "azimuth of pocket 0; the cam profile then sets each pocket's state (ligand in and O2 bound, or ligand out and empty)"),
     ParameterSpec::new("cam_pin_offset_m", Some(Unit::Metre), 3.0e-10, 2.6e-10, 1.0e-9, false, "distance of the cam pin axis from the back end of the arm"),
     ParameterSpec::new("cam_pin_top_m", Some(Unit::Metre), 2.5e-9, 1.4e-9, 5.0e-9, false, "height of the cam pin end above the disc mid-plane"),
+    ParameterSpec::new("arm_collar_gap_m", Some(Unit::Metre), 4.6e-10, 3.8e-10, 1.0e-9, false, "carbon gap between the arm and the collar that closes the arm channel from the ring slot"),
+    ParameterSpec::new("arm_collar_length_m", Some(Unit::Metre), 4.0e-10, 2.0e-10, 1.5e-9, false, "length of the arm collar below the ring slot"),
     ParameterSpec::new("cam_release_margin_m", Some(Unit::Metre), 2.0e-10, 0.0, 1.0e-9, false, "extra withdrawal of the release track beyond the 4.0 A design, taken up by the lattice steps of the groove wall"),
 ];
 
@@ -86,6 +88,12 @@ pub struct ArmCamTrack {
     pub z_min_m: f64,
     /// The upper height of the groove, in metres.
     pub z_max_m: f64,
+    /// The azimuth where the follower goes in, in radians.
+    pub inlet_rad: f64,
+    /// The azimuth where the follower goes out, in radians.
+    pub outlet_rad: f64,
+    /// The half-width of each ramp, in radians.
+    pub ramp_half_rad: f64,
 }
 
 impl ArmCamTrack {
@@ -93,18 +101,32 @@ impl ArmCamTrack {
     /// loading arc from the inlet to the outlet (rotor turning +z), 0 on the
     /// return arc, with a half-cosine ramp across each end.
     pub fn loaded_fraction(theta_rad: f64) -> f64 {
+        Self::fraction_between(theta_rad, CAM_INLET_RAD, CAM_OUTLET_RAD)
+    }
+
+    /// As [`ArmCamTrack::loaded_fraction`], for any inlet and outlet.
+    pub fn fraction_between(theta_rad: f64, inlet_rad: f64, outlet_rad: f64) -> f64 {
+        Self::fraction_with(theta_rad, inlet_rad, outlet_rad, CAM_RAMP_HALF_RAD)
+    }
+
+    /// As [`ArmCamTrack::fraction_between`], with a ramp half-width.
+    pub fn fraction_with(
+        theta_rad: f64,
+        inlet_rad: f64,
+        outlet_rad: f64,
+        ramp_half_rad: f64,
+    ) -> f64 {
         let wrap = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
-        let d_in = wrap(theta_rad - CAM_INLET_RAD);
-        if d_in.abs() < CAM_RAMP_HALF_RAD {
-            return 0.5 - 0.5 * (PI * (d_in + CAM_RAMP_HALF_RAD) / (2.0 * CAM_RAMP_HALF_RAD)).cos();
+        let d_in = wrap(theta_rad - inlet_rad);
+        if d_in.abs() < ramp_half_rad {
+            return 0.5 - 0.5 * (PI * (d_in + ramp_half_rad) / (2.0 * ramp_half_rad)).cos();
         }
-        let d_out = wrap(theta_rad - CAM_OUTLET_RAD);
-        if d_out.abs() < CAM_RAMP_HALF_RAD {
-            return 0.5
-                + 0.5 * (PI * (d_out + CAM_RAMP_HALF_RAD) / (2.0 * CAM_RAMP_HALF_RAD)).cos();
+        let d_out = wrap(theta_rad - outlet_rad);
+        if d_out.abs() < ramp_half_rad {
+            return 0.5 + 0.5 * (PI * (d_out + ramp_half_rad) / (2.0 * ramp_half_rad)).cos();
         }
-        let from_inlet = (theta_rad - CAM_INLET_RAD).rem_euclid(2.0 * PI);
-        let span = (CAM_OUTLET_RAD - CAM_INLET_RAD).rem_euclid(2.0 * PI);
+        let from_inlet = (theta_rad - inlet_rad).rem_euclid(2.0 * PI);
+        let span = (outlet_rad - inlet_rad).rem_euclid(2.0 * PI);
         if from_inlet < span {
             1.0
         } else {
@@ -114,7 +136,12 @@ impl ArmCamTrack {
 
     /// The centreline radius at azimuth `theta_rad`, in metres.
     pub fn centre_radius_m(&self, theta_rad: f64) -> f64 {
-        let f = Self::loaded_fraction(theta_rad);
+        let f = Self::fraction_with(
+            theta_rad,
+            self.inlet_rad,
+            self.outlet_rad,
+            self.ramp_half_rad,
+        );
         self.released_radius_m + f * (self.loaded_radius_m - self.released_radius_m)
     }
 }
@@ -124,7 +151,15 @@ impl Solid for ArmCamTrack {
         if p[2] < self.z_min_m || p[2] > self.z_max_m {
             return false;
         }
-        let d = p[0].hypot(p[1]) - self.centre_radius_m(p[1].atan2(p[0]));
+        // The distance across the groove is measured normal to its
+        // centreline: on a ramp the radial width grows by sqrt(1 + slope^2),
+        // so a round pin fits the ramp as well as the dwell (ADR-0122).
+        let r = p[0].hypot(p[1]);
+        let theta = p[1].atan2(p[0]);
+        let h = 1.0e-3;
+        let slope = (self.centre_radius_m(theta + h) - self.centre_radius_m(theta - h))
+            / (2.0 * h * r.max(1.0e-12));
+        let d = (r - self.centre_radius_m(theta)) / (1.0 + slope * slope).sqrt();
         -self.inner_width_m <= d && d <= self.outer_width_m
     }
 
@@ -194,6 +229,12 @@ pub struct HemeRotorSet {
     pub pin_inner_m: f64,
     /// How far they reach outward of the pin axis, in metres.
     pub pin_outer_m: f64,
+    /// The azimuth where the cam pushes each follower in, in radians.
+    pub cam_inlet_rad: f64,
+    /// The azimuth where the cam pulls each follower out, in radians.
+    pub cam_outlet_rad: f64,
+    /// The half-width of each cam ramp, in radians.
+    pub cam_ramp_half_rad: f64,
 }
 
 impl HemeRotorSet {
@@ -209,6 +250,9 @@ impl HemeRotorSet {
             outer_width_m: self.pin_outer_m + CAM_CONTACT_M,
             z_min_m: chamber_half_m - 1.0e-10,
             z_max_m: floor,
+            inlet_rad: self.cam_inlet_rad,
+            outlet_rad: self.cam_outlet_rad,
+            ramp_half_rad: self.cam_ramp_half_rad,
         };
         let bottom = ArmCamTrack {
             z_min_m: -floor,
@@ -326,6 +370,10 @@ impl HemeRotorGenerator {
         let iron_r_m = disc_m - slot_h_m - bore_len_m;
         let arm_chan_r_m = arm_r_m + arm_clr_m;
         let chan_len_m = LIGAND_OUT_M + release_margin_m + arm_len_m + 1.0e-9;
+        let collar_gap_m = r.require("arm_collar_gap_m")?;
+        let collar_len_m = r.require("arm_collar_length_m")?;
+        // The collar runs from the slot floor down `collar_len_m`.
+        let collar_lo_m = iron_r_m - slot_h_m - collar_len_m;
 
         // The disc and its cuts.
         let mut cuts: Option<Box<dyn Solid>> = None;
@@ -334,7 +382,7 @@ impl HemeRotorGenerator {
             .collect();
         for &az in &azimuths {
             let outer = disc_m + 1.0e-9;
-            let pieces: [Box<dyn Solid>; 3] = [
+            let pieces: [Box<dyn Solid>; 4] = [
                 Box::new(RadialCylinder {
                     azimuth_rad: az,
                     center_radius_m: 0.5 * (iron_r_m + outer),
@@ -349,11 +397,22 @@ impl HemeRotorGenerator {
                     half_length_m: slot_h_m,
                     center_z_m: 0.0,
                 }),
+                // The arm channel, behind the collar.
                 Box::new(RadialCylinder {
                     azimuth_rad: az,
-                    center_radius_m: iron_r_m - 0.5 * chan_len_m,
+                    center_radius_m: 0.5 * (collar_lo_m + iron_r_m - chan_len_m),
                     radius_m: arm_chan_r_m,
-                    half_length_m: 0.5 * chan_len_m,
+                    half_length_m: 0.5 * (collar_lo_m - (iron_r_m - chan_len_m)),
+                    center_z_m: 0.0,
+                }),
+                // The collar: the arm passes into the ring slot through a
+                // contact-gap bore, so the pocket does not open into the
+                // rotor interior (ADR-0121).
+                Box::new(RadialCylinder {
+                    azimuth_rad: az,
+                    center_radius_m: 0.5 * (collar_lo_m + iron_r_m),
+                    radius_m: arm_r_m + collar_gap_m,
+                    half_length_m: 0.5 * (iron_r_m - collar_lo_m),
                     center_z_m: 0.0,
                 }),
             ];
@@ -734,6 +793,9 @@ impl HemeRotorGenerator {
             pin_top_m: arm_pin_top_m,
             pin_inner_m,
             pin_outer_m,
+            cam_inlet_rad: CAM_INLET_RAD,
+            cam_outlet_rad: CAM_OUTLET_RAD,
+            cam_ramp_half_rad: CAM_RAMP_HALF_RAD,
         })
     }
 }
@@ -907,6 +969,405 @@ fn apply3(m: &[[f64; 3]; 3], p: [f64; 3]) -> [f64; 3] {
     ]
 }
 
+/// The least distance from a new hydroxyl hydrogen to any other atom, in
+/// metres.
+pub const MIN_HYDROXYL_CLEARANCE_M: f64 = 2.0e-10;
+
+/// The (carbon, hydrogen) cap bonds of `topology` whose hydrogen satisfies
+/// `select`.
+#[allow(dead_code)]
+fn caps_where(topology: &Topology, select: impl Fn([f64; 3]) -> bool) -> Vec<(usize, usize)> {
+    topology
+        .bonds()
+        .filter_map(|b| {
+            let (u, v) = (b.u as usize, b.v as usize);
+            match (topology.element(u), topology.element(v)) {
+                (Some(Element::CARBON), Some(Element::HYDROGEN)) => Some((u, v)),
+                (Some(Element::HYDROGEN), Some(Element::CARBON)) => Some((v, u)),
+                _ => None,
+            }
+        })
+        .filter(|&(_, h)| topology.position_m(h).is_some_and(&select))
+        .collect()
+}
+
+/// Turns each cap hydrogen of `caps` into a hydroxyl group. The oxygen sits
+/// on the old C-H direction at 1.43 A. The hydrogen sits on the C-O-H cone
+/// (108.5 degrees), at the one of 24 turns about C-O farthest from every
+/// neighbour. A real hydroxyl turns about C-O in picoseconds, so the start
+/// only has to be free of clashes (ADR-0119). A cap whose best turn comes
+/// within [`MIN_HYDROXYL_CLEARANCE_M`] of a neighbour is left as C-H.
+/// Returns the number of hydroxyls made.
+fn hydroxylate(topology: &mut Topology, caps: &[(usize, usize)]) -> Result<usize, PartError> {
+    let mut done = 0usize;
+    use std::collections::HashMap;
+    let cell = |p: [f64; 3]| {
+        (
+            (p[0] / 4.0e-10).floor() as i64,
+            (p[1] / 4.0e-10).floor() as i64,
+            (p[2] / 4.0e-10).floor() as i64,
+        )
+    };
+    let mut grid: HashMap<(i64, i64, i64), Vec<[f64; 3]>> = HashMap::new();
+    for i in 0..topology.atom_count() {
+        if let Some(p) = topology.position_m(i) {
+            grid.entry(cell(p)).or_default().push(p);
+        }
+    }
+    let moved =
+        |grid: &mut HashMap<(i64, i64, i64), Vec<[f64; 3]>>, from: [f64; 3], to: [f64; 3]| {
+            if let Some(v) = grid.get_mut(&cell(from)) {
+                v.retain(|q| dist(*q, from) > 1.0e-14);
+            }
+            grid.entry(cell(to)).or_default().push(to);
+        };
+    for &(c, h) in caps {
+        let (Some(cp), Some(hp)) = (topology.position_m(c), topology.position_m(h)) else {
+            continue;
+        };
+        let d = normalize([hp[0] - cp[0], hp[1] - cp[1], hp[2] - cp[2]]);
+        let o = [
+            cp[0] + 1.43e-10 * d[0],
+            cp[1] + 1.43e-10 * d[1],
+            cp[2] + 1.43e-10 * d[2],
+        ];
+        let helper = if d[0].abs() < 0.9 {
+            [1.0, 0.0, 0.0]
+        } else {
+            [0.0, 1.0, 0.0]
+        };
+        let e1 = normalize(cross(d, helper));
+        let e2 = cross(d, e1);
+        let (sa, ca) = (71.5_f64.to_radians().sin(), 71.5_f64.to_radians().cos());
+        let (ox, oy, oz) = cell(o);
+        let near: Vec<[f64; 3]> = (-1..=1)
+            .flat_map(|dx| {
+                (-1..=1).flat_map(move |dy| (-1..=1).map(move |dz| (ox + dx, oy + dy, oz + dz)))
+            })
+            .filter_map(|k| grid.get(&k))
+            .flatten()
+            .copied()
+            .filter(|q| dist(*q, o) > 1.0e-12 && dist(*q, hp) > 1.0e-14)
+            .collect();
+        let mut best = (f64::NEG_INFINITY, o);
+        for step in 0..24 {
+            let (sp, cp2) = (2.0 * PI * step as f64 / 24.0).sin_cos();
+            let w = [
+                cp2 * e1[0] + sp * e2[0],
+                cp2 * e1[1] + sp * e2[1],
+                cp2 * e1[2] + sp * e2[2],
+            ];
+            let hh = [
+                o[0] + 0.96e-10 * (ca * d[0] + sa * w[0]),
+                o[1] + 0.96e-10 * (ca * d[1] + sa * w[1]),
+                o[2] + 0.96e-10 * (ca * d[2] + sa * w[2]),
+            ];
+            let clear = near
+                .iter()
+                .filter(|q| dist(**q, cp) > 1.0e-12)
+                .map(|q| dist(*q, hh))
+                .fold(f64::INFINITY, f64::min);
+            if clear > best.0 {
+                best = (clear, hh);
+            }
+        }
+        // A crowded cap stays C-H: its hydroxyl could not turn clear, and the
+        // relaxation pressed such O-H bonds below 0.9 A.
+        if best.0 < MIN_HYDROXYL_CLEARANCE_M {
+            continue;
+        }
+        topology.set_element(h, Element::OXYGEN)?;
+        topology.set_atom_type(h, crate::group::FunctionalGroup::Hydroxyl.heavy_type())?;
+        topology.set_position_m(h, o)?;
+        moved(&mut grid, hp, o);
+        let hi = topology.add_atom(Atom::new(Element::HYDROGEN, best.1, 0.0, "H"));
+        topology.add_bond(Bond::new(h as u32, hi, 1, BondType::Single))?;
+        grid.entry(cell(best.1)).or_default().push(best.1);
+        done += 1;
+    }
+    Ok(done)
+}
+
+/// The geometry of the water-return plunger rotor (ADR-0122).
+#[derive(Clone, Debug)]
+pub struct WaterRotorSpec {
+    /// The rim radius of the disc, in metres.
+    pub disc_radius_m: f64,
+    /// The disc thickness, in metres.
+    pub thickness_m: f64,
+    /// The number of plunger pockets.
+    pub pocket_count: usize,
+    /// The azimuth of pocket 0, in radians.
+    pub phase_rad: f64,
+    /// The plunger lattice radius, in metres.
+    pub plunger_radius_m: f64,
+    /// The carbon gap between plunger and bore (a contact-gap seal), in metres.
+    pub plunger_gap_m: f64,
+    /// The plunger length, in metres.
+    pub plunger_length_m: f64,
+    /// The plunger stroke, in metres. The pocket is this deep when withdrawn.
+    pub stroke_m: f64,
+    /// The plunger tip radius when flush, below the rim, in metres.
+    pub flush_inset_m: f64,
+    /// The cam pin offset from the plunger back end, in metres.
+    pub pin_offset_m: f64,
+    /// The cam pin end height above the mid-plane, in metres.
+    pub pin_top_m: f64,
+    /// The carbon gap between the pin and its skin slot, in metres.
+    pub pin_slot_gap_m: f64,
+    /// Where the cam pushes each plunger flush (blood side), in radians.
+    pub inlet_rad: f64,
+    /// Where the cam withdraws each plunger (tank side), in radians.
+    pub outlet_rad: f64,
+    /// The half-width of each cam ramp, in radians. A 0.6 nm stroke over
+    /// +-20 degrees at r = 2.4 nm keeps the steepest slope near 23 degrees.
+    pub ramp_half_rad: f64,
+}
+
+impl Default for WaterRotorSpec {
+    fn default() -> Self {
+        Self {
+            disc_radius_m: 4.0e-9,
+            thickness_m: 2.4e-9,
+            pocket_count: 6,
+            phase_rad: 15.0_f64.to_radians(),
+            plunger_radius_m: 2.6e-10,
+            plunger_gap_m: 4.0e-10,
+            plunger_length_m: 1.9e-9,
+            stroke_m: 0.6e-9,
+            flush_inset_m: 1.1e-10,
+            pin_offset_m: 1.0e-10,
+            pin_top_m: 2.5e-9,
+            pin_slot_gap_m: 4.6e-10,
+            // Midway between pockets: a pin spans about +-11 degrees, so a
+            // pocket 3 degrees past a ramp end touched it (ADR-0122).
+            inlet_rad: 345.0_f64.to_radians(),
+            outlet_rad: 165.0_f64.to_radians(),
+            ramp_half_rad: 20.0_f64.to_radians(),
+        }
+    }
+}
+
+/// Builds the water-return rotor (ADR-0122): a positive-displacement
+/// plunger rotor. Each radial bore holds a plunger on the arm-cam
+/// mechanism of the O2 rotor (ADR-0116). In the tank sump the cam withdraws
+/// the plunger, and the open bore fills with sump water; across the seal and
+/// in the blood the cam pushes it flush, and the water leaves into the blood;
+/// on the way back to the tank the pocket has no volume. The plunger runs in
+/// a contact-gap bore, the seal of the arm collar (ADR-0121). Returns a set
+/// with no sites; the plungers are the arms.
+pub fn water_rotor(spec: &WaterRotorSpec) -> Result<HemeRotorSet, PartError> {
+    let disc_m = spec.disc_radius_m;
+    let half_m = 0.5 * spec.thickness_m;
+    let count = spec.pocket_count;
+    let bore_m = spec.plunger_radius_m + spec.plunger_gap_m;
+    if bore_m >= half_m - 2.0e-10 {
+        return Err(PartError::InvalidGeometry(
+            "the plunger bore is wider than the disc skins allow".to_owned(),
+        ));
+    }
+    let azimuths: Vec<f64> = (0..count)
+        .map(|k| (spec.phase_rad + 2.0 * PI * k as f64 / count as f64).rem_euclid(2.0 * PI))
+        .collect();
+    let tip_in_m = disc_m - spec.flush_inset_m;
+    let tip_out_m = tip_in_m - spec.stroke_m;
+
+    // The plunger in its own frame: [111] to +x, the pin along [1-10] to +z.
+    let a111 = [1.0 / 3f64.sqrt(); 3];
+    let e3 = [1.0 / 2f64.sqrt(), -1.0 / 2f64.sqrt(), 0.0];
+    let turn = [a111, cross(e3, a111), e3];
+    let plunger_solid = Union {
+        a: Box::new(AxisRod {
+            origin: [0.0; 3],
+            axis: a111,
+            radius_m: spec.plunger_radius_m,
+            length_m: spec.plunger_length_m,
+        }),
+        b: Box::new(AxisRod {
+            origin: [
+                spec.pin_offset_m * a111[0],
+                spec.pin_offset_m * a111[1],
+                spec.pin_offset_m * a111[2],
+            ],
+            axis: e3,
+            radius_m: spec.plunger_radius_m,
+            length_m: spec.pin_top_m,
+        }),
+    };
+    let mut plunger = Topology::new();
+    let ids: Vec<u32> = keep_well_bonded(fill_solid(&plunger_solid))
+        .into_iter()
+        .map(|p| plunger.add_atom(Atom::new(Element::CARBON, p, 0.0, "C")))
+        .collect();
+    diamond_solid::bond_and_cap(&mut plunger, &ids)?;
+    for i in 0..plunger.atom_count() {
+        if let Some(p) = plunger.position_m(i) {
+            plunger.set_position_m(i, apply3(&turn, p))?;
+        }
+    }
+    // Shift so the outermost tip carbon sits at x = 0, on the bore axis.
+    let carbons: Vec<[f64; 3]> = (0..plunger.atom_count())
+        .filter(|&i| plunger.element(i) == Some(Element::CARBON))
+        .filter_map(|i| plunger.position_m(i))
+        .collect();
+    let tip_x = carbons
+        .iter()
+        .filter(|p| p[2].abs() < spec.plunger_radius_m + 1.0e-10)
+        .map(|p| p[0])
+        .fold(f64::NEG_INFINITY, f64::max);
+    let axis_y = 0.0;
+    for i in 0..plunger.atom_count() {
+        if let Some(p) = plunger.position_m(i) {
+            plunger.set_position_m(i, [p[0] - tip_x, p[1] - axis_y, p[2]])?;
+        }
+    }
+    let pin_x = apply3(
+        &turn,
+        [
+            spec.pin_offset_m * a111[0],
+            spec.pin_offset_m * a111[1],
+            spec.pin_offset_m * a111[2],
+        ],
+    )[0] - tip_x;
+    let pin_y = 0.0;
+    let back_x = -spec.plunger_length_m - 0.5e-10;
+    let (mut pin_inner_m, mut pin_outer_m, mut pin_top_m) = (0.0_f64, 0.0_f64, half_m);
+    for i in 0..plunger.atom_count() {
+        if plunger.element(i) != Some(Element::CARBON) {
+            continue;
+        }
+        if let Some(p) = plunger.position_m(i) {
+            pin_top_m = pin_top_m.max(p[2]);
+            if p[2] > half_m {
+                pin_inner_m = pin_inner_m.max(pin_x - p[0]);
+                pin_outer_m = pin_outer_m.max(p[0] - pin_x);
+            }
+        }
+    }
+    let pin_in_r = (tip_in_m + pin_x).hypot(pin_y);
+    let pin_out_r = (tip_out_m + pin_x).hypot(pin_y);
+    // The skin slot of the pin must end behind the withdrawn tip, or the
+    // pocket opens into the face cavity and on to the other side (ADR-0122:
+    // the first build leaked this way).
+    let slot_reach_m = pin_in_r + spec.plunger_radius_m + spec.pin_slot_gap_m;
+    if slot_reach_m > tip_out_m - 2.0e-10 {
+        return Err(PartError::InvalidGeometry(format!(
+            "the pin slot reaches the pocket: slot to {slot_reach_m:e} m, withdrawn tip at {tip_out_m:e} m"
+        )));
+    }
+
+    // The disc: one bore per pocket from behind the withdrawn plunger to the
+    // rim, and a pin slot through the skin on the pin side.
+    let mut cuts: Option<Box<dyn Solid>> = None;
+    let mut pin_side = Vec::with_capacity(count);
+    for (k, &az) in azimuths.iter().enumerate() {
+        let side = if k % 2 == 0 { 1.0 } else { -1.0 };
+        pin_side.push(side);
+        let from = tip_out_m + back_x - 3.0e-10;
+        let to = disc_m + 1.0e-9;
+        let slot_w = spec.plunger_radius_m + spec.pin_slot_gap_m;
+        let reach = half_m + 1.0e-9;
+        let (z0, z1) = if side > 0.0 {
+            (0.0, reach)
+        } else {
+            (-reach, 0.0)
+        };
+        let pieces: [Box<dyn Solid>; 2] = [
+            Box::new(RadialCylinder {
+                azimuth_rad: az,
+                center_radius_m: 0.5 * (from + to),
+                radius_m: bore_m,
+                half_length_m: 0.5 * (to - from),
+                center_z_m: 0.0,
+            }),
+            Box::new(Placed {
+                inner: Box::new(Box3 {
+                    min_m: [pin_out_r - slot_w, pin_y - slot_w, z0],
+                    max_m: [pin_in_r + slot_w, pin_y + slot_w, z1],
+                }),
+                rotation_rad: az,
+                offset_m: [0.0; 3],
+            }),
+        ];
+        for piece in pieces {
+            cuts = Some(match cuts {
+                None => piece,
+                Some(prev) => Box::new(Union { a: prev, b: piece }),
+            });
+        }
+    }
+    let disc = Cylinder {
+        center_m: [0.0, 0.0, 0.0],
+        radius_m: disc_m,
+        height_m: spec.thickness_m,
+    };
+    let solid: Box<dyn Solid> = match cuts {
+        Some(inner) => Box::new(Difference {
+            outer: Box::new(disc),
+            inner,
+        }),
+        None => Box::new(disc),
+    };
+    let rotor = capped_lattice(fill_solid(solid.as_ref()))?;
+
+    // Place each plunger by the cam: flush where the cam is in, withdrawn
+    // where it is out. Odd pockets mirror in z so their pin points down.
+    let mut arms = Vec::with_capacity(count);
+    let mut flush = Vec::with_capacity(count);
+    for (k, &az) in azimuths.iter().enumerate() {
+        let f = ArmCamTrack::fraction_with(az, spec.inlet_rad, spec.outlet_rad, spec.ramp_half_rad);
+        if f != 0.0 && f != 1.0 {
+            return Err(PartError::InvalidGeometry(format!(
+                "pocket {k} sits on a cam ramp"
+            )));
+        }
+        flush.push(f == 1.0);
+        let tip = if f == 1.0 { tip_in_m } else { tip_out_m };
+        let (sn, cs) = az.sin_cos();
+        let mut placed = plunger.clone();
+        for i in 0..placed.atom_count() {
+            if let Some(p) = placed.position_m(i) {
+                let along = tip + p[0];
+                placed.set_position_m(
+                    i,
+                    [
+                        along * cs - p[1] * sn,
+                        along * sn + p[1] * cs,
+                        pin_side[k] * p[2],
+                    ],
+                )?;
+            }
+        }
+        arms.push(Part::new(format!("plunger_{k}"), placed).with_material("diamond"));
+    }
+    Ok(HemeRotorSet {
+        rotor: Part::new("water_rotor", rotor).with_material("diamond"),
+        sites: Vec::new(),
+        arms,
+        site_iron: Vec::new(),
+        arm_tip: Vec::new(),
+        site_anchor: Vec::new(),
+        azimuth_rad: azimuths,
+        loaded: flush,
+        iron_radius_m: tip_in_m,
+        disc_radius_m: disc_m,
+        half_thickness_m: half_m,
+        pin_side,
+        pin_radius_m: spec.plunger_radius_m,
+        pin_loaded_radius_m: pin_in_r,
+        pin_released_radius_m: pin_out_r,
+        pin_top_m,
+        // A displacement pump tolerates play; 0.4 A of slack on each groove
+        // wall clears the lattice steps (a withdrawn pin came to 1.8 A).
+        pin_inner_m: pin_inner_m + 0.4e-10,
+        pin_outer_m: pin_outer_m + 0.4e-10,
+        release_margin_m: 0.0,
+        cam_inlet_rad: spec.inlet_rad,
+        cam_outlet_rad: spec.outlet_rad,
+        cam_ramp_half_rad: spec.ramp_half_rad,
+    })
+}
+
 /// The hull-wall section that holds the O2 rotor (ADR-0117).
 ///
 /// The wall is a diamond slab on the plane x = 0: blood on the +x side, the
@@ -937,6 +1398,10 @@ pub struct HullWallSpec {
     pub wall_thickness_m: f64,
     /// How far the slab reaches past the end plates along y, in metres.
     pub wall_margin_m: f64,
+    /// Whether the wall has a drain bore at all. Every bore tested either
+    /// carried no water (OH-lined) or let O2 through (H-capped); the rotor
+    /// returns the water itself when the tank is wet (ADR-0120, ADR-0122).
+    pub drain: bool,
     /// The drain bore cut radius (to the wall carbon centres), in metres.
     pub drain_radius_m: f64,
     /// The length of the narrow drain section, in metres. A long single-file
@@ -946,6 +1411,11 @@ pub struct HullWallSpec {
     /// The radius of the counterbore from each wall face to the narrow
     /// section, in metres.
     pub drain_counterbore_radius_m: f64,
+    /// Which bore caps become hydroxyl groups: 1 every cap, n every n-th
+    /// (ordered along the bore, then by angle), 0 none (an H-capped bore,
+    /// the default: every OH-lined bore tested was plugged by its own
+    /// turning hydrogens, while H-capped bores carry water, ADR-0120).
+    pub drain_hydroxyl_every: usize,
 }
 
 impl Default for HullWallSpec {
@@ -959,9 +1429,11 @@ impl Default for HullWallSpec {
             plate_overhang_m: 0.8e-9,
             wall_thickness_m: 2.4e-9,
             wall_margin_m: 1.6e-9,
-            drain_radius_m: 4.2e-10,
+            drain: false,
+            drain_radius_m: 3.6e-10,
             drain_narrow_length_m: 1.0e-9,
             drain_counterbore_radius_m: 7.0e-10,
+            drain_hydroxyl_every: 0,
         }
     }
 }
@@ -989,8 +1461,19 @@ pub struct HullWall {
 pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, PartError> {
     let chamber_r = set.disc_radius_m + spec.rim_gap_m;
     let chamber_half = set.half_thickness_m + spec.face_gap_m;
-    let [top, bottom] = set.cam_tracks(chamber_half);
-    let plate_top = top.z_max_m + spec.plate_backing_m;
+    let [mut top, mut bottom] = set.cam_tracks(chamber_half);
+    if set.arms.is_empty() {
+        // No arms, no cam: empty grooves and a plain plate.
+        for track in [&mut top, &mut bottom] {
+            track.z_min_m = 1.0;
+            track.z_max_m = 0.0;
+        }
+    }
+    let plate_top = if set.arms.is_empty() {
+        chamber_half + 0.6e-9 + spec.plate_backing_m
+    } else {
+        top.z_max_m + spec.plate_backing_m
+    };
     let plate_r = chamber_r + spec.plate_overhang_m;
     let half_t = 0.5 * spec.wall_thickness_m;
     let seal_half_rad = (half_t / chamber_r).asin();
@@ -998,12 +1481,26 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
     // tank-to-blood seal at 270 degrees, and comes out only once the pocket is
     // in the tank, past the seal at 90 degrees.
     let wrap = |a: f64| (a + PI).rem_euclid(2.0 * PI) - PI;
-    if wrap(CAM_INLET_RAD - 1.5 * PI).abs() + CAM_RAMP_HALF_RAD > seal_half_rad {
+    // The O2 rotor: the arm goes in inside the tank-to-blood seal and comes
+    // out in the tank. A plunger rotor (no sites): both ramps outside the
+    // seals.
+    let on_seal = |a: f64| {
+        let d = wrap(a - 0.5 * PI).abs().min(wrap(a - 1.5 * PI).abs());
+        d < seal_half_rad + set.cam_ramp_half_rad
+    };
+    if set.sites.is_empty() && !set.arms.is_empty() {
+        if on_seal(set.cam_inlet_rad) || on_seal(set.cam_outlet_rad) {
+            return Err(PartError::InvalidGeometry(
+                "a plunger ramp overlaps a seal".to_owned(),
+            ));
+        }
+    } else if set.sites.is_empty() {
+    } else if wrap(set.cam_inlet_rad - 1.5 * PI).abs() + CAM_RAMP_HALF_RAD > seal_half_rad {
         return Err(PartError::InvalidGeometry(
             "the arm-in ramp is not inside the seal".to_owned(),
         ));
     }
-    if CAM_OUTLET_RAD - CAM_RAMP_HALF_RAD < 0.5 * PI + seal_half_rad {
+    if !set.sites.is_empty() && set.cam_outlet_rad - CAM_RAMP_HALF_RAD < 0.5 * PI + seal_half_rad {
         return Err(PartError::InvalidGeometry(
             "the arm-out ramp starts before the pocket is in the tank".to_owned(),
         ));
@@ -1093,7 +1590,15 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
                 a: Box::new(top),
                 b: Box::new(bottom),
             }),
-            b: Box::new(drain),
+            b: if spec.drain {
+                Box::new(drain) as Box<dyn Solid>
+            } else {
+                // An empty box: no drain.
+                Box::new(Box3 {
+                    min_m: [1.0; 3],
+                    max_m: [0.0; 3],
+                })
+            },
         }),
     };
     let solid = Difference {
@@ -1122,67 +1627,22 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
         })
         .filter(|&(_, h)| topology.position_m(h).is_some_and(in_bore))
         .collect();
-    // Atoms near the bore, for the hydroxyl hydrogen placement.
-    let mut near: Vec<[f64; 3]> = (0..topology.atom_count())
-        .filter_map(|i| topology.position_m(i))
-        .filter(|p| (p[1] - drain_y).hypot(p[2]) < spec.drain_counterbore_radius_m + 6.0e-10)
-        .collect();
-    for &(c, h) in &caps {
-        let (Some(cp), Some(hp)) = (topology.position_m(c), topology.position_m(h)) else {
-            continue;
+    // Thin the lining: keep every n-th cap along the bore (none when 0).
+    let mut caps = caps;
+    caps.sort_by(|a, b| {
+        let key = |h: usize| {
+            let p = topology.position_m(h).unwrap_or([0.0; 3]);
+            (p[0], (p[2]).atan2(p[1] - drain_y))
         };
-        let d = normalize([hp[0] - cp[0], hp[1] - cp[1], hp[2] - cp[2]]);
-        let o = [
-            cp[0] + 1.43e-10 * d[0],
-            cp[1] + 1.43e-10 * d[1],
-            cp[2] + 1.43e-10 * d[2],
-        ];
-        topology.set_element(h, Element::OXYGEN)?;
-        topology.set_atom_type(h, crate::group::FunctionalGroup::Hydroxyl.heavy_type())?;
-        topology.set_position_m(h, o)?;
-        near.retain(|q| dist(*q, hp) > 1.0e-14);
-        near.push(o);
-        // The hydroxyl hydrogen sits on the C-O-H cone (108.5 degrees), at
-        // the one of 24 turns about the C-O axis farthest from every
-        // neighbour. A real hydroxyl turns about C-O in picoseconds, and the
-        // drain MD lets it turn (ADR-0119), so the start only has to be free
-        // of clashes. Pointing it away from the bore pressed it to 1.9 A
-        // from the wall carbons.
-        let helper = if d[0].abs() < 0.9 {
-            [1.0, 0.0, 0.0]
-        } else {
-            [0.0, 1.0, 0.0]
-        };
-        let e1 = normalize(cross(d, helper));
-        let e2 = cross(d, e1);
-        let (sa, ca) = (71.5_f64.to_radians().sin(), 71.5_f64.to_radians().cos());
-        let mut best = (f64::NEG_INFINITY, o);
-        for step in 0..24 {
-            let phi = 2.0 * PI * step as f64 / 24.0;
-            let (sp, cp2) = phi.sin_cos();
-            let w = [
-                cp2 * e1[0] + sp * e2[0],
-                cp2 * e1[1] + sp * e2[1],
-                cp2 * e1[2] + sp * e2[2],
-            ];
-            let hh = [
-                o[0] + 0.96e-10 * (ca * d[0] + sa * w[0]),
-                o[1] + 0.96e-10 * (ca * d[1] + sa * w[1]),
-                o[2] + 0.96e-10 * (ca * d[2] + sa * w[2]),
-            ];
-            let clear = near
-                .iter()
-                .filter(|q| dist(**q, o) > 1.0e-12)
-                .map(|q| dist(*q, hh))
-                .fold(f64::INFINITY, f64::min);
-            if clear > best.0 {
-                best = (clear, hh);
-            }
-        }
-        let hi = topology.add_atom(Atom::new(Element::HYDROGEN, best.1, 0.0, "H"));
-        topology.add_bond(Bond::new(h as u32, hi, 1, BondType::Single))?;
-        near.push(best.1);
-    }
+        key(a.1)
+            .partial_cmp(&key(b.1))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let caps: Vec<(usize, usize)> = match spec.drain_hydroxyl_every {
+        0 => Vec::new(),
+        n => caps.into_iter().step_by(n).collect(),
+    };
+    let lined = hydroxylate(&mut topology, &caps)?;
     crate::pocket::charge_wall(&mut topology, crate::group::FunctionalGroup::Hydroxyl);
     Ok(HullWall {
         part: Part::new("hull_wall", topology).with_material("diamond"),
@@ -1190,7 +1650,7 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
         chamber_half_m: chamber_half,
         seal_half_rad,
         drain_y_m: drain_y,
-        drain_lining: caps.len(),
+        drain_lining: lined,
         face_seal_inner_radius_m: seal_inner_r,
     })
 }
@@ -1329,10 +1789,27 @@ mod tests {
                 .filter(|q| side * q[2] > chamber_half - 5e-10)
                 .collect();
             let (mut worst_load, mut worst_release) = (f64::INFINITY, f64::NEG_INFINITY);
+            let mut ramp_worst = f64::INFINITY;
             for deg in (0..360).step_by(2) {
                 let th = (deg as f64).to_radians();
                 let f = ArmCamTrack::loaded_fraction(th);
                 if f != 0.0 && f != 1.0 {
+                    // On a ramp the arm only has to fit the groove.
+                    let ligand =
+                        LIGAND_IN_M + (1.0 - f) * (LIGAND_OUT_M + s.release_margin_m - LIGAND_IN_M);
+                    let (sn, cs) = th.sin_cos();
+                    let base = s.iron_radius_m - ligand;
+                    let mut nearest = f64::INFINITY;
+                    for l in &local {
+                        let r = base + l[0];
+                        let m = [r * cs - l[1] * sn, r * sn + l[1] * cs, l[2]];
+                        for q in &wall {
+                            if (m[0] - q[0]).abs() < 3e-10 && (m[1] - q[1]).abs() < 3e-10 {
+                                nearest = nearest.min(dist(m, *q));
+                            }
+                        }
+                    }
+                    ramp_worst = ramp_worst.min(nearest);
                     continue;
                 }
                 let ligand = if f == 1.0 {
@@ -1375,6 +1852,14 @@ mod tests {
                 worst_load * 1e10,
                 (LIGAND_OUT_M + s.release_margin_m - worst_release) * 1e10
             );
+            eprintln!(
+                "side {side}: ramps, nearest wall atom {:.2} A",
+                ramp_worst * 1e10
+            );
+            assert!(
+                ramp_worst > 1.9e-10,
+                "side {side}: the arm hits a ramp at {ramp_worst:e}"
+            );
             assert!(worst_load >= 0.0);
             assert!(
                 LIGAND_OUT_M + s.release_margin_m - worst_release >= LIGAND_OUT_M - 1e-12,
@@ -1411,34 +1896,156 @@ mod tests {
             "{}",
             wall.seal_half_rad.to_degrees()
         );
-        // The drain: open along its axis, lined with hydroxyl oxygens.
-        assert!(wall.drain_lining >= 8, "{}", wall.drain_lining);
+        // The default wall has no drain bore (ADR-0122). With one, the
+        // H-capped bore leaves 2.8 A to its cap hydrogens.
+        assert_eq!(wall.drain_lining, 0);
+        let drained = hull_wall(
+            &s,
+            &HullWallSpec {
+                drain: true,
+                ..HullWallSpec::default()
+            },
+        )
+        .expect("wall with drain");
         let mut nearest = f64::INFINITY;
-        for (i, q) in atoms.iter().enumerate() {
-            if wall.part.topology.element(i) == Some(Element::HYDROGEN) {
-                continue;
-            }
+        for i in 0..drained.part.atom_count() {
+            let q = drained.part.topology.position_m(i).expect("p");
             if q[0].abs() < 0.4e-9 {
-                let r = (q[1] - wall.drain_y_m).hypot(q[2]);
-                nearest = nearest.min(r);
+                nearest = nearest.min((q[1] - drained.drain_y_m).hypot(q[2]));
             }
         }
         eprintln!(
-            "seal half-angle {:.1} deg, drain lining {}, nearest atom to the drain axis {:.2} A, atoms {}",
+            "seal half-angle {:.1} deg, drain bore nearest atom {:.2} A, atoms {}",
             wall.seal_half_rad.to_degrees(),
-            wall.drain_lining,
             nearest * 1e10,
             wall.part.atom_count()
         );
-        // The bottleneck at the heavy atoms, against the channel tested by MD
-        // (ADR-0098, lining O 2.91 A from the axis). The hydrogens turn.
-        assert!(nearest > 2.9e-10, "{nearest:e}");
+        assert!((2.7e-10..2.9e-10).contains(&nearest), "{nearest:e}");
         // Every pocket's state follows the cam profile.
         for (k, &az) in s.azimuth_rad.iter().enumerate() {
             let f = ArmCamTrack::loaded_fraction(az);
             assert!(f == 0.0 || f == 1.0, "pocket {k} is mid-ramp");
             assert_eq!(s.loaded[k], f == 1.0);
         }
-        assert_eq!(s.loaded.iter().filter(|&&l| l).count(), 7);
+        assert_eq!(s.loaded.iter().filter(|&&l| l).count(), 5);
+    }
+
+    /// The water-return plunger rotor (ADR-0122): flush plungers on the
+    /// blood arc, withdrawn ones on the tank arc; every plunger clears the
+    /// rotor and the hull wall; the pocket of a withdrawn plunger is open
+    /// 0.8 nm deep.
+    #[test]
+    fn the_water_rotor_plungers_fit() {
+        let w = water_rotor(&WaterRotorSpec::default()).expect("water rotor");
+        assert_eq!(w.arms.len(), 6);
+        assert_eq!(w.loaded.iter().filter(|&&f| f).count(), 3);
+        // A pocket crosses the blood-to-tank seal (90 deg) flush, so it
+        // carries no water into the tank, and the tank-to-blood seal (270
+        // deg) withdrawn, full of sump water.
+        let f = |deg: f64| {
+            ArmCamTrack::fraction_with(
+                deg.to_radians(),
+                w.cam_inlet_rad,
+                w.cam_outlet_rad,
+                w.cam_ramp_half_rad,
+            )
+        };
+        for deg in 70..=110 {
+            assert_eq!(f(deg as f64), 1.0, "not flush at {deg}");
+        }
+        for deg in 250..=290 {
+            assert_eq!(f(deg as f64), 0.0, "not withdrawn at {deg}");
+        }
+        let wall = hull_wall(&w, &HullWallSpec::default()).expect("wall");
+        let fixed: Vec<([f64; 3], &str)> = (0..w.rotor.atom_count())
+            .filter_map(|i| w.rotor.topology.position_m(i).map(|p| (p, "rotor")))
+            .chain(
+                (0..wall.part.atom_count())
+                    .filter_map(|i| wall.part.topology.position_m(i).map(|p| (p, "wall"))),
+            )
+            .collect();
+        for (k, arm) in w.arms.iter().enumerate() {
+            let mut near = (f64::INFINITY, [0.0; 3], "");
+            for i in 0..arm.atom_count() {
+                let p = arm.topology.position_m(i).expect("p");
+                for (q, what) in &fixed {
+                    if (p[0] - q[0]).abs() < 3e-10 && (p[1] - q[1]).abs() < 3e-10 {
+                        let d = dist(p, *q);
+                        if d < near.0 {
+                            near = (d, p, what);
+                        }
+                    }
+                }
+            }
+            let (d, p, what) = near;
+            eprintln!(
+                "plunger {k}: nearest {what} {:.2} A at r {:.2} nm z {:.2} nm",
+                d * 1e10,
+                p[0].hypot(p[1]) * 1e9,
+                p[2] * 1e9
+            );
+            assert!(d > 1.9e-10, "plunger {k} touches at {d:e}");
+        }
+    }
+
+    /// Over a full turn in 2 degree steps, ramps included, each plunger
+    /// (one per pin side) placed by the cam clears the hull wall, the end
+    /// plates and the grooves by more than 1.9 A (ADR-0122).
+    #[test]
+    fn the_water_rotor_cam_holds_every_plunger_over_a_turn() {
+        let w = water_rotor(&WaterRotorSpec::default()).expect("w");
+        let wall = hull_wall(&w, &HullWallSpec::default()).expect("wall");
+        let wall_atoms: Vec<[f64; 3]> = (0..wall.part.atom_count())
+            .filter_map(|i| wall.part.topology.position_m(i))
+            .filter(|q| q[2].abs() > w.half_thickness_m)
+            .collect();
+        let stroke = w.pin_loaded_radius_m - w.pin_released_radius_m;
+        let mut worst = f64::INFINITY;
+        for k in [0usize, 1] {
+            let side = w.pin_side[k];
+            let (sn, cs) = w.azimuth_rad[k].sin_cos();
+            let tip0 = if w.loaded[k] {
+                w.iron_radius_m
+            } else {
+                w.iron_radius_m - stroke
+            };
+            // The plunger above the disc face, in its pocket frame.
+            let local: Vec<[f64; 3]> = (0..w.arms[k].atom_count())
+                .filter_map(|i| w.arms[k].topology.position_m(i))
+                .filter(|p| side * p[2] > w.half_thickness_m)
+                .map(|p| [p[0] * cs + p[1] * sn - tip0, -p[0] * sn + p[1] * cs, p[2]])
+                .collect();
+            for deg in (0..360).step_by(2) {
+                let th = (deg as f64).to_radians();
+                let f = ArmCamTrack::fraction_with(
+                    th,
+                    w.cam_inlet_rad,
+                    w.cam_outlet_rad,
+                    w.cam_ramp_half_rad,
+                );
+                let tip = w.iron_radius_m - (1.0 - f) * stroke;
+                let (s2, c2) = th.sin_cos();
+                for l in &local {
+                    let r = tip + l[0];
+                    let m = [r * c2 - l[1] * s2, r * s2 + l[1] * c2, l[2]];
+                    for q in &wall_atoms {
+                        if (m[0] - q[0]).abs() < 3e-10 && (m[1] - q[1]).abs() < 3e-10 {
+                            let d = dist(m, *q);
+                            if d < 1.9e-10 && d < worst {
+                                eprintln!(
+                                    "k {k} deg {deg} f {f:.2}: {:.2} A at r {:.2} nm z {:.2} nm",
+                                    d * 1e10,
+                                    m[0].hypot(m[1]) * 1e9,
+                                    m[2] * 1e9
+                                );
+                            }
+                            worst = worst.min(d);
+                        }
+                    }
+                }
+            }
+        }
+        eprintln!("plunger cam sweep: nearest wall atom {:.2} A", worst * 1e10);
+        assert!(worst > 1.9e-10, "{worst:e}");
     }
 }

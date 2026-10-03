@@ -20,7 +20,8 @@
 use nanocad_meter::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 use nanocad_model::{Bond, BondType, Part};
 use nanocad_parts::{
-    hull_wall, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec, ParameterSet,
+    hull_wall, water_rotor, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec, ParameterSet,
+    WaterRotorSpec,
 };
 
 use crate::rotor_scene::zero_design;
@@ -31,6 +32,9 @@ use crate::scene::{
 
 /// The scene id of the module.
 pub const MODULE_SCENE_ID: &str = "respirocyte_module";
+
+/// The scene id of the water-return rotor in its hull wall (ADR-0122).
+pub const WATER_ROTOR_SCENE_ID: &str = "respirocyte_water_rotor";
 
 const Z: [f64; 3] = [0.0, 0.0, 1.0];
 
@@ -46,7 +50,12 @@ pub struct ModuleParts {
 
 /// Generates the module parts, unrelaxed.
 pub fn module_parts() -> Result<ModuleParts, SceneError> {
-    let set = HemeRotorGenerator.build(&ParameterSet::new())?;
+    module_parts_with(&ParameterSet::new())
+}
+
+/// Generates the module parts with rotor parameters, unrelaxed.
+pub fn module_parts_with(parameters: &ParameterSet) -> Result<ModuleParts, SceneError> {
+    let set = HemeRotorGenerator.build(parameters)?;
     let wall = hull_wall(&set, &HullWallSpec::default())?;
     let housing = wall.part.clone();
     Ok(ModuleParts { set, housing, wall })
@@ -134,7 +143,7 @@ pub fn module_scene(parts: &ModuleParts) -> Scene {
             Z,
         ));
     }
-    for k in 0..n {
+    for k in 0..set.arms.len() {
         let name = format!("ligand_arm_{k}");
         let index = 2 + n + k;
         atoms.extend(atoms_of(&set.arms[k], index, &name));
@@ -196,9 +205,41 @@ pub fn module_relax_options() -> ValenceRelaxOptions {
     }
 }
 
+/// Generates the water-return rotor in its hull wall, unrelaxed (ADR-0122).
+pub fn water_module_parts() -> Result<ModuleParts, SceneError> {
+    let set = water_rotor(&WaterRotorSpec::default())?;
+    let wall = hull_wall(&set, &HullWallSpec::default())?;
+    let housing = wall.part.clone();
+    Ok(ModuleParts { set, housing, wall })
+}
+
+/// Builds the relaxed water-return rotor scene.
+pub fn build_relaxed_water_scene(
+    options: &ValenceRelaxOptions,
+) -> Result<(Scene, Vec<(String, ValenceRelaxReport)>), SceneError> {
+    let mut parts = water_module_parts()?;
+    let reports = relax_module_parts(&mut parts, options)?;
+    let mut scene = module_scene(&parts);
+    scene.frame = WATER_ROTOR_SCENE_ID.to_string();
+    Ok((scene, reports))
+}
+
 /// Builds the unrelaxed module scene.
 pub fn build_module_scene() -> Result<Scene, SceneError> {
     Ok(module_scene(&module_parts()?))
+}
+
+/// Builds the module scene with rotor parameters, relaxed or not.
+pub fn build_module_scene_with(
+    parameters: &ParameterSet,
+    relax: Option<&ValenceRelaxOptions>,
+) -> Result<(Scene, Vec<(String, ValenceRelaxReport)>), SceneError> {
+    let mut parts = module_parts_with(parameters)?;
+    let reports = match relax {
+        Some(options) => relax_module_parts(&mut parts, options)?,
+        None => Vec::new(),
+    };
+    Ok((module_scene(&parts), reports))
 }
 
 pub(crate) fn relax_part(
@@ -427,14 +468,14 @@ mod tests {
     fn the_module_has_its_bodies_and_joints() {
         let parts = module_parts().expect("the module builds");
         let scene = module_scene(&parts);
-        assert_eq!(scene.device.body_count, 26);
-        assert_eq!(scene.device.joints.len(), 25);
+        assert_eq!(scene.device.body_count, 18);
+        assert_eq!(scene.device.joints.len(), 17);
         let report = sense_report(&scene);
         assert!(report.floating_bodies.is_empty(), "{report:?}");
-        // The loaded pockets (seven, set by the cam profile) carry the
+        // The loaded pockets (five of eight, set by the cam profile) carry the
         // Fe-NH2 ligand bond across bodies.
         let loaded = parts.set.loaded.iter().filter(|&&l| l).count();
-        assert_eq!(loaded, 7);
+        assert_eq!(loaded, 5);
         assert_eq!(report.cross_body_bonds, loaded);
     }
 
@@ -454,8 +495,8 @@ mod tests {
     }
 
     /// The relaxed module is the delivered CAD model: no overlap, no loose
-    /// piece, and no contact under 2.2 A between bodies except the seven Fe-N
-    /// ligand bonds. About a minute in a release build; run with
+    /// piece, and no contact under 2.2 A between bodies except the tethers, the Fe-N
+    /// ligand bonds and the seal rubs. A few minutes in a release build; run with
     /// `cargo test --release -p nanocad-jigs -- --ignored relaxed_module`.
     #[test]
     #[ignore]
@@ -485,7 +526,7 @@ mod tests {
         let report = sense_report(&scene);
         assert_eq!(report.overlap_count, 0, "{report:?}");
         assert!(report.disjoint_bodies.is_empty(), "{report:?}");
-        // Twelve tether bonds (one per site) plus the seven Fe-N ligand bonds.
+        // One tether contact per site plus one Fe-N bond per loaded pocket.
         // The wall touches the rotor only at the seals (the two rim arcs and
         // the face seal rings), which are set at H-H contact (ADR-0117).
         let seal = parts.wall.seal_half_rad;
@@ -518,15 +559,42 @@ mod tests {
                 }
             }
         }
+        let n = parts.set.sites.len();
+        // An arm pin rides its groove at contact (ADR-0116): a wall-arm pair
+        // at 2.0 A or more is the cam, not a clash.
+        let cam = |a: usize, b: usize, d: f64| a == 0 && b >= 2 + n && d >= 2.0e-10;
         let close: Vec<_> = body_contacts(&scene, 2.15e-10)
             .into_iter()
             .filter(|&(a, b, _)| !(a == 0 && b == 1 && rubs > 0))
+            .filter(|&(a, b, d)| !cam(a, b, d))
             .collect();
-        assert_eq!(close.len(), 19, "{close:?}");
+        let loaded = parts.set.loaded.iter().filter(|&&l| l).count();
+        assert_eq!(close.len(), n + loaded, "{close:?}");
         for (a, b, d) in &close {
-            if *a == 1 && (2..14).contains(b) {
+            if *a == 1 && (2..2 + n).contains(b) {
                 assert!((1.35e-10..=1.65e-10).contains(d), "tether {a}-{b} {d}");
             }
         }
+    }
+
+    #[test]
+    fn the_water_rotor_scene_has_two_bodies() {
+        let parts = water_module_parts().expect("builds");
+        let scene = module_scene(&parts);
+        assert_eq!(scene.device.body_count, 8);
+        assert_eq!(scene.device.joints.len(), 7);
+    }
+
+    /// The relaxed water rotor: no overlap, no loose body; the wall touches
+    /// the rotor only at the seals.
+    #[test]
+    #[ignore]
+    fn the_relaxed_water_rotor_passes_the_audit() {
+        let (scene, reports) = build_relaxed_water_scene(&module_relax_options()).expect("relaxes");
+        assert!(reports.iter().all(|(_, r)| r.converged), "{reports:?}");
+        let report = sense_report(&scene);
+        assert_eq!(report.overlap_count, 0, "{report:?}");
+        assert!(report.disjoint_bodies.is_empty(), "{report:?}");
+        assert!(report.floating_bodies.is_empty(), "{report:?}");
     }
 }

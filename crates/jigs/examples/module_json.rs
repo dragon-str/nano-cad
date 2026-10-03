@@ -1,40 +1,42 @@
 //! Builds the respirocyte oxygen module, relaxed or not, audits it, and
 //! optionally writes the scene JSON.
 //!
-//! Usage: `module_json [relaxed|raw] [path]`. The last stdout line is a JSON
+//! Usage: `module_json [relaxed|raw] [path] [key=value ...]`; the pairs set
+//! rotor parameters. The last stdout line is a JSON
 //! object with the per-body relaxation summary and the sense audit.
 
 use nanocad_jigs::{
-    body_contacts, build_module_scene, build_relaxed_module_scene, module_relax_options,
-    sense_report, write_scene_json,
+    body_contacts, build_module_scene_with, module_relax_options, sense_report, write_scene_json,
 };
 use nanocad_meter::ValenceRelaxOptions;
+use nanocad_parts::ParameterSet;
 
 fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().unwrap_or_else(|| "relaxed".to_string());
     let path = args.next();
-    let (scene, reports) = if mode == "raw" {
-        match build_module_scene() {
-            Ok(s) => (s, Vec::new()),
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
+    // Optional rotor parameters as key=value after the path.
+    let mut parameters = ParameterSet::new();
+    for pair in args {
+        if let Some((key, value)) = pair.split_once('=') {
+            if let Ok(v) = value.parse::<f64>() {
+                parameters = parameters.with(key, v);
             }
         }
-    } else {
-        match build_relaxed_module_scene(&ValenceRelaxOptions {
-            max_iterations: std::env::var("RELAX_ITERATIONS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(module_relax_options().max_iterations),
-            ..module_relax_options()
-        }) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
+    }
+    let options = ValenceRelaxOptions {
+        max_iterations: std::env::var("RELAX_ITERATIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(module_relax_options().max_iterations),
+        ..module_relax_options()
+    };
+    let relax = if mode == "raw" { None } else { Some(&options) };
+    let (scene, reports) = match build_module_scene_with(&parameters, relax) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
         }
     };
     if let Some(path) = path {

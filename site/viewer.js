@@ -1672,19 +1672,36 @@
     var d = scene.design;
     var lines;
     var respirocyte = /^respirocyte/.test(scene.frame || "");
-    if (motion.kind === "joints" && respirocyte) {
+    if (motion.kind === "joints" && scene.frame === "respirocyte_water_rotor") {
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "mechanism: respirocyte water-return plunger rotor in a hull-wall section (relaxed, simulated)",
+        "bodies: " + scene.device.body_count + " (hull wall, rotor, " +
+          (scene.device.body_count - 2) + " plungers)",
+        "atoms: " + scene.atomistic.atom_count,
+        "hull wall on x = 0: blood at +x, tank sump at -x; rotor axis in the wall",
+        "plunger withdrawn at 165 deg (tank): the 0.6 nm pocket fills with sump water",
+        "crosses the 270 deg seal full; pushed flush at 345 deg (blood): water leaves",
+        "crosses the 90 deg seal flush: no volume, no water back to the tank",
+        "plungers run in contact-gap bores (4.0 A carbon gap)",
+        "hide the hull wall in Components to see the rotor",
+      ];
+    } else if (motion.kind === "joints" && respirocyte) {
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: respirocyte O2 rotor in a hull-wall section (relaxed, simulated)",
-        "bodies: " + scene.device.body_count + " (hull wall, rotor, 12 heme sites, 12 ligand arms)",
+        "bodies: " + scene.device.body_count + " (hull wall, rotor, " +
+          (scene.device.body_count - 2) / 2 + " heme sites, " +
+          (scene.device.body_count - 2) / 2 + " ligand arms)",
         "atoms: " + scene.atomistic.atom_count,
         "hull wall on x = 0: blood at +x, tank at -x; rotor axis in the wall",
         "seals: the rim at 90 and 270 deg, and a face-seal ring on each plate",
         "rotor turns +z: load in blood (arm in), cross the seal at 90 deg,",
         "  arm out at 120 deg (release into the tank), arm in at 270 deg (in the seal)",
         "arm cam: a pin on each arm runs in a groove in the end plate",
-        "drain: one OH-lined bore through the wall beside the rotor",
-        "not built: repair donor, discharge rotor",
+        "each arm enters its ring slot through a contact-gap collar",
+        "water carried in: about 0.4 per loaded pocket; the water-return rotor removes it",
+        "not built: repair donor, discharge rotor, tank sump and wick",
         "hide the hull wall in Components to see the rotor",
       ];
     } else if (motion.kind === "joints") {

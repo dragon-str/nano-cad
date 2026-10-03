@@ -11,7 +11,10 @@ use nanocad_model::Part;
 use nanocad_parts::{library, ParameterSet};
 
 use crate::gear_pump_scene::{build_gear_pump_scene, GEAR_PUMP_SCENE_ID};
-use crate::module_scene::{build_relaxed_module_scene, module_relax_options, MODULE_SCENE_ID};
+use crate::module_scene::{
+    build_relaxed_module_scene, build_relaxed_water_scene, module_relax_options, MODULE_SCENE_ID,
+    WATER_ROTOR_SCENE_ID,
+};
 use crate::rotor_scene::zero_design;
 use crate::scene::{
     AtomisticLayer, CoarseBody, CoarseCylinder, CoarseLayer, DeviceLayer, Scene, SceneAtom,
@@ -72,6 +75,12 @@ pub fn scene_catalog() -> Vec<SceneCatalogEntry> {
             kind: "machine".to_string(),
             category: "machines".to_string(),
         },
+        SceneCatalogEntry {
+            id: WATER_ROTOR_SCENE_ID.to_string(),
+            name: "Respirocyte water-return rotor".to_string(),
+            kind: "machine".to_string(),
+            category: "machines".to_string(),
+        },
     ];
     for entry in library() {
         // The gear pump is listed once, as a machine with three bodies.
@@ -98,6 +107,9 @@ pub fn build_part_scene(id: &str) -> Result<Scene, SceneError> {
     if id == MODULE_SCENE_ID {
         // Relaxed on request: about 150 s in a release build.
         return build_relaxed_module_scene(&module_relax_options()).map(|(scene, _)| scene);
+    }
+    if id == WATER_ROTOR_SCENE_ID {
+        return build_relaxed_water_scene(&module_relax_options()).map(|(scene, _)| scene);
     }
     let part = nanocad_parts::generate(id, &ParameterSet::new())?;
     let name = nanocad_parts::generator(id)
@@ -219,7 +231,8 @@ mod tests {
                 ROTOR_SCENE_ID,
                 GEARBOX_SCENE_ID,
                 GEAR_PUMP_SCENE_ID,
-                MODULE_SCENE_ID
+                MODULE_SCENE_ID,
+                WATER_ROTOR_SCENE_ID
             ]
         );
         assert_eq!(catalog.len(), library().len() - 1 + machines.len());

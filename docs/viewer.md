@@ -206,8 +206,9 @@ ring on each end plate closes the face gap, so the cam grooves sit in a closed
 cavity. Each ligand arm carries a pin that runs in a groove in an end plate. The
 cam pushes the arm in inside the seal at 270 degrees and pulls it out at 120
 degrees, in the tank. One hydroxyl-lined drain bore passes through the wall
-beside the rotor. Seven pockets show the loaded state and five the released
-state, as the cam profile sets them. The rotor turns about its joint, and the
+beside the rotor. Eight pockets (ADR-0121): five show the loaded state and
+three the released state, as the cam profile sets them. Each arm passes a
+contact-gap collar into its ring slot. The rotor turns about its joint, and the
 sites and arms turn with it. Hide the hull wall and set the clip near 0.5 to
 see the pockets in section.
 
