@@ -341,3 +341,19 @@ check: all checks passed
 - The chat parser is rule-based, not a language model. It accepts the listed
   commands only. It clamps every value and reports the engine error verbatim.
 - No medical claim is made. The output is a design hypothesis.
+
+## System model page
+
+`/system` (link "System model" in the header) shows the respirocyte at real
+size: a 1 um hull with its rotor banks drawn as bands of the area their
+sections take (13.7 x 6.9 nm each, measured from the relaxed CAD scene), the
+O2 tank and the cascade chambers as spheres of their volumes. The left column
+edits the design: stage count, tank, power supply, and the count, speed and
+model parameters of each bank. Every value shows its provenance tag
+(measured, estimated, assumed, reference) and source on hover. The right
+column lists the indicators for the central, pessimistic and optimistic
+cases; the plot shows the tank and chamber pressures and the duty cycle
+through one fill and one discharge. The model is
+`python/nanocad/respirocyte_system.py` (pure Python, about 1 s per request,
+served by `/api/system`). Simulated estimates (ADR-0124).
+

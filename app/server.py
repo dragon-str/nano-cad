@@ -33,6 +33,14 @@ import chat  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
+sys.path.insert(0, os.path.join(ROOT, "python"))
+
+
+def system_report(edits: dict | None) -> dict:
+    """The respirocyte system model (M29-01). Pure Python, about 1 s."""
+    from nanocad import respirocyte_system  # noqa: PLC0415
+
+    return respirocyte_system.page_report(edits or {})
 # The respirocyte device relaxes in about 150 s in a release build (ADR-0116),
 # and the first request after a code change also compiles the example.
 BUILD_TIMEOUT_S = 600
@@ -330,6 +338,15 @@ class Handler(BaseHTTPRequestHandler):
         if route in ("/", ""):
             self._send_file(os.path.join(SITE, "index.html"))
             return
+        if route in ("/system", "/system.html"):
+            self._send_file(os.path.join(SITE, "system.html"))
+            return
+        if route == "/api/system":
+            try:
+                self._send_json(200, system_report(None))
+            except Exception as error:  # noqa: BLE001
+                self._send_json(500, {"error": str(error)})
+            return
         if route == "/api/scene":
             try:
                 with open(os.path.join(SITE, "scene.json"), encoding="utf-8") as handle:
@@ -445,6 +462,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 (http.server API)
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/system":
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                self._send_json(200, system_report(json.loads(raw or b"{}")))
+            except json.JSONDecodeError:
+                self._send_json(400, {"error": "bad JSON body"})
+            except Exception as error:  # noqa: BLE001
+                self._send_json(500, {"error": str(error)})
+            return
         if parsed.path != "/api/chat":
             self.send_error(404, "not found")
             return

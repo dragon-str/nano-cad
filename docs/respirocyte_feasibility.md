@@ -46,6 +46,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 | Hull wall and seals | relaxed CAD section; rigid-probe flood fill of the free space | valence relax; `scripts/seal_audit.py` | rotor in a hull-wall slab, seals at H-H contact; O2 probe (1.73 A) finds no path blood to tank, also at 0.9x radii; water (1.40 A) passes the rim seal, closed at 1.50 A | static rigid-sphere test; leak rates need MD; the as-built drain bore does not pass a rigid water probe | 0117, 0118 |
 | Drain as built in the hull wall | MD water transit, frozen and mobile hydroxyl lining | OpenMM SPC/E, constant force | no net water at 100-200 MPa in 2 ns: frozen lining traps fixed waters, mobile lining fills the bore; the drain is unproven | the tested 3.8 A channel conducts only with a frozen lining; design scan open (M28-38) | 0119 |
+| Whole device, real size | lumped system model from the atomistic parameters | `respirocyte_system.py`, backward Euler | central: 3 stages fill 1000 atm in 111 s, power-limited (duty 0.5 at 7.3e-12 W), 5.5e-19 J per delivered O2, 48 % of the hull; pessimistic chemistry stalls near 440 atm at any stage count | pocket-to-pocket scatter of the free-gas carry; many assumed values (gas binding, chamber volume, plunger work) | 0124 |
 
 ## What passes, what fails, what is open
 

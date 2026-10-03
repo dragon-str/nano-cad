@@ -3445,3 +3445,51 @@ and the net per pass is near zero or negative and depends on each pocket's
 atomic surface. Single short runs, several restarted after NaN starts; the
 trend is clear, the numbers are not converged. Simulated estimates.
 
+## ADR-0124: A real-size system model fed by the atomistic parameters
+
+Context. M29-01. The atomistic work answers questions about one rotor. The
+device questions (how long to fill, how much power, how many rotors, does a
+cascade reach 1000 atm) need a model at the next level of abstraction, one
+that behaves like a CAD package and can be changed in seconds.
+
+Decision. `python/nanocad/respirocyte_system.py`: components with
+parameters, each parameter with a value, a range, a unit, a tag (measured,
+estimated, assumed, reference) and a source. A 1 um hull (Freitas); rotor
+banks as counts of measured sections (13.7 x 6.9 nm on the hull, 10.5 nm
+deep); a cascade of O2 rotor stages with small intermediate chambers; a
+water-return plunger bank; a discharge bank; a power supply whose peak caps
+the rotor speeds (duty cycle). Pocket balance: net = occupancy + s_fwd
+rho_low - s_back rho_high, with the force-field O2 equation of state. The
+pocket fits are refit with all runs: s_back 0.109 (range 0.076-0.142, 16
+runs), s_fwd 0.081 (0.033-0.141, 11 runs); the ranges are the per-run
+scatter, which is mostly pocket-to-pocket. Binding from gas depends on the
+gas density (assumed collision-limited), so an empty chamber does not feed
+the next stage. Backward Euler with Newton steps, no external solver, so the
+server runs it on any Python. The page `/system` edits and draws it.
+
+Results (default device: 10,000 loading, 6,000 per cascade stage, 2,000
+water and 4,000 discharge sections; 48 % of the hull; Freitas power).
+
+| Stages | central | pessimistic chemistry, Freitas power |
+|---|---|---|
+| 1 | stalls at 470 atm | stalls at 100 atm |
+| 2 | 1000 atm in 139 s | stalls at 326 atm |
+| 3 | 1000 atm in 111 s | stalls at 419 atm |
+| 4 | 1000 atm in 139 s | 435 atm at 600 s |
+| 6 | 1000 atm in 212 s | 437 atm at 600 s |
+
+Findings. (1) A cascade answers the top-stage problem only if the free-gas
+carry falls in the favourable half of its scatter: the limit of many close
+stages is net = 1 - (s_back - s_fwd) rho, +0.61 per pass at 1000 atm in the
+central case and -0.53 in the pessimistic one. (2) The fill is
+power-limited: the design speeds ask 1.7e-11 W, against Freitas's 7.3e-12
+W, so the rotors run at about half speed; a 10 s fill would need about 10
+times his power. (3) Three stages are best: more stages add pocket passes and
+power. Energy per delivered O2 5.5e-19 J, about 4 times the single-pass
+figure of ADR-0100. (4) The water bank keeps the chamber-1 sump below 1e4
+waters; the discharge runs in 28-34 s.
+
+Limits. Lumped, well-mixed chambers; no transport inside the device; no
+lungs or tissue model (blood is an infinite reservoir at fixed state); many
+assumed values, tagged. Simulated estimates.
+

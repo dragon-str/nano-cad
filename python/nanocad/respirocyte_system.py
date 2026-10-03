@@ -185,7 +185,7 @@ def discharge_rotor_parameters() -> dict[str, Param]:
     return p
 
 
-def default_device(n_stages: int = 4) -> dict:
+def default_device(n_stages: int = 3) -> dict:
     """A first proof-of-concept device. Bank counts are design choices
     (assumed), sized so the hull holds them."""
     hull = {
@@ -384,16 +384,58 @@ def _rates(device: dict, n_o2: list[float], water: float, phase: str, scale: flo
     return dn, dw, power, info
 
 
+def _solve_linear(a: list[list[float]], b: list[float]) -> list[float]:
+    """Gaussian elimination with partial pivoting (small dense systems)."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for c in range(n):
+        piv = max(range(c, n), key=lambda r: abs(m[r][c]))
+        if abs(m[piv][c]) < 1e-300:
+            raise ZeroDivisionError("singular Jacobian")
+        m[c], m[piv] = m[piv], m[c]
+        for r in range(c + 1, n):
+            f = m[r][c] / m[c][c]
+            if f:
+                for k in range(c, n + 1):
+                    m[r][k] -= f * m[c][k]
+    x = [0.0] * n
+    for r in range(n - 1, -1, -1):
+        x[r] = (m[r][n] - sum(m[r][k] * x[k] for k in range(r + 1, n))) / m[r][r]
+    return x
+
+
+def _implicit_step(f, t: float, y: list[float], dt: float) -> list[float]:
+    """One backward-Euler step, Newton iteration with a finite-difference
+    Jacobian. Stable for the stiff small chambers; no external solver."""
+    n = len(y)
+    z = [y[i] + dt * v for i, v in enumerate(f(t, y))]
+    for _ in range(8):
+        fz = f(t + dt, z)
+        g = [z[i] - y[i] - dt * fz[i] for i in range(n)]
+        if max(abs(g[i]) / (abs(z[i]) + 1.0) for i in range(n)) < 1e-10:
+            break
+        jac = [[0.0] * n for _ in range(n)]
+        for j in range(n):
+            h = 1e-7 * (abs(z[j]) + 1.0)
+            zj = z[:]
+            zj[j] += h
+            fj = f(t + dt, zj)
+            for i in range(n):
+                jac[i][j] = (i == j) - dt * (fj[i] - fz[i]) / h
+        dz = _solve_linear(jac, [-v for v in g])
+        z = [z[i] + dz[i] for i in range(n)]
+    return z
+
+
 def time_course(device: dict, t_fill_max_s: float = 600.0, t_discharge_max_s: float = 120.0,
                 samples: int = 400) -> dict:
     """Fill from the cushion until the tank reaches its target (or stalls, or
     the time runs out), then discharge to the cushion. State: O2 molecules in
-    each chamber and the tank, water in the chamber-1 sump, and energy used.
-    Stiff solver (scipy LSODA). Rotor speeds scale down together when the
-    power demand exceeds the peak supply."""
-    import numpy as np
-    from scipy.integrate import solve_ivp
-
+    each chamber and the tank, water in the chamber-1 sump, energy used and
+    O2 delivered. Backward Euler with an adaptive step (no change of more than
+    2 percent per step in any chamber), so it runs without numpy or scipy.
+    Rotor speeds scale down together when the power demand exceeds the peak
+    supply."""
     ns = device["n_stages"]
     vols = [0.0] + [device["tank"]["chamber_volume_m3"].value] * (ns - 1) + [device["tank"]["volume_m3"].value]
     cushion_atm = device["tank"]["cushion_atm"].value
@@ -423,60 +465,82 @@ def time_course(device: dict, t_fill_max_s: float = 600.0, t_discharge_max_s: fl
     log = {"t_s": [], "phase": [], "tank_atm": [], "chamber_atm": [], "water": [], "power_w": [],
            "duty": [], "tank_o2": []}
     events = {}
-    t0 = 0.0
+    t = 0.0
     water_peak = 0.0
+    log_every = (t_fill_max_s + t_discharge_max_s) / samples
+
+    def record(tt, yy, phase):
+        nn, w = full_state(yy)
+        _, _, pw, scale = evaluate(yy, phase)
+        log["t_s"].append(tt)
+        log["phase"].append(phase)
+        log["tank_atm"].append(p_atm(ns, nn))
+        log["chamber_atm"].append([p_atm(k, nn) for k in range(1, ns)])
+        log["water"].append(w)
+        log["power_w"].append(pw)
+        log["duty"].append(scale)
+        log["tank_o2"].append(nn[ns])
+
     for phase, t_max in (("fill", t_fill_max_s), ("discharge", t_discharge_max_s)):
+        f = rhs(phase)
+        t0 = t
+        next_log = t
+        stalled_for = 0.0
+        end = "time"
+        dt = 1e-3
+        while t - t0 < t_max:
+            if t >= next_log:
+                record(t, y, phase)
+                next_log += log_every
+            d = f(t, y)
+            scales = [0.02 * (abs(y[k]) + 1.0) / abs(d[k]) for k in range(ns + 1) if d[k] != 0.0]
+            dt = min([2.0 * dt, t_max / 200.0, t0 + t_max - t] + scales)
+            dt = max(dt, 1e-6)
+            y_new = _implicit_step(f, t, y, dt)
+            p_old, p_new = p_atm(ns, full_state(y)[0]), p_atm(ns, full_state(y_new)[0])
+            goal = target_atm if phase == "fill" else cushion_atm
+            crossed = (p_new >= goal) if phase == "fill" else (p_new <= goal)
+            if crossed:
+                # Linear interpolation to the crossing.
+                frac = (goal - p_old) / (p_new - p_old) if p_new != p_old else 1.0
+                frac = min(max(frac, 0.0), 1.0)
+                y = [y[i] + frac * (y_new[i] - y[i]) for i in range(len(y))]
+                t += frac * dt
+                end = "target" if phase == "fill" else "cushion"
+                break
+            if phase == "fill":
+                rate = (p_new - p_old) / dt
+                stalled_for = stalled_for + dt if rate < 1e-4 * target_atm / t_fill_max_s else 0.0
+                if stalled_for > 0.05 * t_fill_max_s:
+                    y, t = y_new, t + dt
+                    end = "stalled"
+                    break
+            y, t = y_new, t + dt
+            water_peak = max(water_peak, full_state(y)[1])
+        record(t, y, phase)
+        nn, _ = full_state(y)
         if phase == "fill":
-            def stop(_t, yy):
-                return p_atm(ns, full_state(yy)[0]) - target_atm
-        else:
-            def stop(_t, yy):
-                return p_atm(ns, full_state(yy)[0]) - cushion_atm
-        stop.terminal = True
-        t_eval = np.linspace(t0, t0 + t_max, max(2, samples // 2))
-        sol = solve_ivp(rhs(phase), (t0, t0 + t_max), y, method="LSODA", events=stop,
-                        t_eval=t_eval, rtol=1e-6, atol=1.0, max_step=t_max / 50)
-        for i, t in enumerate(sol.t):
-            yy = sol.y[:, i]
-            nn, w = full_state(yy)
-            _, _, pw, scale = evaluate(yy, phase)
-            log["t_s"].append(float(t))
-            log["phase"].append(phase)
-            log["tank_atm"].append(p_atm(ns, nn))
-            log["chamber_atm"].append([p_atm(k, nn) for k in range(1, ns)])
-            log["water"].append(w)
-            log["power_w"].append(pw)
-            log["duty"].append(scale)
-            log["tank_o2"].append(nn[ns])
-            water_peak = max(water_peak, w)
-        y_end = sol.y_events[0][0] if sol.status == 1 else sol.y[:, -1]
-        t_end = sol.t_events[0][0] if sol.status == 1 else sol.t[-1]
-        nn, _ = full_state(y_end)
-        if phase == "fill":
-            events["fill_end"] = "target" if sol.status == 1 else (
-                "stalled" if abs(evaluate(y_end, phase)[0][ns]) < 1e-3 * nn[ns] / t_max else "time")
-            events["fill_time_s"] = float(t_end - t0)
+            events["fill_end"] = end
+            events["fill_time_s"] = t - t0
             events["tank_atm_after_fill"] = p_atm(ns, nn)
             events["tank_o2_after_fill"] = nn[ns]
-            tank_series = [(t, pa) for t, pa, ph in zip(log["t_s"], log["tank_atm"], log["phase"]) if ph == "fill"]
+            series = [(tt, pa) for tt, pa, ph in zip(log["t_s"], log["tank_atm"], log["phase"]) if ph == "fill"]
             for mark in (100.0, 300.0, 500.0, 900.0, target_atm):
-                hit = next((t for t, pa in tank_series if pa >= mark), None)
+                hit = next((tt for tt, pa in series if pa >= mark), None)
                 if hit is not None:
-                    events[f"t_tank_{int(mark)}_atm_s"] = float(hit - t0)
+                    events[f"t_tank_{int(mark)}_atm_s"] = hit - t0
         else:
-            events["discharge_end"] = "cushion" if sol.status == 1 else "time"
-            events["discharge_time_s"] = float(t_end - t0)
-            events["o2_delivered"] = float(y_end[ns + 2])
-        y = list(y_end)
+            events["discharge_end"] = end
+            events["discharge_time_s"] = t - t0
+            events["o2_delivered"] = y[ns + 2]
         y[ns + 2] = 0.0
-        t0 = float(t_end)
     events["water_peak"] = water_peak
     # Liquid water takes 0.0299 nm^3 per molecule; the sump must hold it.
     events["water_peak_fraction_of_chamber"] = water_peak * 0.0299 * NM3 / vols[1]
+    events["energy_j"] = y[ns + 1]
     events["energy_per_delivered_o2_j"] = (
-        float(y[ns + 1]) / events["o2_delivered"] if events.get("o2_delivered") else float("inf"))
-    events["energy_j"] = float(y[ns + 1])
-    events["mean_power_w"] = events["energy_j"] / max(t0, 1e-12)
+        y[ns + 1] / events["o2_delivered"] if events.get("o2_delivered") else float("inf"))
+    events["mean_power_w"] = events["energy_j"] / max(t, 1e-12)
     events["min_duty"] = min(log["duty"]) if log["duty"] else 1.0
     return {"events": events, "log": log}
 
@@ -507,6 +571,119 @@ def report(device: dict | None = None) -> dict:
     return out
 
 
+def device_json(device: dict) -> dict:
+    """The device as plain JSON: groups of parameters and the banks."""
+    return {
+        "n_stages": device["n_stages"],
+        "groups": {g: {k: asdict(v) for k, v in device[g].items()} for g in ("hull", "tank", "power", "section")},
+        "banks": [{"kind": b.kind, "count": b.count, "rev_per_s": b.rev_per_s, "stage": b.stage,
+                   "placement": b.placement, "params": {k: asdict(v) for k, v in b.params.items()}}
+                  for b in device["banks"]],
+    }
+
+
+def apply_edits(edits: dict) -> dict:
+    """A device from the defaults plus edits:
+    ``{"n_stages": 4, "groups": {"tank": {"target_atm": 800}},
+       "banks": [{"kind": "load", "count": 9000, "rev_per_s": 300}],
+       "bank_params": {"load": {"s_back_nm3": 0.12}}}``.
+    A bank edit matches the first bank of that kind (and stage, if given);
+    ``bank_params`` applies to every bank of that kind. Values are clamped to
+    each parameter's range only for count and speed (the design choices);
+    model parameters may be set anywhere, and a value outside the recorded
+    range is flagged in ``warnings``."""
+    device = default_device(int(edits.get("n_stages", 3)))
+    warnings = []
+
+    def set_param(p: Param, value, label: str) -> None:
+        v = float(value)
+        if not p.low <= v <= p.high:
+            warnings.append(f"{label} = {v:g} is outside its recorded range [{p.low:g}, {p.high:g}]")
+            p.low, p.high = min(p.low, v), max(p.high, v)
+        p.value = v
+
+    for group, values in (edits.get("groups") or {}).items():
+        for name, value in values.items():
+            if group in device and name in device[group]:
+                set_param(device[group][name], value, f"{group}.{name}")
+    for be in edits.get("banks") or []:
+        for b in device["banks"]:
+            if b.kind == be.get("kind") and ("stage" not in be or b.stage == int(be["stage"])):
+                if "count" in be:
+                    b.count = max(0, int(be["count"]))
+                if "rev_per_s" in be:
+                    b.rev_per_s = max(0.0, float(be["rev_per_s"]))
+                break
+    for kind, values in (edits.get("bank_params") or {}).items():
+        for b in device["banks"]:
+            if b.kind == kind:
+                for name, value in values.items():
+                    if name in b.params:
+                        set_param(b.params[name], value, f"{kind}.{name}")
+    device["warnings"] = warnings
+    return device
+
+
+def layout(device: dict) -> dict:
+    """Where each part sits in a real-size drawing, in metres. Hull banks are
+    bands of the hull from the north pole down, each with the area its
+    sections take (count times the measured footprint). The tank and the
+    cascade chambers are spheres of their volumes."""
+    r = 0.5 * device["hull"]["diameter_m"].value
+    sec = section_area_m2(device)
+    bands = []
+    theta = 0.0
+    for b in device["banks"]:
+        if b.placement != "hull":
+            continue
+        area = b.count * sec
+        cos_next = max(-1.0, math.cos(theta) - area / (2.0 * math.pi * r * r))
+        t_next = math.acos(cos_next)
+        bands.append({"kind": b.kind, "count": b.count, "theta0_rad": theta, "theta1_rad": t_next,
+                      "area_m2": area})
+        theta = t_next
+    tank_r = (3.0 * device["tank"]["volume_m3"].value / (4.0 * math.pi)) ** (1.0 / 3.0)
+    ch_r = (3.0 * device["tank"]["chamber_volume_m3"].value / (4.0 * math.pi)) ** (1.0 / 3.0)
+    chambers = []
+    for k in range(1, device["n_stages"]):
+        # A ring of small chambers between the tank and the loading band.
+        a = 2.0 * math.pi * (k - 1) / max(1, device["n_stages"] - 1)
+        rr = 0.5 * (tank_r + r)
+        chambers.append({"stage": k, "radius_m": ch_r,
+                         "center_m": [0.35 * rr * math.cos(a), 0.35 * rr * math.sin(a), 0.75 * rr]})
+    internal = [{"kind": b.kind, "stage": b.stage, "count": b.count} for b in device["banks"]
+                if b.placement == "internal"]
+    return {"hull_radius_m": r, "bands": bands, "tank": {"radius_m": tank_r, "center_m": [0.0, 0.0, -0.15 * r]},
+            "chambers": chambers, "internal_banks": internal}
+
+
+def page_report(edits: dict | None = None) -> dict:
+    """What the system page shows: the device, its layout, the provenance,
+    the central budget and time course, and the indicators of the three
+    cases."""
+    device = apply_edits(edits or {})
+    warnings = device.pop("warnings", [])
+    out = {"device": device_json(device), "layout": layout(device), "provenance": provenance_table(device),
+           "warnings": warnings, "cases": {}}
+    for case in ("central", "pessimistic", "optimistic"):
+        d = with_case(device, case)
+        course = time_course(d)
+        out["cases"][case] = {"budget": static_budget(d), "events": course["events"],
+                              "log": course["log"] if case == "central" else None}
+    return _finite(out)
+
+
+def _finite(x):
+    """JSON has no infinity or NaN: replace them with None."""
+    if isinstance(x, float) and not math.isfinite(x):
+        return None
+    if isinstance(x, dict):
+        return {k: _finite(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_finite(v) for v in x]
+    return x
+
+
 def _summary(rep: dict) -> str:
     lines = []
     for case, c in rep["cases"].items():
@@ -529,7 +706,7 @@ def _summary(rep: dict) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Respirocyte system model (M29-01)")
-    ap.add_argument("--stages", type=int, default=4)
+    ap.add_argument("--stages", type=int, default=3)
     ap.add_argument("--json", help="write the full report here")
     a = ap.parse_args()
     rep = report(default_device(a.stages))

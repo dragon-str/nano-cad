@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nano-CAD respirocyte system model (simulated)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .sys-body { margin: 0; background: #11141a; color: #d8dde6; font: 13px/1.4 system-ui, sans-serif; }
+      .sys-grid { display: grid; grid-template-columns: 330px 1fr 380px; height: calc(100vh - 46px); }
+      .sys-col { overflow: auto; padding: 10px 12px; border-right: 1px solid #252a33; }
+      .sys-col:last-child { border-right: 0; }
+      .sys-col h3 { margin: 12px 0 6px; font-size: 12px; text-transform: uppercase; color: #8b95a7; letter-spacing: 0.05em; }
+      #hull { width: 100%; height: 62%; display: block; background: #0b0d11; cursor: grab; }
+      #plot { width: 100%; height: 34%; display: block; background: #0b0d11; margin-top: 6px; }
+      .bank { border: 1px solid #2a303b; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+      .bank .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+      .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+      .row label { flex: 1; color: #aab3c2; }
+      .row input { width: 90px; background: #1a1f28; color: #e6e9ef; border: 1px solid #333a47; border-radius: 4px; padding: 2px 4px; }
+      .tag { font-size: 10px; padding: 0 4px; border-radius: 3px; margin-left: 4px; }
+      .tag-measured { background: #1f4d2e; color: #9fe2b5; }
+      .tag-estimated { background: #4d431f; color: #ecd98e; }
+      .tag-assumed { background: #5a2424; color: #f2a5a5; }
+      .tag-reference { background: #23395a; color: #a8c6f0; }
+      table.ind { width: 100%; border-collapse: collapse; font-size: 12px; }
+      table.ind td, table.ind th { padding: 2px 4px; border-bottom: 1px solid #222832; text-align: right; }
+      table.ind td:first-child, table.ind th:first-child { text-align: left; color: #aab3c2; }
+      .warn { color: #f2c46b; }
+      .bad { color: #f28b8b; }
+      .good { color: #9fe2b5; }
+      details.prov summary { cursor: pointer; color: #8b95a7; }
+      .prov-row { font-size: 11px; border-bottom: 1px solid #1f242d; padding: 2px 0; }
+      .prov-row .src { color: #7f8899; }
+      button.run { background: #2c5aa0; color: white; border: 0; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+      .hint { color: #7f8899; font-size: 11px; }
+    </style>
+  </head>
+  <body class="sys-body">
+    <header class="viewer-header">
+      <h1>Nano-CAD</h1>
+      <span class="scene-title">Respirocyte system model (real size, 1 um hull)</span>
+      <span class="badge">simulated / estimated</span>
+      <nav>
+        <a href="/">Atomistic viewer</a> &middot; <a href="docs/index.html">Docs</a> &middot;
+        <a href="system.js">Source</a>
+      </nav>
+    </header>
+    <div class="sys-grid">
+      <div class="sys-col" id="left">
+        <h3>Design</h3>
+        <div class="row"><label for="stages">Cascade stages</label><input id="stages" type="number" min="1" max="8" step="1" /></div>
+        <div id="groups"></div>
+        <h3>Rotor banks</h3>
+        <div id="banks"></div>
+        <div class="row"><button class="run" id="run" type="button">Recompute</button>
+          <button id="reset" type="button">Defaults</button></div>
+        <div class="hint">Every value carries its source. Green: measured in this
+          repository's simulations or CAD. Yellow: estimated from them. Red:
+          assumed. Blue: literature (Freitas).</div>
+      </div>
+      <div class="sys-col" id="centre">
+        <canvas id="hull"></canvas>
+        <canvas id="plot"></canvas>
+      </div>
+      <div class="sys-col" id="right">
+        <div id="warnings"></div>
+        <h3>Indicators</h3>
+        <div id="indicators">Computing ...</div>
+        <h3>Provenance</h3>
+        <details class="prov"><summary>Every parameter</summary><div id="provenance"></div></details>
+      </div>
+    </div>
+    <script src="system.js"></script>
+  </body>
+</html>
