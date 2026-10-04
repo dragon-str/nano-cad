@@ -3645,3 +3645,30 @@ gives 67 days.
 Limits. The autoxidation rates are for other environments; the pocket rate is
 the open question (the same risk as the ring damage in M28-22). The pump mass
 and the rotor wear are not measured. Simulated estimates.
+
+## ADR-0128: A self-contained 3D model page for the respirocyte
+
+Context. M29-06 gives the device numbers. A colleague or a friend cannot read
+a table of nanocrit and rotor counts. The program needs one artifact that
+shows the design and its scale in a form that travels on its own.
+
+Decision. `site/models.html`, linked as "3D models". It is one HTML file with a
+small software 3D renderer: it projects triangle meshes to Canvas 2D, sorts
+them by depth (painter's algorithm), and shades them with one light. It has no
+dependency and no network call, so the file opens from a disk or an email. The
+shapes are schematic (a hull sphere, rotor rings, a tank, a biconcave red
+cell, a carrier molecule), not atomistic, because a 1 um hull and an 8 um cell
+are far too large for atoms. Three scenes: (1) the respirocyte next to a red
+blood cell at true relative scale, with a close up inset; (2) the passive
+oxygen rotor in detail; (3) the passive carrier molecule. Drag rotates, scroll
+zooms, a button toggles auto-spin, and a scale bar and a key explain each
+scene.
+
+Findings. The true-scale scene makes the point: the 1 um device is one eighth
+of the red cell across and about one five-hundredth of its volume. The close
+up and the rotor scene carry the parts the scale hides. The page is a
+schematic, not a physical render, and it says so.
+
+Limits. The shapes are schematic and not to the CAD geometry; the renderer has
+no shadows or reflections. It is a communication artifact, not a design tool.
+Simulated.

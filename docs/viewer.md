@@ -357,3 +357,13 @@ through one fill and one discharge. The model is
 `python/nanocad/respirocyte_system.py` (pure Python, about 1 s per request,
 served by `/api/system`). Simulated estimates (ADR-0124).
 
+## 3D models page
+
+`/models.html` (link "3D models" in the header) is a self-contained, offline
+page to show the design to someone else. It has a small software 3D renderer
+(Canvas 2D, no dependency, no network). Three scenes, drag to rotate and
+scroll to zoom: the respirocyte next to a red blood cell at true relative
+scale (1 um against 8 um) with a close up inset, the passive oxygen rotor in
+detail, and the passive carrier molecule. The file can be sent on its own and
+opened in any browser. Simulated schematic, not a physical render (ADR-0128).
+
