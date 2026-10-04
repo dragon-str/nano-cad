@@ -3593,3 +3593,55 @@ heme needs a protective pocket and a large enough scaffold to stay in blood.
 The carrier is a transport molecule, not a reservoir, so it holds no O2 beyond
 the equilibrium. The pump numbers inherit the M29-04 limits. Simulated
 estimates.
+
+## ADR-0127: Device specifications, counts, and the site lifetime
+
+Context. M29-05 chose the passive carrier over the pump. The remaining
+questions are buildable numbers: how many devices, how much material, how much
+O2 per volume, and how long the binding sites last. The site lifetime is the
+least certain number in the program. A heme loses capacity when its Fe(II)
+oxidizes to Fe(III). A red cell lasts 120 days because it carries a
+methemoglobin reductase; a synthetic carrier has no repair unless one is
+engineered in.
+
+Decision. `python/nanocad/respirocyte_specs.py`. It turns each design into a
+specification sheet and models the site lifetime from the autoxidation rate
+``k``: half-life ``ln2 / k``, daily replacement ``mass * (1 - 2^(-1 day /
+t_half))``. The rate is a parameter with four measured reference points: free
+heme, hemoglobin without a reductase, myoglobin, and an engineered pocket. The
+pump lifetime is the shorter of the rotor wear (an assumed 1e11 cycles) and
+the heme autoxidation.
+
+Specifications (target: the red-cell flux, 50 mL O2/L rest, 150 exercise):
+
+| design | volume | devices/L | mass body | O2 per L of device | power body | site life |
+|---|---|---|---|---|---|---|
+| red cell | 45 % | 5.0e12 | 2.5e13 cells | 447 L | 0 | 120 d |
+| heme, bare | 0.42 % | 6.1e21 | 31 g | 48,000 L | 0 | rate-set |
+| dendrimer-heme | 1.0 % | 8.8e20 | 73 g | 19,400 L | 0 | rate-set |
+| heme-cyclodextrin | 2.8 % | 8.3e21 | 200 g | 7,300 L | 0 | rate-set |
+| hemoglobin | 12 % | 1.5e21 | 820 g | 1,600 L | 0 | rate-set |
+| pump, cam 50 | 3.5 % | 5.4e14 | n/a | 5,700 L | 630 W | rate-set |
+| pump, ideal | 2.6 % | 4.0e14 | n/a | 7,700 L | 72 W | rate-set |
+
+Site lifetime against the autoxidation rate (dendrimer-heme, 73 g body):
+
+| case | k (1/s) | life | replacement |
+|---|---|---|---|
+| free heme | 1e-3 | 12 min | 73 g/day |
+| hemoglobin, no reductase | 1.4e-5 | 14 h | 51 g/day |
+| myoglobin | 1.2e-7 | 67 days | 0.75 g/day |
+| engineered pocket | 1e-8 | 800 days | 0.06 g/day |
+
+Findings. (1) The carrier is 4 to 100 times denser in O2 than a red cell, so
+it carries the same gas flux at 1-3 % by volume instead of 45 %. (2) The pump
+needs 1e14 to 1e15 devices, each a machine; the carrier needs 1e20 to 1e21
+molecules, which bulk chemistry can make. (3) The site lifetime is not known.
+It spans 12 minutes to 800 days across the measured references, and the
+synthetic pocket is unmeasured. The engineering target is k below about
+1e-6 /s (life over 8 days) for a practical daily dose; a myoglobin-like pocket
+gives 67 days.
+
+Limits. The autoxidation rates are for other environments; the pocket rate is
+the open question (the same risk as the ring damage in M28-22). The pump mass
+and the rotor wear are not measured. Simulated estimates.

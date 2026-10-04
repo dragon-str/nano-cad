@@ -74,18 +74,23 @@ def carrier_material(
     density_kg_m3: float,
     p50_mmhg: float | None,
     hill_n: float,
+    molar_mass_kg_per_mol: float | None,
+    o2_sites_per_molecule: float,
     provenance: str,
     note: str,
 ) -> dict:
     """One carrier. A saturating site has a ``p50`` and a Hill ``n``; a linear
     (Henry) carrier has ``p50=None`` and ``hill_n=0`` and ``o2_per_kg_m3`` is
-    the dissolved O2 at one atmosphere."""
+    the dissolved O2 at one atmosphere. ``molar_mass`` and ``o2_sites`` count
+    the molecules; a linear carrier leaves them at zero."""
     return {
         "name": name,
         "o2_per_kg_m3": o2_per_kg_m3,
         "density_kg_m3": density_kg_m3,
         "p50_mmhg": p50_mmhg,
         "hill_n": hill_n,
+        "molar_mass_kg_per_mol": molar_mass_kg_per_mol or 0.0,
+        "o2_sites_per_molecule": o2_sites_per_molecule,
         "provenance": provenance,
         "note": note,
     }
@@ -102,6 +107,8 @@ def carrier_reference() -> list[dict]:
             1500.0,
             26.8,
             2.7,
+            0.616,
+            1.0,
             "estimated",
             "one heme per 616 g/mol; unstable in water, the density ceiling",
         ),
@@ -111,6 +118,8 @@ def carrier_reference() -> list[dict]:
             1450.0,
             26.8,
             1.5,
+            2.9,
+            1.0,
             "estimated",
             "one heme in a cyclodextrin dimer, MW about 2.9 kDa (hemoCD-like)",
         ),
@@ -120,6 +129,8 @@ def carrier_reference() -> list[dict]:
             1400.0,
             26.8,
             2.0,
+            10.0,
+            8.0,
             "assumed",
             "eight hemes on a 10 kDa scaffold; large enough to stay in blood",
         ),
@@ -129,6 +140,8 @@ def carrier_reference() -> list[dict]:
             1335.0,
             26.8,
             2.7,
+            64.5,
+            4.0,
             "reference",
             "the red-cell protein; the benchmark",
         ),
@@ -136,6 +149,8 @@ def carrier_reference() -> list[dict]:
             "perfluorocarbon",
             2.37e-4,  # m^3 O2 per kg per atm (about 0.45 mL/mL at 1 atm)
             1900.0,
+            None,
+            0.0,
             None,
             0.0,
             "reference",
