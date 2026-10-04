@@ -3493,3 +3493,58 @@ Limits. Lumped, well-mixed chambers; no transport inside the device; no
 lungs or tissue model (blood is an infinite reservoir at fixed state); many
 assumed values, tagged. Simulated estimates.
 
+
+## ADR-0125: The respirocyte is sized by the circulation, not by the tank
+
+Context. M29-04. Freitas fixed the hull at 1 um and the tank at 1000 atm and
+asked whether such a device could be built. That leaves the actual design
+variables free: the diameter, the tank pressure, the rotor count and the rotor
+speed. The question is what values replace the red-cell gas capacity.
+
+Decision. `python/nanocad/respirocyte_circulation.py`. The blood is a loop of
+`blood_volume / cardiac_output` (60 s at rest, 12 s at exercise). A device
+loads O2 during the pulmonary capillary transit `t_lung` and releases it during
+the tissue transit `t_tissue` (0.75 s at rest, 0.30 s at exercise). The target
+is the arterio-venous O2 difference, 50 mL per litre at rest and 150 at peak
+exercise; the red-cell capacity is 201 mL per litre (15 g/dL Hb, 1.34 mL/g).
+A hull of diameter D has `pi D^2` of area, a measured rotor section takes
+`13.7 x 6.9 nm`, and the tank must hold one cycle of O2 inside the rotor shell.
+The engines supply `2.32 W/m^2` of peak mechanical power (Freitas, 12 engines
+at 1 um). Because each bank uses the whole surface power at its own time, the
+rotor speed is set by the power and the throughput is
+`P_peak * occupancy / work_per_o2`, independent of the rotor count. The work
+per O2 is the cam work plus the compression work from the blood partial
+pressure through the O2 equation of state (ADR-0123).
+
+Results (lowest feasible pressure for each diameter; one stage, which stalls
+at 224 atm; the tank never needs a cascade):
+
+| D (um) | P (atm) | sections | load rotors | rev/s | nanocrit rest | nanocrit exercise | chem. power exercise |
+|---|---|---|---|---|---|---|---|
+| 0.10 | 40 | 199 | 90 | 973 | 0.24 % | 0.71 % | 630 W |
+| 0.20 | 15 | 798 | 359 | 1004 | 0.47 % | 1.4 % | 619 W |
+| 0.30 | 10 | 1,795 | 808 | 1017 | 0.70 % | 2.1 % | 615 W |
+| 0.50 | 10 | 4,985 | 2,243 | 1017 | 1.2 % | 3.5 % | 615 W |
+| 1.00 | 10 | 19,940 | 8,973 | 1017 | 2.3 % | 7.0 % | 615 W |
+| 2.00 | 10 | 79,761 | 35,893 | 1017 | 4.6 % | 14 % | 615 W |
+
+The lowest nanocrit is 0.39 % at a 0.05 um device (50 sections, tank-limited),
+but that needs about 1e17 devices in the body. The pressure optimum is the
+cushion, 10-40 atm, not 1000 atm.
+
+Findings. (1) The device is rotor-area and power limited, never tank-volume
+limited at a practical size, so the pressure should be low. 1000 atm adds
+compression work and, above about 200 atm, a cascade, for no gain. (2) The
+rotor speed is about 1000 rev/s (60,000 rpm) at every size, set by the power
+density and the section footprint. (3) The nanocrit is 0.4-14 %, far below the
+45 % hematocrit; Freitas's nanocrit limit is not binding. (4) The binding
+constraint is energy: moving each O2 with the cam costs 650 W of chemical
+power at peak exercise, about half the whole-body exercise metabolism. A
+reversible cam (23 kJ/mol) costs 342 W; compression alone, with a passive
+release, costs about 75 W. The cam irreversibility, not the hull strength, is
+the real limit.
+
+Limits. Lumped, well-mixed; a single transit window per bed; the power density
+and the cam work are Freitas's and the atomistic estimates; the device count at
+small diameters is not bounded by clearance or fabrication. Simulated
+estimates.
