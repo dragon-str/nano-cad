@@ -3548,3 +3548,48 @@ Limits. Lumped, well-mixed; a single transit window per bed; the power density
 and the cam work are Freitas's and the atomistic estimates; the device count at
 small diameters is not bounded by clearance or fabrication. Simulated
 estimates.
+
+## ADR-0126: A passive carrier beats the pump for gas transport
+
+Context. M29-04 sized the active respirocyte and found the cam, not the hull or
+the nanocrit, is the binding cost: 650 W of chemical power at peak exercise,
+342 W even with a reversible switch. The red cell does not pump. It carries O2
+on a site that loads in the lung and releases in the tissue by the pO2
+difference alone. So the question is whether the pump is needed at all.
+
+Decision. `python/nanocad/respirocyte_design.py`. Two architecture families,
+compared on the two currencies that matter: the volume fraction (nanocrit) and
+the metabolic power at rest and at peak exercise. A carrier has a Hill O2
+binding curve `S(p) = p^n / (p50^n + p^n)`; the delivered O2 per pass is
+`capacity * (S(lung) - S(tissue))`; the carrier mass per litre is the red-cell
+flux divided by that; the nanocrit is the mass over the density; the power is
+zero. A pump reuses `design_point` with the cam work as the only variable
+(50, 23, 0 kJ/mol).
+
+Results (target: 50 mL O2/L rest, 150 mL O2/L exercise):
+
+| architecture | nanocrit | chem. W rest | chem. W exercise | provenance |
+|---|---|---|---|---|
+| heme, bare | 0.42 % | 0 | 0 | estimated |
+| dendrimer-heme | 1.0 % | 0 | 0 | assumed |
+| heme-cyclodextrin | 2.8 % | 0 | 0 | estimated |
+| hemoglobin | 12.3 % | 0 | 0 | reference |
+| perfluorocarbon | 316 % | 0 | 0 | reference |
+| pump, ideal (no cam) | 2.6 % | 4.8 | 72 | measured |
+| pump, reversible cam | 3.0 % | 22 | 329 | measured |
+| pump, cam 50 kJ/mol | 3.5 % | 42 | 630 | measured |
+
+Findings. (1) The carrier model reproduces the real red cell: free hemoglobin
+needs a 12.3 % volume fraction to carry the flux, close to the real 15 g/dL.
+(2) A passive carrier with a red-cell-like site (p50 about 27 mmHg,
+cooperative) meets the flux at 1-3 % nanocrit and no engine, so it beats the
+pump on both nanocrit and power. (3) A perfluorocarbon cannot do it at room
+air, because it is linear and needs a high pO2. (4) The pump is only needed
+when O2 must be stored or delivered against a gradient. Its whole cost is the
+cam: without the cam it fits the 100 W budget, with the cam it does not.
+
+Limits. The carrier p50 is assumed tunable to a red-cell-like value; a real
+heme needs a protective pocket and a large enough scaffold to stay in blood.
+The carrier is a transport molecule, not a reservoir, so it holds no O2 beyond
+the equilibrium. The pump numbers inherit the M29-04 limits. Simulated
+estimates.

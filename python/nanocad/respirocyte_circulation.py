@@ -249,9 +249,11 @@ def design_point(
     max_rev = params["max_rev_per_s"].value
 
     def bank_throughput(n_rotors, work_j, occ_at_rev):
-        if n_rotors <= 0 or work_j <= 0:
+        if n_rotors <= 0:
             return 0.0, 0.0, 0.0
-        rev = min(p_peak / (n_rotors * pockets * work_j), max_rev)
+        # A passive (downhill, zero-work) bank is not power limited; it turns
+        # at the cap. A driven bank is capped by the surface power.
+        rev = max_rev if work_j <= 0 else min(p_peak / (n_rotors * pockets * work_j), max_rev)
         occ = occ_at_rev(rev)
         return n_rotors * pockets * rev * occ, rev, occ
 
