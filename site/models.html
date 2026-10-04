@@ -130,6 +130,22 @@
   function cross(a, b) { return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]]; }
   function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; }
 
+  // Per-vertex normals (area weighted) for smooth shading of curved meshes.
+  function smoothNormals(mesh) {
+    var v = mesh.v, t = mesh.t, acc = new Array(v.length), i, k, m;
+    for (i = 0; i < v.length; i++) acc[i] = [0, 0, 0];
+    for (k = 0; k < t.length; k++) {
+      var fn = cross(sub(v[t[k][1]], v[t[k][0]]), sub(v[t[k][2]], v[t[k][0]]));
+      for (m = 0; m < 3; m++) {
+        var a = acc[t[k][m]];
+        a[0] += fn[0]; a[1] += fn[1]; a[2] += fn[2];
+      }
+    }
+    for (i = 0; i < v.length; i++) acc[i] = norm(acc[i]);
+    mesh.n = acc;
+    return mesh;
+  }
+
   // ---- mesh generators (vertices in model units) ----
   function sphere(r, seg, rings) {
     seg = seg || 28; rings = rings || 16;
@@ -145,7 +161,7 @@
       var a = i*(seg+1)+j, b = a+1, c = a+seg+1, d = c+1;
       t.push([a,c,b]); t.push([b,c,d]);
     }
-    return { v: v, t: t };
+    return smoothNormals({ v: v, t: t });
   }
 
   function cylinder(r, h, seg) {
@@ -195,11 +211,13 @@
 
   // A red blood cell: a biconcave disc (Evans-Fung profile), radius R.
   function rbcDisc(R, nr, nth) {
-    nr = nr || 16; nth = nth || 48;
+    nr = nr || 18; nth = nth || 64;
     var c0 = 0.30, c1 = 1.95, c2 = -1.10;
     function half(rho) { return 0.5*R*Math.sqrt(Math.max(0, 1-rho*rho))*(c0 + c1*rho*rho + c2*rho*rho*rho*rho); }
-    var v = [], t = [], top = [], bot = [];
-    for (var i = 0; i <= nr; i++) {
+    var v = [], t = [], top = [], bot = [], rim = [];
+    var topC = v.length; v.push([0, half(0), 0]);   // single centre vertex, no seam
+    var botC = v.length; v.push([0, -half(0), 0]);
+    for (var i = 1; i < nr; i++) {
       var rho = i/nr, h = half(rho);
       for (var j = 0; j < nth; j++) {
         var th = 2*Math.PI*j/nth, x = R*rho*Math.cos(th), y = R*rho*Math.sin(th);
@@ -207,14 +225,21 @@
         bot.push(v.length); v.push([x, -h, y]);
       }
     }
-    for (i = 0; i < nr; i++) for (j = 0; j < nth; j++) {
-      var j2 = (j+1)%nth;
-      var t0 = top[i*nth+j], t1 = top[i*nth+j2], t2 = top[(i+1)*nth+j], t3 = top[(i+1)*nth+j2];
-      var b0 = bot[i*nth+j], b1 = bot[i*nth+j2], b2 = bot[(i+1)*nth+j], b3 = bot[(i+1)*nth+j2];
-      t.push([t0,t2,t1]); t.push([t1,t2,t3]);
-      t.push([b0,b1,b2]); t.push([b1,b3,b2]);
+    for (j = 0; j < nth; j++) {   // one shared rim loop, so the halves cannot z-fight
+      var tr = 2*Math.PI*j/nth;
+      rim.push(v.length); v.push([R*Math.cos(tr), 0, R*Math.sin(tr)]);
     }
-    return { v: v, t: t };
+    function ti(ring, j) { return ring === nr ? rim[j % nth] : top[(ring-1)*nth + (j % nth)]; }
+    function bi(ring, j) { return ring === nr ? rim[j % nth] : bot[(ring-1)*nth + (j % nth)]; }
+    for (j = 0; j < nth; j++) {
+      t.push([topC, ti(1,j+1), ti(1,j)]);
+      t.push([botC, bi(1,j), bi(1,j+1)]);
+    }
+    for (i = 1; i < nr; i++) for (j = 0; j < nth; j++) {
+      t.push([ti(i,j), ti(i+1,j), ti(i,j+1)]); t.push([ti(i,j+1), ti(i+1,j), ti(i+1,j+1)]);
+      t.push([bi(i,j), bi(i,j+1), bi(i+1,j)]); t.push([bi(i,j+1), bi(i+1,j+1), bi(i+1,j)]);
+    }
+    return smoothNormals({ v: v, t: t });
   }
 
   // ---- scene model ----
@@ -224,6 +249,7 @@
       mesh: mesh,
       pos: opts.pos || [0,0,0],
       rot: opts.rot || [0,0,0],     // Euler radians, applied X then Y then Z
+      basis: opts.basis || null,    // optional [bx,by,bz] orthonormal columns
       scale: opts.scale || [1,1,1],
       color: opts.color || [0.7,0.7,0.7],
       alpha: opts.alpha == null ? 1 : opts.alpha,
@@ -232,15 +258,25 @@
   }
 
   function transformPoint(item, p) {
-    var s = item.scale, r = item.rot;
+    var s = item.scale;
     var x = p[0]*s[0], y = p[1]*s[1], z = p[2]*s[2];
-    var cx = Math.cos(r[0]), sx = Math.sin(r[0]);
-    var y1 = y*cx - z*sx, z1 = y*sx + z*cx;
-    var cy = Math.cos(r[1]), sy = Math.sin(r[1]);
-    var x1 = x*cy + z1*sy, z2 = -x*sy + z1*cy;
-    var cz = Math.cos(r[2]), sz = Math.sin(r[2]);
-    var x2 = x1*cz - y1*sz, y2 = x1*sz + y1*cz;
-    return [x2 + item.pos[0], y2 + item.pos[1], z2 + item.pos[2]];
+    var o;
+    if (item.basis) {
+      var B = item.basis;
+      o = [B[0][0]*x + B[1][0]*y + B[2][0]*z,
+           B[0][1]*x + B[1][1]*y + B[2][1]*z,
+           B[0][2]*x + B[1][2]*y + B[2][2]*z];
+    } else {
+      var r = item.rot;
+      var cx = Math.cos(r[0]), sx = Math.sin(r[0]);
+      var y1 = y*cx - z*sx, z1 = y*sx + z*cx;
+      var cy = Math.cos(r[1]), sy = Math.sin(r[1]);
+      var x1 = x*cy + z1*sy, z2 = -x*sy + z1*cy;
+      var cz = Math.cos(r[2]), sz = Math.sin(r[2]);
+      var x2 = x1*cz - y1*sz, y2 = x1*sz + y1*cz;
+      o = [x2, y2, z2];
+    }
+    return [o[0] + item.pos[0], o[1] + item.pos[1], o[2] + item.pos[2]];
   }
 
   // ---- camera / projection ----
@@ -264,41 +300,132 @@
 
   // ---- render ----
   var LIGHT = norm([-0.45, 0.7, 0.55]);
+  var HALF = norm([LIGHT[0], LIGHT[1], LIGHT[2] + 1]); // halfway to the viewer
 
-  function renderItems(items, labels, cam, vp) {
-    var tris = [];
+  // Diffuse + specular colour for one surface normal (in view space).
+  function shadeOf(vn, col) {
+    var diff = Math.max(0, vn[0]*LIGHT[0] + vn[1]*LIGHT[1] + vn[2]*LIGHT[2]);
+    var spec = Math.pow(Math.max(0, vn[0]*HALF[0] + vn[1]*HALF[1] + vn[2]*HALF[2]), 26) * 0.5;
+    var s = 0.26 + 0.66 * diff + spec;
+    return [Math.min(255, Math.round(255*col[0]*s)),
+            Math.min(255, Math.round(255*col[1]*s)),
+            Math.min(255, Math.round(255*col[2]*s))];
+  }
+  function rgba(c, a) { return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")"; }
+
+  // Project every item to triangles. Opaque solids go to `opaque` (drawn with
+  // a depth buffer); translucent and wire items go to `other` (painted back to
+  // front). Each triangle carries a colour per vertex, so curved meshes shade
+  // smoothly.
+  function buildTris(items, cam, vp) {
+    var opaque = [], other = [];
     for (var m = 0; m < items.length; m++) {
       var it = items[m];
-      var vs = it.mesh.v, ts = it.mesh.t;
+      var vs = it.mesh.v, ts = it.mesh.t, vnw = vs.n;
       var wp = new Array(vs.length);
       for (var i = 0; i < vs.length; i++) wp[i] = transformPoint(it, vs[i]);
+      var vnv = null;
+      if (vnw && !it.wire) {
+        vnv = new Array(vnw.length);
+        for (i = 0; i < vnw.length; i++) {
+          var q = viewRot(vnw[i]);
+          vnv[i] = q[2] < 0 ? [-q[0], -q[1], -q[2]] : q;
+        }
+      }
+      var solid = it.alpha >= 0.99 && !it.wire;
       for (var k = 0; k < ts.length; k++) {
-        var A = wp[ts[k][0]], B = wp[ts[k][1]], C = wp[ts[k][2]];
-        var n = norm(cross(sub(B, A), sub(C, A)));
-        var mid = [(A[0]+B[0]+C[0])/3, (A[1]+B[1]+C[1])/3, (A[2]+B[2]+C[2])/3];
-        var vn = viewRot(n);
-        var diff = Math.max(0, vn[0]*LIGHT[0] + vn[1]*LIGHT[1] + vn[2]*LIGHT[2]);
-        var shade = 0.30 + 0.70 * diff;
-        var col = it.color;
-        var r = Math.min(255, Math.round(255 * col[0] * shade));
-        var g = Math.min(255, Math.round(255 * col[1] * shade));
-        var b = Math.min(255, Math.round(255 * col[2] * shade));
-        tris.push({ A: A, B: B, C: C, z: viewRot(mid)[2], fill: "rgba(" + r + "," + g + "," + b + "," + it.alpha + ")", wire: it.wire });
+        var ia = ts[k][0], ib = ts[k][1], ic = ts[k][2];
+        var A = wp[ia], B = wp[ib], C = wp[ic];
+        var geo = cross(sub(B, A), sub(C, A));
+        if (solid && viewRot(norm(geo))[2] < 0) continue; // cull back faces
+        var pa = project(A, cam, vp), pb = project(B, cam, vp), pc = project(C, cam, vp);
+        if (pa[2] <= 0.002 || pb[2] <= 0.002 || pc[2] <= 0.002) continue;
+        var ca, cb, cc;
+        if (vnv) {
+          ca = shadeOf(vnv[ia], it.color); cb = shadeOf(vnv[ib], it.color); cc = shadeOf(vnv[ic], it.color);
+        } else {
+          var vn = viewRot(norm(geo)); if (vn[2] < 0) vn = [-vn[0], -vn[1], -vn[2]];
+          ca = cb = cc = shadeOf(vn, it.color);
+        }
+        var tri = { pa: pa, pb: pb, pc: pc, ca: ca, cb: cb, cc: cc,
+                    alpha: it.alpha, wire: it.wire, smooth: !!vnv };
+        (solid ? opaque : other).push(tri);
       }
     }
-    tris.sort(function (a, b) { return a.z - b.z; }); // far first
+    return { opaque: opaque, other: other };
+  }
 
-    for (k = 0; k < tris.length; k++) {
+  // Depth-buffered rasterisation of opaque triangles (Gouraud, perspective
+  // correct) into an ImageData buffer of device pixels.
+  function rasterize(tris, img, dep, DW, DH) {
+    var data = img.data;
+    for (var k = 0; k < tris.length; k++) {
       var t = tris[k];
-      var pa = project(t.A, cam, vp), pb = project(t.B, cam, vp), pc = project(t.C, cam, vp);
-      if (pa[2] <= 0.002 || pb[2] <= 0.002 || pc[2] <= 0.002) continue;
-      ctx.beginPath();
-      ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.lineTo(pc[0], pc[1]);
-      ctx.closePath();
-      if (t.wire) { ctx.strokeStyle = t.fill; ctx.lineWidth = 1; ctx.stroke(); }
-      else { ctx.fillStyle = t.fill; ctx.fill(); }
+      var ax = t.pa[0]*DPR, ay = t.pa[1]*DPR, az = t.pa[2];
+      var bx = t.pb[0]*DPR, by = t.pb[1]*DPR, bz = t.pb[2];
+      var cx = t.pc[0]*DPR, cy = t.pc[1]*DPR, cz = t.pc[2];
+      var minx = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+      var maxx = Math.min(DW-1, Math.ceil(Math.max(ax, bx, cx)));
+      var miny = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+      var maxy = Math.min(DH-1, Math.ceil(Math.max(ay, by, cy)));
+      if (minx > maxx || miny > maxy) continue;
+      var area = (bx-ax)*(cy-ay) - (cx-ax)*(by-ay);
+      if (area === 0) continue;
+      var inv = 1/area, w0 = 1/az, w1 = 1/bz, w2 = 1/cz;
+      var ca = t.ca, cb = t.cb, cc = t.cc;
+      for (var y = miny; y <= maxy; y++) {
+        var py = y + 0.5, row = y*DW;
+        for (var x = minx; x <= maxx; x++) {
+          var px = x + 0.5;
+          var l0 = ((bx-px)*(cy-py) - (cx-px)*(by-py)) * inv; if (l0 < 0) continue;
+          var l1 = ((cx-px)*(ay-py) - (ax-px)*(cy-py)) * inv; if (l1 < 0) continue;
+          var l2 = 1 - l0 - l1; if (l2 < 0) continue;
+          var w = l0*w0 + l1*w1 + l2*w2, zc = 1/w;
+          var idx = row + x;
+          if (zc >= dep[idx]) continue;
+          dep[idx] = zc;
+          var o = idx*4;
+          data[o]   = (l0*ca[0]*w0 + l1*cb[0]*w1 + l2*cc[0]*w2) / w;
+          data[o+1] = (l0*ca[1]*w0 + l1*cb[1]*w1 + l2*cc[1]*w2) / w;
+          data[o+2] = (l0*ca[2]*w0 + l1*cb[2]*w1 + l2*cc[2]*w2) / w;
+          data[o+3] = 255;
+        }
+      }
     }
-    for (m = 0; m < labels.length; m++) {
+  }
+
+  // Painter's-algorithm fill for translucent and wire triangles (back to front).
+  function paintTris(tris) {
+    tris.sort(function (a, b) {
+      return (b.pa[2]+b.pb[2]+b.pc[2]) - (a.pa[2]+a.pb[2]+a.pc[2]);
+    });
+    for (var k = 0; k < tris.length; k++) {
+      var t = tris[k];
+      ctx.beginPath();
+      ctx.moveTo(t.pa[0], t.pa[1]); ctx.lineTo(t.pb[0], t.pb[1]); ctx.lineTo(t.pc[0], t.pc[1]);
+      ctx.closePath();
+      if (t.wire) { ctx.strokeStyle = rgba(t.ca, t.alpha); ctx.lineWidth = 1; ctx.stroke(); continue; }
+      var style = rgba(t.ca, t.alpha);
+      if (t.smooth) {
+        var S = [t.ca, t.cb, t.cc];
+        var lum = [S[0][0]+S[0][1]+S[0][2], S[1][0]+S[1][1]+S[1][2], S[2][0]+S[2][1]+S[2][2]];
+        var lo = lum[1] < lum[0] ? 1 : 0; if (lum[2] < lum[lo]) lo = 2;
+        var hi = lum[1] > lum[0] ? 1 : 0; if (lum[2] > lum[hi]) hi = 2;
+        if (hi !== lo) {
+          var P = [t.pa, t.pb, t.pc];
+          var gr = ctx.createLinearGradient(P[lo][0], P[lo][1], P[hi][0], P[hi][1]);
+          gr.addColorStop(0, rgba(S[lo], t.alpha));
+          gr.addColorStop(1, rgba(S[hi], t.alpha));
+          style = gr;
+        }
+      }
+      ctx.fillStyle = style; ctx.fill();
+      if (t.alpha >= 0.99) { ctx.strokeStyle = style; ctx.lineWidth = 1; ctx.stroke(); }
+    }
+  }
+
+  function drawLabels(labels, cam, vp) {
+    for (var m = 0; m < labels.length; m++) {
       var lb = labels[m];
       var p = project(lb.pos, cam, vp);
       if (p[2] <= 0.002) continue;
@@ -306,10 +433,33 @@
     }
   }
 
+  // ---- background and depth buffer, in device pixels ----
+  var bgData = null, workBuf = null, workDep = null, bufW = 0, bufH = 0;
+  function ensureBuffers(DW, DH) {
+    if (bufW === DW && bufH === DH) return;
+    var c = document.createElement("canvas"); c.width = DW; c.height = DH;
+    var g = c.getContext("2d");
+    var bg = g.createRadialGradient(DW*0.5, DH*0.36, 0, DW*0.5, DH*0.55, Math.max(DW, DH)*0.8);
+    bg.addColorStop(0, "#17213d"); bg.addColorStop(1, "#090d18");
+    g.fillStyle = bg; g.fillRect(0, 0, DW, DH);
+    bgData = g.getImageData(0, 0, DW, DH);
+    workBuf = g.createImageData(DW, DH);
+    workDep = new Float32Array(DW*DH);
+    bufW = DW; bufH = DH;
+  }
+
   function draw() {
-    ctx.clearRect(0, 0, W, H);
     if (!scene) return;
-    renderItems(scene.items, scene.labels, scene.camera, { cx: W/2, cy: H/2, w: W, h: H });
+    var DW = Math.round(W*DPR), DH = Math.round(H*DPR);
+    ensureBuffers(DW, DH);
+    workBuf.data.set(bgData.data);
+    workDep.fill(Infinity);
+    var vp = { cx: W/2, cy: H/2, w: W, h: H };
+    var main = buildTris(scene.items, scene.camera, vp);
+    rasterize(main.opaque, workBuf, workDep, DW, DH);
+    ctx.putImageData(workBuf, 0, 0);
+    paintTris(main.other);
+    drawLabels(scene.labels, scene.camera, vp);
 
     if (scene.inset) {
       var rw = Math.min(300, W * 0.32), rh = rw * 0.86;
@@ -319,10 +469,11 @@
       ctx.save();
       roundRect(r[0], r[1], r[2], r[3], 12); ctx.clip();
       ctx.fillStyle = "rgba(20,26,46,.62)"; ctx.fillRect(r[0], r[1], r[2], r[3]);
-      renderItems(scene.inset.items, [], scene.inset.camera, ivp);
+      var ins = buildTris(scene.inset.items, scene.inset.camera, ivp);
+      paintTris(ins.other.concat(ins.opaque));
       ctx.restore();
       // Labels are drawn outside the clip so the text is never cut.
-      renderItems([], scene.inset.labels || [], scene.inset.camera, ivp);
+      drawLabels(scene.inset.labels || [], scene.inset.camera, ivp);
       ctx.save();
       ctx.strokeStyle = "rgba(110,168,254,.45)"; ctx.lineWidth = 1.5;
       roundRect(r[0], r[1], r[2], r[3], 12); ctx.stroke();
@@ -373,18 +524,37 @@
   // ==================================================================
   // Scene A: the respirocyte next to a red blood cell, true scale (um).
   // ==================================================================
-  // The respirocyte, drawn schematically. Used at true scale and magnified.
+  // The respirocyte, drawn schematically. The rotor banks sit ON the hull
+  // surface as bands of small rotor tiles. Used at true scale and magnified.
   function respirocyteItems(pos, scale) {
-    var items = [], S = [scale, scale, scale];
-    items.push(makeItem(sphere(0.5, 32, 20), { pos: pos, scale: S, color: [0.55, 0.72, 0.98], alpha: 0.16 }));
-    items.push(makeItem(sphere(0.5, 24, 14), { pos: pos, scale: S, color: [0.62, 0.80, 1.0], alpha: 0.55, wire: true }));
-    items.push(makeItem(sphere(0.18, 20, 12), { pos: pos, scale: S, color: [0.92, 0.34, 0.85], alpha: 1 }));
-    var rings = [[0.34, [0,0,0]], [0.30, [0.9,0.2,0]], [0.30, [-0.5,0.8,0.3]]];
-    for (var i = 0; i < rings.length; i++) {
-      items.push(makeItem(torus(rings[i][0], 0.04, 40, 10), {
-        pos: pos, scale: S, rot: rings[i][1], color: [0.98, 0.62, 0.20], alpha: 1
-      }));
+    var items = [], R = 0.5 * scale, D = Math.PI / 180;
+    items.push(makeItem(sphere(R, 56, 34), { pos: pos, color: [0.55, 0.72, 0.98], alpha: 0.22 }));
+    items.push(makeItem(sphere(R, 36, 22), { pos: pos, color: [0.70, 0.85, 1.0], alpha: 0.30, wire: true }));
+    // The oxygen tank inside.
+    items.push(makeItem(sphere(0.17 * scale, 24, 16), { pos: pos, color: [0.92, 0.34, 0.85], alpha: 1 }));
+
+    // A band of rotor tiles at a fixed latitude. Each tile lies flat on the
+    // hull, its face pointing outward, so the bank reads as surface texture.
+    function band(phi0, phi1, nAz, nLat, color, tileR) {
+      for (var la = 0; la < nLat; la++) {
+        var phi = phi0 + (phi1 - phi0) * (nLat === 1 ? 0.5 : la / (nLat - 1));
+        for (var az = 0; az < nAz; az++) {
+          var th = 2 * Math.PI * az / nAz + (la % 2 ? Math.PI / nAz : 0);
+          var n = [Math.sin(phi)*Math.cos(th), Math.cos(phi), Math.sin(phi)*Math.sin(th)];
+          var t1 = [-Math.sin(th), 0, Math.cos(th)];
+          var t2 = cross(n, t1);
+          var off = R + 0.007 * scale;
+          items.push(makeItem(cylinder(tileR * scale, 0.018 * scale, 16), {
+            pos: [pos[0] + n[0]*off, pos[1] + n[1]*off, pos[2] + n[2]*off],
+            basis: [t1, t2, n], color: color, alpha: 1
+          }));
+        }
+      }
     }
+    band(36 * D, 82 * D, 16, 3, [0.98, 0.62, 0.20], 0.062);   // loading bank (blood)
+    band(100 * D, 146 * D, 16, 3, [0.22, 0.78, 0.86], 0.062); // discharge bank (tissue)
+    band(154 * D, 170 * D, 9, 1, [0.60, 0.48, 0.96], 0.055);  // water bank
+    band(3 * D, 19 * D, 8, 1, [0.40, 0.86, 0.50], 0.058);     // engine cap (north)
     return items;
   }
 
@@ -392,7 +562,7 @@
     var items = respirocyteItems([-7.5, 0, 0], 1);
 
     // Red blood cell at the right: a biconcave disc, 8 um across.
-    items.push(makeItem(rbcDisc(4, 20, 64), { pos: [7, 0, 0], color: [0.84, 0.20, 0.20], alpha: 0.97 }));
+    items.push(makeItem(rbcDisc(4, 26, 88), { pos: [7, 0, 0], color: [0.84, 0.20, 0.20], alpha: 1 }));
 
     var labels = [
       { pos: [-7.5, 0.55, 0], text: "Respirocyte - 1 µm", dx: 0, dy: -56, color: "#bcd2ff" },
@@ -412,22 +582,24 @@
         title: "Respirocyte, close up",
         items: respirocyteItems([0, 0, 0], 1),
         labels: [
-          { pos: [0, 0, 0], text: "oxygen tank", dx: 30, dy: 60, color: "#f2a6ec" },
-          { pos: [0.34, 0, 0], text: "rotor banks", dx: 30, dy: -60, color: "#ffc978" }
+          { pos: [0.44, 0.26, 0], text: "loading bank", dx: 66, dy: -30, color: "#ffc978" },
+          { pos: [0, 0, 0], text: "oxygen tank", dx: -24, dy: 64, color: "#f2a6ec" }
         ],
-        camera: { dist: 2.3, focal: 235, ox: 0, oy: 0 }
+        camera: { dist: 2.3, focal: 250, ox: 0, oy: 0 }
       },
       info: [
-        ["Respirocyte diameter", "1 µm"],
-        ["Red cell diameter", "8 µm"],
+        ["Respirocyte diameter", "1 \u00b5m"],
+        ["Red cell diameter", "8 \u00b5m"],
         ["Volume ratio (cell / device)", "~500x"],
-        ["Respirocyte banks", "load, discharge, water"],
+        ["Surface banks", "load, discharge, water"],
         ["Device count for one adult", "~1e15 (pump)"]
       ],
       legend: [
         ["#8cb8fa", "respirocyte hull"],
+        ["#faa83d", "loading bank"],
+        ["#38c7db", "discharge bank"],
+        ["#9979f5", "water bank"],
         ["#ea57d9", "oxygen tank"],
-        ["#faa83d", "rotor banks"],
         ["#d63333", "red blood cell"]
       ]
     };
@@ -441,28 +613,27 @@
     var pockets = 8;
 
     // Hull wall plate behind the rotor.
-    items.push(makeItem(box(9, 2.4, 9), { pos: [0, 0, -1.6], color: [0.36, 0.40, 0.50], alpha: 0.35 }));
-    // The rotor disc: axis along z, faces toward the viewer.
-    items.push(makeItem(cylinder(2.5, 2.4, 40), { pos: [0, 0, 0], rot: [Math.PI/2, 0, 0], color: [0.98, 0.66, 0.24], alpha: 1 }));
-    // Hub.
-    items.push(makeItem(cylinder(0.5, 3.0, 20), { pos: [0, 0, 0], rot: [Math.PI/2, 0, 0], color: [0.75, 0.5, 0.2], alpha: 1 }));
+    items.push(makeItem(box(9, 9, 0.7), { pos: [0, 0, -1.5], color: [0.34, 0.38, 0.48], alpha: 1 }));
+    // The rotor disc: axis along z, facing the viewer. Its pockets and cam arms
+    // lie in the disc plane, around the rim.
+    items.push(makeItem(cylinder(2.6, 0.7, 56), { pos: [0, 0, 0], color: [0.98, 0.66, 0.24], alpha: 1 }));
+    items.push(makeItem(cylinder(0.55, 1.2, 24), { pos: [0, 0, 0], color: [0.78, 0.50, 0.20], alpha: 1 }));
+    // The cam ring that sets each pocket state.
+    items.push(makeItem(torus(3.05, 0.12, 64, 10), { pos: [0, 0, 0], rot: [Math.PI/2, 0, 0], color: [0.60, 0.64, 0.74], alpha: 1 }));
 
     for (var i = 0; i < pockets; i++) {
-      var a = 2*Math.PI*i/pockets;
-      var px = 1.55*Math.cos(a), py = 1.55*Math.sin(a);
-      // pocket (the O2 site)
-      items.push(makeItem(cylinder(0.42, 1.4, 18), { pos: [px, py, 1.5], rot: [Math.PI/2, 0, 0], color: [0.98, 0.9, 0.35], alpha: 1 }));
-      // arm reaching outward
-      var ax = 2.9*Math.cos(a), ay = 2.9*Math.sin(a);
-      items.push(makeItem(box(1.9, 0.26, 0.26), { pos: [ax, ay, 0.9], rot: [0, 0, a], color: [0.68, 0.70, 0.78], alpha: 1 }));
-      // a small tether from the hub to the pocket
-      items.push(makeItem(box(1.2, 0.14, 0.14), { pos: [0.8*Math.cos(a), 0.8*Math.sin(a), 0.9], rot: [0, 0, a], color: [0.55, 0.58, 0.66], alpha: 1 }));
+      var a = 2 * Math.PI * i / pockets;
+      // a pocket on the rim: the oxygen site
+      items.push(makeItem(cylinder(0.42, 1.05, 20), { pos: [2.55*Math.cos(a), 2.55*Math.sin(a), 0.15], color: [0.98, 0.9, 0.35], alpha: 1 }));
+      // a cam arm from the hub out to the rim
+      items.push(makeItem(box(2.1, 0.22, 0.22), { pos: [1.35*Math.cos(a), 1.35*Math.sin(a), 0.45], rot: [0, 0, a], color: [0.70, 0.72, 0.80], alpha: 1 }));
     }
 
-    labels.push({ pos: [0, 0, 2.2], text: "rotor - spins about 1000 rev/s", dx: 0, dy: -120, color: "#ffc978" });
-    labels.push({ pos: [1.55, 0, 2.2], text: "8 pockets carry O2", dx: 120, dy: -30, color: "#fff2a8" });
-    labels.push({ pos: [2.9, 0, 0.9], text: "arm (cam-driven)", dx: 150, dy: 40, color: "#cdd3e0" });
-    labels.push({ pos: [0, 0, -1.6], text: "hull wall", dx: -150, dy: 60, color: "#aab2c8" });
+    labels.push({ pos: [0, 0, 1.4], text: "rotor - spins about 1000 rev/s", dx: 0, dy: -130, color: "#ffc978" });
+    labels.push({ pos: [2.55, 0, 0.6], text: "8 pockets carry O2", dx: 118, dy: -18, color: "#fff2a8" });
+    labels.push({ pos: [1.35, 1.35, 0.6], text: "cam arm", dx: -150, dy: -34, color: "#cdd3e0" });
+    labels.push({ pos: [3.05, 0, 0], text: "cam ring", dx: 120, dy: 62, color: "#aab2c8" });
+    labels.push({ pos: [0, 0, -1.5], text: "hull wall", dx: -160, dy: 96, color: "#aab2c8" });
 
     return {
       id: "rotor",
@@ -482,7 +653,8 @@
         ["#faa83d", "rotor disc"],
         ["#fae65a", "oxygen pocket"],
         ["#cdd3e0", "cam arm"],
-        ["#5566aa", "hull wall"]
+        ["#99a2b8", "cam ring"],
+        ["#57617a", "hull wall"]
       ]
     };
   }
@@ -500,9 +672,9 @@
       items.push(makeItem(box(R, 0.16, 0.16), { pos: [x/2, y/2, 0], rot: [0, 0, Math.atan2(y, x)], color: [0.55, 0.60, 0.72], alpha: 1 }));
       items.push(makeItem(sphere(0.62, 22, 14), { pos: [x, y, 0], color: [0.30, 0.85, 0.55], alpha: 1 }));
       // the bound O2 molecule (two atoms)
-      var ox = x + 0.55 * Math.cos(a + 0.6), oy = y + 0.55 * Math.sin(a + 0.6);
-      items.push(makeItem(sphere(0.30, 16, 10), { pos: [ox, oy, 0.15], color: [0.95, 0.35, 0.35], alpha: 1 }));
-      items.push(makeItem(sphere(0.30, 16, 10), { pos: [ox + 0.34, oy + 0.24, 0.15], color: [0.95, 0.35, 0.35], alpha: 1 }));
+      var ox = x + 0.74 * Math.cos(a + 0.5), oy = y + 0.74 * Math.sin(a + 0.5);
+      items.push(makeItem(sphere(0.27, 16, 10), { pos: [ox, oy, 0.34], color: [0.95, 0.35, 0.35], alpha: 1 }));
+      items.push(makeItem(sphere(0.27, 16, 10), { pos: [ox + 0.30, oy + 0.22, 0.34], color: [0.95, 0.35, 0.35], alpha: 1 }));
     }
     labels.push({ pos: [0, 0, 0], text: "scaffold - stays in the blood", dx: -120, dy: 78, color: "#cdd3e0" });
     labels.push({ pos: [2.7, 0, 0], text: "heme site - binds one O2", dx: 130, dy: -34, color: "#8ff0c0" });

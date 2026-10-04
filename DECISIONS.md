@@ -3653,9 +3653,12 @@ a table of nanocrit and rotor counts. The program needs one artifact that
 shows the design and its scale in a form that travels on its own.
 
 Decision. `site/models.html`, linked as "3D models". It is one HTML file with a
-small software 3D renderer: it projects triangle meshes to Canvas 2D, sorts
-them by depth (painter's algorithm), and shades them with one light. It has no
-dependency and no network call, so the file opens from a disk or an email. The
+small software 3D renderer: it projects triangle meshes to Canvas 2D. Opaque
+parts rasterize through a depth buffer, so their surfaces have no depth-sort
+artifacts; translucent and wire parts use the painter's algorithm. Curved
+meshes carry per-vertex normals and shade smoothly (diffuse plus specular). It
+has no dependency and no network call, so the file opens from a disk or an
+email. The
 shapes are schematic (a hull sphere, rotor rings, a tank, a biconcave red
 cell, a carrier molecule), not atomistic, because a 1 um hull and an 8 um cell
 are far too large for atoms. Three scenes: (1) the respirocyte next to a red
