@@ -3675,3 +3675,35 @@ schematic, not a physical render, and it says so.
 Limits. The shapes are schematic and not to the CAD geometry; the renderer has
 no shadows or reflections. It is a communication artifact, not a design tool.
 Simulated.
+
+## ADR-0129: The passive carrier site as CAD
+
+Context. ADR-0126 and ADR-0127 choose a passive heme carrier: no engine and no
+cam. The iron carries the oxygen and the oxygen partial pressure releases it.
+M29-07 shows a schematic of it. The program needs the site as real geometry, so
+a later stage can test the pocket, the mouth, and the guard.
+
+Decision. `CarrierSiteGenerator` (id `carrier_site`) in `heme_rotor.rs` builds
+one carrier site from a `CarrierSiteSpec`. It cuts a diamond slab with a ring
+slot (radius 7.0 A), an O2 pocket above the slot (radius 3.6 A, height 3.5 A),
+and a mouth in the top face (radius 2.6 A). It drops the existing heme site
+(the Fe-porphine with its four two-carbon tethers) into the slot through the
+shared `build_heme_site` helper. It then turns the pocket-wall cap carbon
+nearest the bound O2 into a distal hydroxyl guard.
+
+The guard is a real C-O-H group: C-O 1.43 A, O-H 0.96 A, C-O-H 108.5 degrees.
+The oxygen is placed so that the O-H bond points at the O2. This makes the
+angle at the oxygen between the carbon and the O2 equal to 108.5 degrees, which
+fixes the O...O2 distance from the carbon...O2 distance. The generator picks
+the wall carbon that gives an O...O2 distance nearest 2.9 A.
+
+Findings. The default site gives O(guard)...O(O2) 2.99 A and H...O2 2.03 A, a
+normal hydrogen bond. The mouth (2.6 A radius) is wider than the O2 kinetic
+radius (1.73 A), so O2 can enter. The merged scaffold-plus-site part is 1252
+atoms. The site is registered, so an agent builds it by name. The pocket is
+snug: it is a pocket below the ring, not a wide cavity.
+
+Limits. The guard is one static conformer; the real distal group moves. The
+pocket-water MD kill test is not run yet, so the water exclusion and the
+autoxidation rate are not measured here. The ring-to-diamond joint is still a
+placeholder. Simulated geometry.

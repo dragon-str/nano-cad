@@ -39,6 +39,45 @@ use crate::shape::{Bounds, Box3, Cylinder, Difference, Placed, RadialCylinder, S
 
 const A: f64 = 1.0e-10;
 
+static CARRIER_SITE_PARAMETERS: &[ParameterSpec] = &[
+    ParameterSpec::new(
+        "pocket_radius_m",
+        Some(Unit::Metre),
+        3.6e-10,
+        3.2e-10,
+        6.0e-10,
+        false,
+        "radius of the O2 pocket above the iron",
+    ),
+    ParameterSpec::new(
+        "mouth_radius_m",
+        Some(Unit::Metre),
+        2.6e-10,
+        2.2e-10,
+        4.0e-10,
+        false,
+        "radius of the mouth in the top face",
+    ),
+    ParameterSpec::new(
+        "slot_radius_m",
+        Some(Unit::Metre),
+        7.0e-10,
+        6.0e-10,
+        1.0e-9,
+        false,
+        "radius of the ring slot that holds the porphine",
+    ),
+    ParameterSpec::new(
+        "guard_azimuth_rad",
+        None,
+        0.0,
+        -3.2,
+        3.2,
+        false,
+        "azimuth of the distal hydroxyl guard",
+    ),
+];
+
 static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("disc_radius_m", Some(Unit::Metre), 4.0e-9, 2.5e-9, 2.0e-8, false, "rim radius of the rotor disc"),
     ParameterSpec::new("thickness_m", Some(Unit::Metre), 2.4e-9, 1.6e-9, 1.0e-8, false, "axial thickness of the disc"),
@@ -615,7 +654,6 @@ impl HemeRotorGenerator {
         };
         let rotor = capped_lattice(fill_solid(solid.as_ref()))?;
 
-        let ring = porphine_plane();
         let mut sites = Vec::with_capacity(count);
         let mut arms = Vec::with_capacity(count);
         let mut site_iron = Vec::with_capacity(count);
@@ -629,122 +667,9 @@ impl HemeRotorGenerator {
             let fe = [iron_r_m * c, iron_r_m * s, 0.0];
             let is_loaded = ArmCamTrack::loaded_fraction(az) >= 0.5;
             loaded.push(is_loaded);
-            let mut site = Topology::new();
-            let fe_i = site.add_atom(Atom::new(Element::IRON, fe, 0.0, "Fe"));
-            // The porphine, less its four meso hydrogens: each meso carbon
-            // takes a two-carbon tether to the slot wall instead (below).
-            let mut meso_c: Vec<usize> = Vec::new();
-            for (idx, (e, [a, b])) in ring.iter().enumerate() {
-                if idx % 9 == 8 {
-                    continue;
-                }
-                let p = [fe[0] + a * t[0], fe[1] + a * t[1], *b];
-                let ai = site.add_atom(Atom::new(*e, p, 0.0, e.symbol().unwrap_or("X")));
-                if idx % 9 == 7 {
-                    meso_c.push(ai as usize);
-                }
-            }
-            if is_loaded {
-                let o1 = [fe[0] + FE_O_M * u[0], fe[1] + FE_O_M * u[1], 0.0];
-                let (sn, cs) = 60.0_f64.to_radians().sin_cos();
-                let o2 = [
-                    o1[0] + O_O_M * (cs * u[0] + sn * t[0]),
-                    o1[1] + O_O_M * (cs * u[1] + sn * t[1]),
-                    0.0,
-                ];
-                site.add_atom(Atom::new(Element::OXYGEN, o1, 0.0, "O_O2"));
-                site.add_atom(Atom::new(Element::OXYGEN, o2, 0.0, "O_O2"));
-            }
-            bond_by_distance(&mut site)?;
-            // A two-carbon tether at each meso carbon, to the nearest rotor
-            // wall carbon. The chain is a symmetric zigzag in the plane of the
-            // radial and the pocket axis, so its hydrogens stay clear of the
-            // ring. The end carbon is the anchor, bonded to the rotor atom when
-            // the unit is assembled (ADR-0113).
-            let mut anchors: Vec<(usize, usize)> = Vec::new();
-            for &mi in &meso_c {
-                let m = site.position_m(mi).unwrap_or([0.0; 3]);
-                let mut best = (f64::INFINITY, [0.0; 3], 0usize);
-                for j in 0..rotor.atom_count() {
-                    if rotor.element(j) != Some(Element::CARBON) {
-                        continue;
-                    }
-                    let q = rotor.position_m(j).unwrap_or([0.0; 3]);
-                    let d = dist(m, q);
-                    if d < best.0 {
-                        best = (d, q, j);
-                    }
-                }
-                let (l, w, wj) = best;
-                let b = 1.54e-10;
-                let mut nb = (l / b).ceil() as usize;
-                if nb < 2 {
-                    nb = 2;
-                }
-                if nb % 2 == 1 {
-                    nb += 1;
-                }
-                if nb > 6 {
-                    continue;
-                }
-                let uu = normalize([w[0] - m[0], w[1] - m[1], w[2] - m[2]]);
-                let dot = uu[2];
-                let nn = normalize([-dot * uu[0], -dot * uu[1], 1.0 - dot * dot]);
-                let cos_a = (l / (nb as f64 * b)).clamp(-1.0, 1.0);
-                let sin_a = (1.0 - cos_a * cos_a).sqrt();
-                let (mut axial, mut perp) = (0.0_f64, 0.0_f64);
-                let mut chain: Vec<usize> = Vec::new();
-                for i in 1..nb {
-                    axial += b * cos_a;
-                    perp += if i % 2 == 1 { b * sin_a } else { -b * sin_a };
-                    let cp = [
-                        m[0] + axial * uu[0] + perp * nn[0],
-                        m[1] + axial * uu[1] + perp * nn[1],
-                        m[2] + axial * uu[2] + perp * nn[2],
-                    ];
-                    chain.push(site.add_atom(Atom::new(Element::CARBON, cp, 0.0, "C")) as usize);
-                }
-                let mut prev = mi;
-                for &ci in &chain {
-                    site.add_bond(Bond::new(prev as u32, ci as u32, 1, BondType::Single))?;
-                    prev = ci;
-                }
-                for (idx, &ci) in chain.iter().enumerate() {
-                    let p = site.position_m(ci).unwrap_or([0.0; 3]);
-                    let n1 = if idx == 0 {
-                        m
-                    } else {
-                        site.position_m(chain[idx - 1]).unwrap_or([0.0; 3])
-                    };
-                    let n2 = if idx + 1 < chain.len() {
-                        site.position_m(chain[idx + 1]).unwrap_or([0.0; 3])
-                    } else {
-                        w
-                    };
-                    let a1 = normalize([n1[0] - p[0], n1[1] - p[1], n1[2] - p[2]]);
-                    let a2 = normalize([n2[0] - p[0], n2[1] - p[1], n2[2] - p[2]]);
-                    let s = normalize([-(a1[0] + a2[0]), -(a1[1] + a2[1]), -(a1[2] + a2[2])]);
-                    let q = normalize(cross(a1, a2));
-                    for sign in [1.0, -1.0] {
-                        let hdir =
-                            normalize([s[0] + sign * q[0], s[1] + sign * q[1], s[2] + sign * q[2]]);
-                        let h = site.add_atom(Atom::new(
-                            Element::HYDROGEN,
-                            [
-                                p[0] + 1.09e-10 * hdir[0],
-                                p[1] + 1.09e-10 * hdir[1],
-                                p[2] + 1.09e-10 * hdir[2],
-                            ],
-                            0.0,
-                            "H",
-                        ));
-                        site.add_bond(Bond::new(ci as u32, h, 1, BondType::Single))?;
-                    }
-                }
-                anchors.push((*chain.last().unwrap_or(&mi), wj));
-            }
+            let (site, fe_i, anchors) = build_heme_site(fe, u, t, &rotor, is_loaded)?;
             site_anchor.push(anchors);
-            site_iron.push(fe_i as usize);
+            site_iron.push(fe_i);
             sites.push(
                 Part::new(format!("heme_site_{k}"), site).with_material("Fe-porphine (model)"),
             );
@@ -798,6 +723,146 @@ impl HemeRotorGenerator {
             cam_ramp_half_rad: CAM_RAMP_HALF_RAD,
         })
     }
+}
+
+/// Builds one heme-like site: an Fe-porphine with its four meso tethers to
+/// `wall`, and the bound O2 when `loaded`. The ring lies in the plane spanned
+/// by `t` and `cross(u, t)`; the iron-O2 axis is `u`. Returns the site, the
+/// iron index, and the (site atom, wall atom) anchor pairs.
+/// One built heme-like site: its topology, its iron index, and the
+/// (site atom, wall atom) pairs of the covalent tethers.
+type HemeSite = (Topology, usize, Vec<(usize, usize)>);
+
+fn build_heme_site(
+    fe: [f64; 3],
+    u: [f64; 3],
+    t: [f64; 3],
+    wall: &Topology,
+    loaded: bool,
+) -> Result<HemeSite, PartError> {
+    let w = cross(u, t);
+    let ring = porphine_plane();
+    let mut site = Topology::new();
+    let fe_i = site.add_atom(Atom::new(Element::IRON, fe, 0.0, "Fe"));
+    // The porphine, less its four meso hydrogens: each meso carbon takes a
+    // two-carbon tether to the wall instead.
+    let mut meso_c: Vec<usize> = Vec::new();
+    for (idx, (e, [a, b])) in ring.iter().enumerate() {
+        if idx % 9 == 8 {
+            continue;
+        }
+        let p = [
+            fe[0] + a * t[0] + b * w[0],
+            fe[1] + a * t[1] + b * w[1],
+            fe[2] + a * t[2] + b * w[2],
+        ];
+        let ai = site.add_atom(Atom::new(*e, p, 0.0, e.symbol().unwrap_or("X")));
+        if idx % 9 == 7 {
+            meso_c.push(ai as usize);
+        }
+    }
+    if loaded {
+        let o1 = [
+            fe[0] + FE_O_M * u[0],
+            fe[1] + FE_O_M * u[1],
+            fe[2] + FE_O_M * u[2],
+        ];
+        let (sn, cs) = 60.0_f64.to_radians().sin_cos();
+        let o2 = [
+            o1[0] + O_O_M * (cs * u[0] + sn * t[0]),
+            o1[1] + O_O_M * (cs * u[1] + sn * t[1]),
+            o1[2] + O_O_M * (cs * u[2] + sn * t[2]),
+        ];
+        site.add_atom(Atom::new(Element::OXYGEN, o1, 0.0, "O_O2"));
+        site.add_atom(Atom::new(Element::OXYGEN, o2, 0.0, "O_O2"));
+    }
+    bond_by_distance(&mut site)?;
+    // A two-carbon tether at each meso carbon, to the nearest wall carbon. The
+    // chain is a symmetric zigzag in the plane of the ring normal and the
+    // tether axis, so its hydrogens stay clear of the ring. The end carbon is
+    // the anchor, bonded to the wall atom when the unit is assembled.
+    let mut anchors: Vec<(usize, usize)> = Vec::new();
+    for &mi in &meso_c {
+        let m = site.position_m(mi).unwrap_or([0.0; 3]);
+        let mut best = (f64::INFINITY, [0.0; 3], 0usize);
+        for j in 0..wall.atom_count() {
+            if wall.element(j) != Some(Element::CARBON) {
+                continue;
+            }
+            let q = wall.position_m(j).unwrap_or([0.0; 3]);
+            let d = dist(m, q);
+            if d < best.0 {
+                best = (d, q, j);
+            }
+        }
+        let (l, wq, wj) = best;
+        let b = 1.54e-10;
+        let mut nb = (l / b).ceil() as usize;
+        if nb < 2 {
+            nb = 2;
+        }
+        if nb % 2 == 1 {
+            nb += 1;
+        }
+        if nb > 6 {
+            continue;
+        }
+        let uu = normalize([wq[0] - m[0], wq[1] - m[1], wq[2] - m[2]]);
+        let dot = uu[0] * w[0] + uu[1] * w[1] + uu[2] * w[2];
+        let nn = normalize([w[0] - dot * uu[0], w[1] - dot * uu[1], w[2] - dot * uu[2]]);
+        let cos_a = (l / (nb as f64 * b)).clamp(-1.0, 1.0);
+        let sin_a = (1.0 - cos_a * cos_a).sqrt();
+        let (mut axial, mut perp) = (0.0_f64, 0.0_f64);
+        let mut chain: Vec<usize> = Vec::new();
+        for i in 1..nb {
+            axial += b * cos_a;
+            perp += if i % 2 == 1 { b * sin_a } else { -b * sin_a };
+            let cp = [
+                m[0] + axial * uu[0] + perp * nn[0],
+                m[1] + axial * uu[1] + perp * nn[1],
+                m[2] + axial * uu[2] + perp * nn[2],
+            ];
+            chain.push(site.add_atom(Atom::new(Element::CARBON, cp, 0.0, "C")) as usize);
+        }
+        let mut prev = mi;
+        for &ci in &chain {
+            site.add_bond(Bond::new(prev as u32, ci as u32, 1, BondType::Single))?;
+            prev = ci;
+        }
+        for (idx, &ci) in chain.iter().enumerate() {
+            let p = site.position_m(ci).unwrap_or([0.0; 3]);
+            let n1 = if idx == 0 {
+                m
+            } else {
+                site.position_m(chain[idx - 1]).unwrap_or([0.0; 3])
+            };
+            let n2 = if idx + 1 < chain.len() {
+                site.position_m(chain[idx + 1]).unwrap_or([0.0; 3])
+            } else {
+                wq
+            };
+            let a1 = normalize([n1[0] - p[0], n1[1] - p[1], n1[2] - p[2]]);
+            let a2 = normalize([n2[0] - p[0], n2[1] - p[1], n2[2] - p[2]]);
+            let s = normalize([-(a1[0] + a2[0]), -(a1[1] + a2[1]), -(a1[2] + a2[2])]);
+            let q = normalize(cross(a1, a2));
+            for sign in [1.0, -1.0] {
+                let hdir = normalize([s[0] + sign * q[0], s[1] + sign * q[1], s[2] + sign * q[2]]);
+                let h = site.add_atom(Atom::new(
+                    Element::HYDROGEN,
+                    [
+                        p[0] + 1.09e-10 * hdir[0],
+                        p[1] + 1.09e-10 * hdir[1],
+                        p[2] + 1.09e-10 * hdir[2],
+                    ],
+                    0.0,
+                    "H",
+                ));
+                site.add_bond(Bond::new(ci as u32, h, 1, BondType::Single))?;
+            }
+        }
+        anchors.push((*chain.last().unwrap_or(&mi), wj));
+    }
+    Ok((site, fe_i as usize, anchors))
 }
 
 /// The longest strained surface dimer the module parts accept, in metres.
@@ -1655,6 +1720,302 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
     })
 }
 
+/// The geometry of a passive carrier heme site (ADR-0129).
+///
+/// One heme-like Fe-porphine sits in a hydrophobic pocket cut into a diamond
+/// scaffold. A snug mouth passes O2. A distal hydroxyl guard hangs over the
+/// bound O2 and hydrogen-bonds it, as the distal histidine does in hemoglobin,
+/// so the iron resists autoxidation. The carrier has no arm and no cam: it
+/// loads and releases by the oxygen partial pressure alone.
+#[derive(Clone, Copy, Debug)]
+pub struct CarrierSiteSpec {
+    /// Radius of the ring slot that holds the porphine.
+    pub slot_radius_m: f64,
+    /// Half-thickness of the ring slot along z.
+    pub slot_half_m: f64,
+    /// Radius of the O2 pocket above the iron.
+    pub pocket_radius_m: f64,
+    /// Height of the pocket above the ring slot.
+    pub pocket_height_m: f64,
+    /// Radius of the mouth in the top face.
+    pub mouth_radius_m: f64,
+    /// Length of the mouth channel.
+    pub mouth_length_m: f64,
+    /// Diamond below the ring slot.
+    pub floor_m: f64,
+    /// Half-width of the scaffold slab.
+    pub half_width_m: f64,
+    /// Azimuth of the distal guard group, in radians.
+    pub guard_azimuth_rad: f64,
+    /// Whether the site shows the bound O2.
+    pub loaded: bool,
+}
+
+impl Default for CarrierSiteSpec {
+    fn default() -> Self {
+        Self {
+            slot_radius_m: 7.0e-10,
+            slot_half_m: 2.0e-10,
+            pocket_radius_m: 3.6e-10,
+            pocket_height_m: 3.5e-10,
+            mouth_radius_m: 2.6e-10,
+            mouth_length_m: 2.0e-10,
+            floor_m: 2.4e-10,
+            half_width_m: 1.2e-9,
+            guard_azimuth_rad: 0.0,
+            loaded: true,
+        }
+    }
+}
+
+/// A carrier site: the diamond scaffold (with the distal guard) and the heme.
+#[derive(Clone, Debug)]
+pub struct CarrierSite {
+    /// The diamond scaffold, with the guard hydroxyl.
+    pub scaffold: Part,
+    /// The heme-like site: Fe-porphine, its tethers, and the O2 when loaded.
+    pub site: Part,
+    /// The iron atom index inside the site part.
+    pub site_iron: usize,
+    /// The (site atom, scaffold atom) pairs of the covalent tethers.
+    pub site_anchor: Vec<(usize, usize)>,
+    /// The guard oxygen atom index inside the scaffold, when a guard was made.
+    pub guard_oxygen: Option<usize>,
+    /// The guard hydrogen atom index inside the scaffold.
+    pub guard_hydrogen: Option<usize>,
+    /// The two O2 atom indices inside the site, when loaded.
+    pub o2: Option<(usize, usize)>,
+    /// Radius of the O2 pocket, in metres.
+    pub pocket_radius_m: f64,
+    /// Radius of the mouth, in metres.
+    pub mouth_radius_m: f64,
+}
+
+/// Builds a passive carrier heme site.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CarrierSiteGenerator;
+
+/// Turns the cap carbon nearest `q` into a hydroxyl whose oxygen reaches
+/// toward `target`. Returns the (oxygen, hydrogen) atom indices. The hydrogen
+/// sits on the C-O-H cone at 108.5 degrees, turned toward the target so it can
+/// hydrogen-bond it.
+fn add_guard_oh(
+    top: &mut Topology,
+    azimuth_rad: f64,
+    target: [f64; 3],
+) -> Result<Option<(usize, usize)>, PartError> {
+    // A C-O-H group is fixed by C-O 1.43 A, O-H 0.96 A, and the C-O-H angle
+    // 108.5 degrees. Place the oxygen so that the O-H bond points at `target`:
+    // then the angle at the oxygen between C and the target is 108.5 degrees.
+    // That fixes the O-target distance for a given carbon-target distance.
+    let k = 1.43e-10;
+    let (s108, c108) = 108.5_f64.to_radians().sin_cos();
+    let mut best: Option<(f64, usize, usize, f64, f64)> = None;
+    for b in top.bonds() {
+        let (u, v) = (b.u as usize, b.v as usize);
+        let (c, h) = match (top.element(u), top.element(v)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (u, v),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (v, u),
+            _ => continue,
+        };
+        let Some(cp) = top.position_m(c) else {
+            continue;
+        };
+        if cp[2] <= 0.0 {
+            continue;
+        }
+        let az = cp[1].atan2(cp[0]);
+        let daz = ((az - azimuth_rad + PI).rem_euclid(2.0 * PI) - PI).abs();
+        if daz > 1.6 {
+            continue;
+        }
+        let d = dist(cp, target);
+        let disc = d * d - k * k * s108 * s108;
+        if disc <= 0.0 {
+            continue;
+        }
+        let o_target = k * c108 + disc.sqrt();
+        if !(2.2e-10..=3.3e-10).contains(&o_target) {
+            continue;
+        }
+        let score = (o_target - 2.9e-10).abs();
+        if best.is_none_or(|(bs, _, _, _, _)| score < bs) {
+            best = Some((score, c, h, d, o_target));
+        }
+    }
+    let Some((_, c, h, d, o_target)) = best else {
+        return Ok(None);
+    };
+    let cp = top
+        .position_m(c)
+        .ok_or_else(|| PartError::InvalidGeometry("no guard carbon".to_owned()))?;
+    let u = normalize([target[0] - cp[0], target[1] - cp[1], target[2] - cp[2]]);
+    let rad = normalize([cp[0], cp[1], 0.0]);
+    let mut n = [
+        rad[0] - (rad[0] * u[0] + rad[1] * u[1] + rad[2] * u[2]) * u[0],
+        rad[1] - (rad[0] * u[0] + rad[1] * u[1] + rad[2] * u[2]) * u[1],
+        rad[2] - (rad[0] * u[0] + rad[1] * u[1] + rad[2] * u[2]) * u[2],
+    ];
+    if norm(n) < 1.0e-12 {
+        n = normalize([0.0, 0.0, 1.0]);
+    } else {
+        n = normalize(n);
+    }
+    let cos_theta = ((k - c108 * o_target) / d).clamp(-1.0, 1.0);
+    let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
+    // Bend the oxygen toward the axis, into the pocket void.
+    let o = [
+        cp[0] + k * (cos_theta * u[0] - sin_theta * n[0]),
+        cp[1] + k * (cos_theta * u[1] - sin_theta * n[1]),
+        cp[2] + k * (cos_theta * u[2] - sin_theta * n[2]),
+    ];
+    top.set_element(h, Element::OXYGEN)?;
+    top.set_atom_type(h, "O_hydroxyl")?;
+    top.set_position_m(h, o)?;
+    let hd = normalize([target[0] - o[0], target[1] - o[1], target[2] - o[2]]);
+    let hp = [
+        o[0] + 0.96e-10 * hd[0],
+        o[1] + 0.96e-10 * hd[1],
+        o[2] + 0.96e-10 * hd[2],
+    ];
+    let hi = top.add_atom(Atom::new(Element::HYDROGEN, hp, 0.0, "H"));
+    top.add_bond(Bond::new(h as u32, hi, 1, BondType::Single))?;
+    Ok(Some((h, hi as usize)))
+}
+
+fn norm(v: [f64; 3]) -> f64 {
+    (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
+}
+
+impl CarrierSiteGenerator {
+    /// Builds the carrier site from an explicit spec.
+    pub fn build_spec(&self, spec: &CarrierSiteSpec) -> Result<CarrierSite, PartError> {
+        let z_top = spec.slot_half_m + spec.pocket_height_m + spec.mouth_length_m;
+        let slab = Box3 {
+            min_m: [-spec.half_width_m, -spec.half_width_m, -spec.floor_m],
+            max_m: [spec.half_width_m, spec.half_width_m, z_top],
+        };
+        let slot = Cylinder {
+            center_m: [0.0, 0.0, 0.0],
+            radius_m: spec.slot_radius_m,
+            height_m: 2.0 * spec.slot_half_m,
+        };
+        let pocket = Cylinder {
+            center_m: [0.0, 0.0, spec.slot_half_m + 0.5 * spec.pocket_height_m],
+            radius_m: spec.pocket_radius_m,
+            height_m: spec.pocket_height_m,
+        };
+        let mouth = Cylinder {
+            center_m: [
+                0.0,
+                0.0,
+                spec.slot_half_m + spec.pocket_height_m + 0.5 * spec.mouth_length_m,
+            ],
+            radius_m: spec.mouth_radius_m,
+            height_m: spec.mouth_length_m + 1.0e-9,
+        };
+        let cut: Box<dyn Solid> = Box::new(Union {
+            a: Box::new(slot),
+            b: Box::new(Union {
+                a: Box::new(pocket),
+                b: Box::new(mouth),
+            }),
+        });
+        let solid = Difference {
+            outer: Box::new(slab),
+            inner: cut,
+        };
+        let mut scaffold = capped_lattice(fill_solid(&solid))?;
+        let (sn60, cs60) = 60.0_f64.to_radians().sin_cos();
+        let o2 = [O_O_M * sn60, 0.0, FE_O_M + O_O_M * cs60];
+        let target = if spec.loaded { o2 } else { [0.0, 0.0, FE_O_M] };
+        let guard = add_guard_oh(&mut scaffold, spec.guard_azimuth_rad, target)?;
+
+        let u = [0.0, 0.0, 1.0];
+        let t = [1.0, 0.0, 0.0];
+        let (site, fe_i, anchors) = build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded)?;
+        let o2_idx = if spec.loaded {
+            let oxy: Vec<usize> = (0..site.atom_count())
+                .filter(|&i| site.element(i) == Some(Element::OXYGEN))
+                .collect();
+            if oxy.len() == 2 {
+                Some((oxy[0], oxy[1]))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Ok(CarrierSite {
+            scaffold: Part::new("carrier_scaffold", scaffold).with_material("diamond"),
+            site: Part::new("carrier_site", site).with_material("Fe-porphine (model)"),
+            site_iron: fe_i,
+            site_anchor: anchors,
+            guard_oxygen: guard.map(|g| g.0),
+            guard_hydrogen: guard.map(|g| g.1),
+            o2: o2_idx,
+            pocket_radius_m: spec.pocket_radius_m,
+            mouth_radius_m: spec.mouth_radius_m,
+        })
+    }
+
+    /// Merges the scaffold and the site into one part, adding the tether bonds.
+    pub fn merged(&self, spec: &CarrierSiteSpec) -> Result<Part, PartError> {
+        let c = self.build_spec(spec)?;
+        let mut t = c.scaffold.topology.clone();
+        let base = t.atom_count();
+        for i in 0..c.site.atom_count() {
+            let e = c.site.topology.element(i).unwrap_or(Element::CARBON);
+            let p = c.site.topology.position_m(i).unwrap_or([0.0; 3]);
+            let ty = c.site.topology.atom_type(i).unwrap_or("X").to_owned();
+            t.add_atom(Atom::new(e, p, 0.0, ty));
+        }
+        for b in c.site.topology.bonds() {
+            t.add_bond(Bond::new(
+                b.u + base as u32,
+                b.v + base as u32,
+                b.order,
+                b.bond_type,
+            ))?;
+        }
+        for (s, w) in &c.site_anchor {
+            t.add_bond(Bond::new((s + base) as u32, *w as u32, 1, BondType::Single))?;
+        }
+        Ok(Part::new("carrier_site", t).with_material("diamond + Fe-porphine (model)"))
+    }
+}
+
+impl PartGenerator for CarrierSiteGenerator {
+    fn id(&self) -> &'static str {
+        "carrier_site"
+    }
+
+    fn name(&self) -> &'static str {
+        "Passive carrier heme site"
+    }
+
+    fn parameters(&self) -> &'static [ParameterSpec] {
+        CARRIER_SITE_PARAMETERS
+    }
+
+    fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
+        let mut spec = CarrierSiteSpec::default();
+        if let Some(v) = parameters.get("pocket_radius_m") {
+            spec.pocket_radius_m = v;
+        }
+        if let Some(v) = parameters.get("mouth_radius_m") {
+            spec.mouth_radius_m = v;
+        }
+        if let Some(v) = parameters.get("slot_radius_m") {
+            spec.slot_radius_m = v;
+        }
+        if let Some(v) = parameters.get("guard_azimuth_rad") {
+            spec.guard_azimuth_rad = v;
+        }
+        self.merged(&spec)
+    }
+}
+
 impl PartGenerator for HemeRotorGenerator {
     fn id(&self) -> &'static str {
         "heme_rotor"
@@ -2047,5 +2408,80 @@ mod tests {
         }
         eprintln!("plunger cam sweep: nearest wall atom {:.2} A", worst * 1e10);
         assert!(worst > 1.9e-10, "{worst:e}");
+    }
+}
+
+#[cfg(test)]
+mod carrier_tests {
+    use super::*;
+
+    fn site() -> CarrierSite {
+        CarrierSiteGenerator
+            .build_spec(&CarrierSiteSpec::default())
+            .expect("builds")
+    }
+
+    #[test]
+    fn the_site_has_an_iron_with_four_nitrogens() {
+        let c = site();
+        let fe = c.site.topology.position_m(c.site_iron).expect("fe");
+        let n4 = (0..c.site.atom_count())
+            .filter(|&i| c.site.topology.element(i) == Some(Element::NITROGEN))
+            .filter(|&i| {
+                (dist(c.site.topology.position_m(i).expect("n"), fe) - 2.0e-10).abs() < 1e-13
+            })
+            .count();
+        assert_eq!(n4, 4);
+    }
+
+    #[test]
+    fn the_bound_o2_sits_on_the_sixth_site_at_the_scanned_distance() {
+        let c = site();
+        let fe = c.site.topology.position_m(c.site_iron).expect("fe");
+        let (a, b) = c.o2.expect("loaded");
+        let oa = c.site.topology.position_m(a).expect("a");
+        let ob = c.site.topology.position_m(b).expect("b");
+        assert!(
+            (dist(oa, fe) - FE_O_M).abs() < 1e-12,
+            "Fe-O {}",
+            dist(oa, fe)
+        );
+        assert!((dist(oa, ob) - O_O_M).abs() < 1e-12, "O-O {}", dist(oa, ob));
+    }
+
+    #[test]
+    fn the_distal_guard_reaches_the_bound_o2() {
+        let c = site();
+        let g = c.guard_oxygen.expect("guard");
+        let go = c.scaffold.topology.position_m(g).expect("go");
+        assert_eq!(c.scaffold.topology.atom_type(g), Some("O_hydroxyl"));
+        let (a, b) = c.o2.expect("loaded");
+        let fe = c.site.topology.position_m(c.site_iron).expect("fe");
+        let pa = c.site.topology.position_m(a).expect("a");
+        let pb = c.site.topology.position_m(b).expect("b");
+        let oa = if dist(pa, fe) > dist(pb, fe) { pa } else { pb };
+        let d = dist(go, oa);
+        assert!((2.2e-10..=3.4e-10).contains(&d), "O(guard)...O(O2) {d}");
+        let h = c.guard_hydrogen.expect("h");
+        let gh = c.scaffold.topology.position_m(h).expect("gh");
+        let dh = dist(gh, oa);
+        assert!((1.5e-10..=2.6e-10).contains(&dh), "H...O {dh}");
+    }
+
+    #[test]
+    fn the_mouth_passes_the_o2_molecule() {
+        let c = site();
+        assert!(
+            c.mouth_radius_m > 2.0e-10,
+            "mouth radius {} m is too tight for O2",
+            c.mouth_radius_m
+        );
+    }
+
+    #[test]
+    fn the_registry_builds_the_carrier_site() {
+        let part =
+            crate::registry::generate("carrier_site", &ParameterSet::new()).expect("generate");
+        assert_eq!(part.name, "carrier_site");
     }
 }
