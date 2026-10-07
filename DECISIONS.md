@@ -3734,3 +3734,42 @@ Limits. The wet start could not place a water molecule in the pocket, so it
 equals the dry start; the result rests on the free-volume measurement, not on
 an observed drying. The autoxidation rate is not measured, because a classical
 MD model cannot measure it. The guard is one static conformer. Simulated.
+
+## ADR-0131: The distal guard strengthens the O2 bond (QM)
+
+Context. ADR-0129 builds a distal hydroxyl guard on the carrier pocket wall,
+2.99 A from the bound O2. ADR-0130 shows the pocket excludes water but cannot
+measure the guard. The guard must hold the oxygen: a stronger O2 bond has a
+higher barrier to the superoxide release that autoxidizes the iron. M29-10
+tests the guard with quantum chemistry.
+
+Method. `scripts/heme_guard_scan.py`, UKS PBE/def2-SVP with density fitting,
+grid level 1, no dispersion, a damped first pass and a Newton finish. The model
+is the shared heme site of `heme_switch_scan.py` (Fe-porphine, one axial NH3)
+with O2 at 1.85 A. The guard is a water molecule whose first O-H points at the
+distal O2 oxygen, at the ADR-0129 geometry (O...O2 2.99 A, H...O2 2.03 A).
+Eleven points: O2, water, the bare site (S=0,2,4), the site with water (S=0,2),
+the O2 complex (S=0,2), and the complex with the guard (S=0,2). Three workers,
+planned cap 6.4 GB; peak resident 3.1 GB. All points converged.
+
+Findings. The guard makes a hydrogen bond of -21.8 kJ/mol to the complex. The
+same water binds the bare site by only -6.9 kJ/mol, so most of the bond is to
+the O2. The O2 binding energy is -80.9 kJ/mol without the guard and -95.8 kJ/mol
+with it: the guard strengthens the O2 bond by 14.9 kJ/mol. This is the size of
+the distal-histidine effect in myoglobin, where the same H-bond slows
+autoxidation by one to two orders of magnitude. The guard also polarizes the
+bound O2 (Mulliken charge -0.18 to -0.22; triplet spin on O2 1.24 to 1.15). The
+singlet and the triplet stay nearly degenerate (0.4 kJ/mol apart without the
+guard, 2.4 with it), so the spin state is not resolved.
+
+Decision. Keep the guard. It forms a normal H-bond to the distal O2 and
+strengthens the O2 bond by about 15 kJ/mol, the mechanism that a distal H-bond
+uses to slow autoxidation. Together with the dry pocket of ADR-0130, this is
+the second protection of the carrier site.
+
+Limits. A proxy, not the diamond site: the guard is a water molecule, not the
+real C-O-H group; the geometry is rigid; PBE overbinds O2 on iron by tens of
+kJ/mol, so the absolute energies are too negative. The calculation gives the
+O2 bond strength, not the autoxidation rate. A stronger O2 bond also makes the
+tissue release harder, so the resting-site affinity must absorb the change.
+Simulated.
