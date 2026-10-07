@@ -38,7 +38,13 @@ from openmm import unit
 KCAL = 4.184  # kJ per kcal
 LJ_FACTOR = 2.0 ** (1.0 / 6.0)
 # UFF x1 (A) and D1 (kcal/mol), Rappe et al. 1992.
-UFF = {"C": (3.851, 0.105), "H": (2.886, 0.044), "Fe": (2.912, 0.013), "O": (3.500, 0.060)}
+UFF = {
+    "C": (3.851, 0.105),
+    "H": (2.886, 0.044),
+    "N": (3.660, 0.069),
+    "Fe": (2.912, 0.013),
+    "O": (3.500, 0.060),
+}
 # SPC/E water.
 SPCE_SIGMA_NM = 0.3166
 SPCE_EPSILON_KJ = 0.6502
@@ -89,14 +95,19 @@ def main() -> int:
     block_min = block.min(axis=0)
     block_max = block.max(axis=0)
 
-    # The iron's open side: away from its three bonded carbons.
+    # The iron's open side. If the geometry gives an axis, use it. Else take
+    # it away from the three bonded carbons (the rod-pocket case).
     fe = solid[iron]
-    neighbours = [
-        p for i, p in enumerate(solid) if i != iron and elements[i] == "C"
-        and np.linalg.norm(p - fe) < 0.17
-    ]
-    axis = -sum((p - fe) / np.linalg.norm(p - fe) for p in neighbours)
-    axis /= np.linalg.norm(axis)
+    if "axis" in geometry:
+        axis = np.array(geometry["axis"], dtype=float)
+        axis /= np.linalg.norm(axis)
+    else:
+        neighbours = [
+            p for i, p in enumerate(solid) if i != iron and elements[i] == "C"
+            and np.linalg.norm(p - fe) < 0.17
+        ]
+        axis = -sum((p - fe) / np.linalg.norm(p - fe) for p in neighbours)
+        axis /= np.linalg.norm(axis)
 
     extra = []  # frozen O2 atoms
     if args.o2 == "bound":

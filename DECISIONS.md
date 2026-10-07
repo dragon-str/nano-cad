@@ -3707,3 +3707,30 @@ Limits. The guard is one static conformer; the real distal group moves. The
 pocket-water MD kill test is not run yet, so the water exclusion and the
 autoxidation rate are not measured here. The ring-to-diamond joint is still a
 placeholder. Simulated geometry.
+
+## ADR-0130: The carrier pocket excludes water
+
+Context. The rod pocket of ADR-0090 held about 20 water molecules and failed
+the dry-pocket test. A carrier must keep water off the iron, because water and
+its ions drive the autoxidation of the heme.
+
+Decision. Test the carrier pocket with the explicit-water model of ADR-0090
+(`scripts/pocket_water_md.py`). Two small changes make it fit the carrier: the
+geometry JSON now carries an explicit pocket `axis` (the carrier iron has four
+nitrogen neighbours, not three carbons, so the test cannot infer the open
+side), and the UFF table gains nitrogen. A new exporter
+(`crates/parts/examples/carrier_site_json.rs`) writes the merged scaffold and
+site.
+
+Findings. The pocket stays dry. Over 500 ps in liquid water, with both a dry
+start and a wet start, the pocket holds 0 waters and the iron makes 0 water
+contacts (573 waters in the box). The pocket cylinder is 0.224 nm3, but the
+bound O2, the distal guard, and the pocket wall leave under 0.01 nm3 of volume
+with a 0.26 nm water clearance, so less than one water molecule fits. The
+mouth (2.6 A radius) still passes O2, whose kinetic radius is 1.73 A. The
+carrier is the opposite of the rod pocket: the pocket is snug, not a cavity.
+
+Limits. The wet start could not place a water molecule in the pocket, so it
+equals the dry start; the result rests on the free-volume measurement, not on
+an observed drying. The autoxidation rate is not measured, because a classical
+MD model cannot measure it. The guard is one static conformer. Simulated.

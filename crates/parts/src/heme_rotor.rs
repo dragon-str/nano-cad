@@ -1961,16 +1961,22 @@ impl CarrierSiteGenerator {
 
     /// Merges the scaffold and the site into one part, adding the tether bonds.
     pub fn merged(&self, spec: &CarrierSiteSpec) -> Result<Part, PartError> {
-        let c = self.build_spec(spec)?;
-        let mut t = c.scaffold.topology.clone();
+        self.build_spec(spec)?.merged_part()
+    }
+}
+
+impl CarrierSite {
+    /// Merges the scaffold and the site into one part, adding the tether bonds.
+    pub fn merged_part(&self) -> Result<Part, PartError> {
+        let mut t = self.scaffold.topology.clone();
         let base = t.atom_count();
-        for i in 0..c.site.atom_count() {
-            let e = c.site.topology.element(i).unwrap_or(Element::CARBON);
-            let p = c.site.topology.position_m(i).unwrap_or([0.0; 3]);
-            let ty = c.site.topology.atom_type(i).unwrap_or("X").to_owned();
+        for i in 0..self.site.atom_count() {
+            let e = self.site.topology.element(i).unwrap_or(Element::CARBON);
+            let p = self.site.topology.position_m(i).unwrap_or([0.0; 3]);
+            let ty = self.site.topology.atom_type(i).unwrap_or("X").to_owned();
             t.add_atom(Atom::new(e, p, 0.0, ty));
         }
-        for b in c.site.topology.bonds() {
+        for b in self.site.topology.bonds() {
             t.add_bond(Bond::new(
                 b.u + base as u32,
                 b.v + base as u32,
@@ -1978,10 +1984,15 @@ impl CarrierSiteGenerator {
                 b.bond_type,
             ))?;
         }
-        for (s, w) in &c.site_anchor {
+        for (s, w) in &self.site_anchor {
             t.add_bond(Bond::new((s + base) as u32, *w as u32, 1, BondType::Single))?;
         }
         Ok(Part::new("carrier_site", t).with_material("diamond + Fe-porphine (model)"))
+    }
+
+    /// The iron index inside the merged part.
+    pub fn merged_iron(&self) -> usize {
+        self.scaffold.atom_count() + self.site_iron
     }
 }
 
