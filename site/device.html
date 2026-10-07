@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nano-CAD device scale explorer (simulated)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .dev-body { margin: 0; background: #0b0d11; color: #d8dde6; font: 13px/1.4 system-ui, sans-serif; }
+      #stage { display: block; width: 100vw; height: calc(100vh - 46px); cursor: grab; touch-action: none; }
+      #stage:active { cursor: grabbing; }
+      .dev-hud {
+        position: fixed; right: 14px; bottom: 16px; display: flex; gap: 6px;
+        background: rgba(17,20,26,0.85); border: 1px solid #252a33; border-radius: 8px; padding: 6px;
+      }
+      .dev-hud button {
+        background: #1a1f28; color: #e6e9ef; border: 1px solid #333a47; border-radius: 6px;
+        padding: 5px 9px; cursor: pointer; font: inherit;
+      }
+      .dev-hud button:hover { background: #232a36; }
+      .dev-hint {
+        position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; color: #7f8899; font-size: 11px;
+        background: rgba(17,20,26,0.85); border: 1px solid #252a33; border-radius: 8px; padding: 6px 9px;
+      }
+    </style>
+  </head>
+  <body class="dev-body">
+    <header class="viewer-header">
+      <h1>Nano-CAD</h1>
+      <span class="scene-title">Device scale explorer</span>
+      <span class="badge">simulated / schematic</span>
+      <nav>
+        <a href="/">Atomistic viewer</a> &middot;
+        <a href="system.html">System model</a> &middot;
+        <a href="models.html">3D models</a> &middot;
+        <a href="device.js">Source</a>
+      </nav>
+    </header>
+    <canvas id="stage"></canvas>
+    <div class="dev-hud">
+      <button id="zoom-out" type="button">&#8722;</button>
+      <button id="go-device" type="button">Respirocyte</button>
+      <button id="go-site" type="button">Carrier site</button>
+      <button id="zoom-in" type="button">+</button>
+    </div>
+    <div class="dev-hint">Drag to rotate &middot; scroll or +/&#8722; to zoom out and in</div>
+    <script src="device.js"></script>
+  </body>
+</html>

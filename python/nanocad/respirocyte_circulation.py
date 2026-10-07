@@ -58,11 +58,15 @@ from nanocad.respirocyte_system import (
     NM3,
     P,
     Param,
+    _implicit_step,
+    _rates,
     load_occupancy,
     o2_rotor_parameters,
+    p_of_rho,
     rho_of_p,
     section_parameters,
     stall_atm,
+    with_case,
 )
 
 STD_MOLAR_VOLUME_M3 = 22.414e-3
@@ -162,6 +166,150 @@ def circulation(phys: dict[str, Param] | None = None) -> dict:
         "rest_flux_molecules_s": ref["rest_deliver_per_m3_molecules"] * v / (v / q_rest),
         "max_flux_molecules_s": ref["max_deliver_per_m3_molecules"] * v / (v / q_max),
     }
+
+
+def _window(device: dict, y: list[float], phase: str, t_max_s: float, samples: int = 150) -> tuple[list[float], float, float]:
+    """Integrate the compartment O2 for exactly ``t_max_s`` seconds in one
+    phase (``fill`` or ``discharge``).
+
+    State ``y`` is ``[n_1..n_ns, water, energy, delivered]``; it is mutated in
+    place and returned. Backward Euler, fixed step, so the stiff small
+    chambers stay stable without numpy. Returns ``(y, last_power_w,
+    energy_j_added)``.
+    """
+    ns = device["n_stages"]
+    peak_w = device["power"]["peak_w"].value
+
+    def full_state(yy):
+        return [0.0] + [max(v, 0.0) for v in yy[:ns]], max(yy[ns], 0.0)
+
+    def evaluate(yy):
+        nn, w = full_state(yy)
+        _, _, demand, _ = _rates(device, nn, w, phase, 1.0)
+        scale = min(1.0, peak_w / demand) if demand > 0 else 1.0
+        return _rates(device, nn, w, phase, scale)
+
+    def f(_t, yy):
+        dn, dw, pw, _ = evaluate(yy)
+        return dn[1:] + [dw, pw, (-dn[ns] if phase == "discharge" else 0.0)]
+
+    e0 = y[ns + 1]
+    dt = t_max_s / samples
+    t = 0.0
+    while t < t_max_s - 1e-12:
+        step = min(dt, t_max_s - t)
+        y = _implicit_step(f, t, y, step)
+        t += step
+    _, _, pw, _ = evaluate(y)
+    return y, pw, y[ns + 1] - e0
+
+
+def cycle_steady_state(
+    device: dict, phys: dict[str, Param] | None = None, n_loops: int = 25, case: str = "central", samples: int = 150
+) -> dict:
+    """Replace the infinite blood reservoir with a circulation cycle.
+
+    Each loop the device loads for ``t_lung`` and discharges for ``t_tissue``;
+    the rest of the loop (arteries, veins) is storage and no O2 moves. The
+    tank therefore sees short windows, not a steady reservoir, and only the
+    O2 it loads in one lung transit can be delivered in one tissue transit.
+    The loop repeats until the tank reaches a periodic steady state.
+
+    Returns the per-loop history, the steady-state load and delivery, the
+    tank-pressure swing, the metabolic power, and the nanocrit the device
+    needs to meet the red-cell target at that delivery.
+    """
+    phys = phys or physiology()
+    d = with_case(device, case)
+    ns = d["n_stages"]
+    vols = [0.0] + [d["tank"]["chamber_volume_m3"].value] * (ns - 1) + [d["tank"]["volume_m3"].value]
+    cushion = d["tank"]["cushion_atm"].value
+    y = [rho_of_p(cushion) * vols[k] / NM3 for k in range(1, ns + 1)] + [0.0, 0.0, 0.0]
+    t_lung = phys["t_lung_rest_s"].value
+    t_tissue = phys["t_tissue_rest_s"].value
+    loop_time = phys["blood_volume_m3"].value / phys["cardiac_output_rest_m3_s"].value
+
+    def tank_atm(yy):
+        return p_of_rho(max(yy[ns - 1], 0.0) * NM3 / vols[ns])
+
+    hist = []
+    for i in range(n_loops):
+        p_start = tank_atm(y)
+        n0 = sum(y[:ns])
+        y, pw_fill, e_fill = _window(d, y, "fill", t_lung, samples)
+        n1 = sum(y[:ns])
+        p_peak = tank_atm(y)
+        y, pw_disch, e_disch = _window(d, y, "discharge", t_tissue, samples)
+        p_end = tank_atm(y)
+        delivered = y[ns + 2]
+        y[ns + 2] = 0.0
+        hist.append(
+            {
+                "loop": i + 1,
+                "p_start_atm": p_start,
+                "p_peak_atm": p_peak,
+                "p_end_atm": p_end,
+                "o2_loaded": n1 - n0,
+                "o2_delivered": delivered,
+                "fill_power_w": pw_fill,
+                "discharge_power_w": pw_disch,
+                "energy_j": e_fill + e_disch,
+            }
+        )
+    last, prev = hist[-1], hist[-2] if len(hist) > 1 else hist[-1]
+    delivered_ss = last["o2_delivered"]
+    loaded_ss = last["o2_loaded"]
+    conv = abs(delivered_ss - prev["o2_delivered"]) / delivered_ss if delivered_ss > 0 else float("inf")
+    v_dev = math.pi * device["hull"]["diameter_m"].value**3 / 6.0
+    ref = rbc_reference(phys)
+    energy_ss = last["energy_j"]
+    return {
+        "n_loops": n_loops,
+        "loop_time_s": loop_time,
+        "t_lung_s": t_lung,
+        "t_tissue_s": t_tissue,
+        "history": hist,
+        "steady_o2_loaded": loaded_ss,
+        "steady_o2_delivered": delivered_ss,
+        "steady_fill_fraction": loaded_ss / (delivered_ss if delivered_ss > 0 else float("nan")),
+        "converged": conv < 0.01,
+        "convergence": conv,
+        "tank_swing_atm": [last["p_end_atm"], last["p_peak_atm"]],
+        "target_atm": d["tank"]["target_atm"].value,
+        "reaches_target": last["p_peak_atm"] >= 0.99 * d["tank"]["target_atm"].value,
+        "energy_per_loop_j": energy_ss,
+        "mean_mech_power_w": energy_ss / loop_time,
+        "chem_power_w": energy_ss / loop_time / phys["engine_efficiency"].value,
+        "metabolic_budget_w": phys["metabolic_budget_w"].value,
+        "v_dev_m3": v_dev,
+        "nanocrit_rest": ref["rest_deliver_per_m3_molecules"] * v_dev / delivered_ss if delivered_ss > 0 else float("inf"),
+        "nanocrit_max": ref["max_deliver_per_m3_molecules"] * v_dev / delivered_ss if delivered_ss > 0 else float("inf"),
+    }
+
+
+def cycle_report(device: dict | None = None, phys: dict[str, Param] | None = None, n_loops: int = 25) -> str:
+    """A text summary of the circulation-cycle result for one device."""
+    device = device or _default_device_for_cycle()
+    r = cycle_steady_state(device, phys, n_loops=n_loops)
+    lines = [
+        f"circulation cycle: {r['t_lung_s']:.2f} s lung, {r['t_tissue_s']:.2f} s tissue, "
+        f"loop {r['loop_time_s']:.0f} s, {r['n_loops']} loops",
+        f"  steady state: load {r['steady_o2_loaded']:.3g} O2, deliver {r['steady_o2_delivered']:.3g} O2 per loop "
+        f"(converged {r['converged']}, drift {100 * r['convergence']:.2g}%)",
+        f"  tank swings {r['tank_swing_atm'][0]:.1f} .. {r['tank_swing_atm'][1]:.1f} atm "
+        f"of the {r['target_atm']:.0f} atm target; reaches target {r['reaches_target']}",
+        f"  mechanical {r['mean_mech_power_w']:.3g} W, chemical {r['chem_power_w']:.3g} W "
+        f"(budget {r['metabolic_budget_w']:.0f} W)",
+        f"  nanocrit to meet the red-cell target: {100 * r['nanocrit_rest']:.3g}% rest, "
+        f"{100 * r['nanocrit_max']:.3g}% peak exercise",
+    ]
+    return "\n".join(lines)
+
+
+def _default_device_for_cycle() -> dict:
+    from nanocad.respirocyte_system import default_device
+
+    return default_device()
 
 
 def compression_j_per_molecule(p_low_atm: float, p_high_atm: float) -> float:
@@ -411,7 +559,12 @@ def main() -> int:
     ap.add_argument("--stages", type=int, default=1)
     ap.add_argument("--budget", type=float, help="metabolic budget in W")
     ap.add_argument("--sweep", action="store_true", help="print the diameter-pressure table")
+    ap.add_argument("--cycle", action="store_true", help="run the lung/tissue circulation cycle (M29-02)")
+    ap.add_argument("--loops", type=int, default=25, help="loops for --cycle")
     a = ap.parse_args()
+    if a.cycle:
+        print(cycle_report(n_loops=a.loops))
+        return 0
     if a.sweep:
         print("D(um)  P(atm)  sections  limited   n_cycle      nanocrit_rest  nanocrit_max  chem_max_W")
         for pt in sweep(n_stages=a.stages):

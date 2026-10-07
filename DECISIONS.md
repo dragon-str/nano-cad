@@ -3773,3 +3773,71 @@ kJ/mol, so the absolute energies are too negative. The calculation gives the
 O2 bond strength, not the autoxidation rate. A stronger O2 bond also makes the
 tissue release harder, so the resting-site affinity must absorb the change.
 Simulated.
+
+## ADR-0132: The circulation cycle limits the device to a flow-through pump
+
+Context. The M29-01 time course (ADR-0124) filled the tank from an infinite
+blood reservoir and then discharged it. The real device rides the blood: it
+loads for the pulmonary capillary transit and discharges for the systemic
+transit, and it stores nothing in between. M29-02 replaces the reservoir with
+that cycle and asks what the tank and the delivery really are.
+
+Method. `cycle_steady_state` in `python/nanocad/respirocyte_circulation.py`
+reuses the compartment rates and the backward-Euler stepper of
+`respirocyte_system.py`. Each loop the device loads for `t_lung` (0.75 s at
+rest) and discharges for `t_tissue` (0.75 s); the rest of the 60 s loop is
+arterial and venous storage, with no transfer. The loop repeats until the tank
+reaches a periodic steady state. Tests in
+`python/tests/test_respirocyte_circulation.py`.
+
+Findings. The loop converges in about six loops (drift < 0.001 percent). The
+tank swings 0.02 to 3.7 atm, far below the 1000 atm target. The 0.75 s lung
+window loads 1.28e7 O2, which fills the tank to only 3.7 atm. To reach 1000 atm
+would need 1.67e9 O2, about 130 loops (2.2 h), and the discharge empties the
+tank every loop, so it never charges. The device delivers 1.28e7 O2 per loop,
+set by the loading rate; the load and the delivery balance. The tank drains
+below the 10 atm cushion every loop, so the no-nucleation rule of ADR-0102
+cannot be kept in a real cycle. The loading is power limited: the two cascade
+banks together demand more than the 7.3 pW peak of ADR-0100, so every rotor
+runs at about 73 percent. The default 1 um device needs 5.5 percent nanocrit at
+rest and 16 percent at peak exercise to meet the red-cell target.
+
+Decision. Model the circulation as a real cycle and report the per-loop
+delivery, not the tank capacity. The Freitas 1000 atm tank is a capacity
+ceiling that the pulmonary transit cannot fill; the device is a flow-through
+pump near ambient pressure. The M29-04 top-down design already agrees, because
+it also uses `t_lung` as the loading window, and its optimum is a small device
+at low pressure.
+
+Limits. The discharge has no tissue-demand feedback, so the tank drains to the
+blood pressure. The blood pO2 is held at its arterial and venous values. The
+rotor speeds are the design speeds. The cascade banks are over-provisioned, so
+they waste the fill power; a matched design would load faster. Simulated.
+
+## ADR-0133: One device, every scale
+
+Context. The site had a page for each scale: the atomistic viewer, the system
+model and the 3D models page. The user asked for one view that zooms from the
+whole respirocyte to the atomistic detail without a page change.
+
+Method. `site/device.html` and `site/device.js`, one canvas, no dependency.
+Two data sources: `/api/system` (the L4 layout: hull, bands, tank, chambers)
+and `/api/part?id=carrier_site` (the L1 CAD, 1252 atoms). One log-scale camera,
+`logWidth` from -4.7 m (20 um) to -9.7 m (0.2 nm). The hull is a sphere with
+the three bank bands plus a shell for the unmodelled south; the carrier site
+sits at the north pole. The camera pans from the hull centre to the site
+between -5.2 and -7.0. The hull cross-fades out (-8.4 to -6.4) as the site
+cross-fades in (-6.2 to -7.4). Atoms are ball-and-stick; bonds are computed by
+distance (1.75 A cutoff). A scale bar, a level label and an element legend
+track the view. Drag rotates, scroll or the buttons zoom, and the two buttons
+jump to either end. Linked from every page header.
+
+Decision. Keep one device page and link it from the atomistic viewer, the
+system model and the 3D models page. It is the single place to see the
+respirocyte and its carrier site together.
+
+Limits. The hull is schematic: three coloured bands and a shell, not the
+33,233 measured sections. The atomistic target is the 1252-atom carrier site,
+not the 80,945-atom module, which is too large for a Canvas 2D redraw. The
+atoms are drawn without bonds from the part scene, so the bonds are inferred
+by distance. Simulated schematic.

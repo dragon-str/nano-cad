@@ -61,3 +61,25 @@ def test_the_reversible_cam_costs_less_energy():
 def test_load_work_exceeds_discharge_work():
     pt = rc.design_point(1.0e-6, 500.0)
     assert pt["work_load_j"] > pt["work_discharge_j"]
+
+
+def test_cycle_reaches_a_periodic_steady_state():
+    from nanocad.respirocyte_system import default_device
+
+    r = rc.cycle_steady_state(default_device(), n_loops=20)
+    assert r["converged"]
+    # Mass balance: the O2 loaded in the lung is delivered in the tissue
+    # (to within the small residual tank drift between loops).
+    assert r["steady_o2_delivered"] == pytest.approx(r["steady_o2_loaded"], rel=1e-3)
+    assert r["steady_o2_delivered"] > 1.0e6
+    assert 0.0 < r["nanocrit_rest"] < r["nanocrit_max"]
+
+
+def test_the_lung_window_is_too_short_to_charge_the_tank():
+    # The 1000 atm tank cannot be charged in the 0.75 s pulmonary transit:
+    # the device settles near ambient and is loading-limited, not storage-limited.
+    from nanocad.respirocyte_system import default_device
+
+    r = rc.cycle_steady_state(default_device(), n_loops=20)
+    assert not r["reaches_target"]
+    assert r["tank_swing_atm"][1] < 0.05 * r["target_atm"]

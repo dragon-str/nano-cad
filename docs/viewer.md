@@ -369,3 +369,17 @@ scale (1 um against 8 um) with a close up inset, the passive oxygen rotor in
 detail, and the passive carrier molecule. The file can be sent on its own and
 opened in any browser. Simulated schematic, not a physical render (ADR-0128).
 
+## Device scale explorer
+
+`/device.html` (link "Device explorer" in every header) is one view that zooms
+from the whole respirocyte to the carrier site with no page change. It reads
+`/api/system` for the L4 layout (the 1 um hull with its three bank bands, the O2
+tank and the cascade chambers) and `/api/part?id=carrier_site` for the L1 CAD
+(1252 atoms). One log-scale camera runs from a 20 um view down to a 0.2 nm view.
+The camera pans from the hull centre to the north-pole site as the view shrinks;
+the hull cross-fades out and the site cross-fades in; the atoms turn from a dot
+into ball-and-stick. A scale bar, a level label and an element legend track the
+view. Drag to rotate, scroll or the buttons to zoom, and the `Respirocyte` and
+`Carrier site` buttons jump to either end. The page is `site/device.js` and
+`site/device.html` (Canvas 2D, no dependency). Simulated schematic (ADR-0133).
+
