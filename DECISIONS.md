@@ -3841,3 +3841,45 @@ Limits. The hull is schematic: three coloured bands and a shell, not the
 not the 80,945-atom module, which is too large for a Canvas 2D redraw. The
 atoms are drawn without bonds from the part scene, so the bonds are inferred
 by distance. Simulated schematic.
+
+## ADR-0134: The top-stage carry is not converged, and the top stage is off the critical path
+
+Context. M29-03. A cascade stage pumps only while the free O2 a released pocket
+carries back stays below one molecule per pass. ADR-0124 fit the carry from 16
+single-seed runs as s_back 0.109, which stalls a single stage near 530 atm, and
+called the result unconverged. M29-03 asks for longer, repeated same-pocket MD
+at 600-1000 atm for every pocket of the O2 rotor.
+
+Method. `scripts/top_stage_sweep.py` drives `scripts/pocket_carry_md.py` over
+all eight O2-rotor pockets. Released pockets (the clearance case) at 600 and
+1000 atm, and loaded pockets (a bound O2 on the iron) at 600 atm, 600 ps of
+production each, 4 OpenCL workers, one seed. Sixteen released runs and eight
+loaded runs.
+
+Results. The released pocket carries n_c = 0.30 O2 on average at the top stage
+(per pocket 0.04 to 0.87), nearly independent of pressure. A single stage then
+pumps at 1000 atm, net 1 - 0.30 = 0.70 per pass. Fit against the far gas
+density: s_back 0.060 +- 0.013 (16 runs), s_fwd 0.065 +- 0.022 (8 runs). Both
+fits are through the origin and dominated by the pocket-to-pocket scatter.
+
+But the number is not converged. The pocket load rises with production time:
+one pocket reads 0.04 at 100 ps and 0.38 at 600 ps at the same density. The
+pocket region (r < 0.9 nm, z 0 to 0.66 nm) is 1.7 nm3 and would hold several O2
+at the far density if it were open and at equilibrium, so the 600 ps value is a
+lower bound. The earlier ADR-0124 runs found 1.5 to 2.5 at the same density.
+
+Finding. The sweep does not settle the top stage. It brackets the released
+carry between about 0.3 (600 ps) and about 2 (the earlier runs); the top-stage
+stall lies between about 500 and about 1000 atm. This agrees with ADR-0124: the
+top stage depends on the favourable half of a wide scatter.
+
+Decision. Do not rely on the 1000 atm top stage. ADR-0132 shows the real
+circulation never charges the tank past a few atm, so the device is a
+flow-through pump near ambient and the top stage is off the critical path. Keep
+the cascade as design margin, not a requirement.
+
+Limits. 600 ps production, one seed per pocket, no repeated runs. The
+far-density slab (z 0.9-1.3 nm) is depleted by the rotor, so the fit x-axis is
+a local density, not the bulk; the pocket region also contains rotor atoms, so
+its free volume is below its geometric volume. Simulated estimates, not
+converged.
