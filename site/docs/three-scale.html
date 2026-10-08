@@ -4,27 +4,42 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Three-scale scene export - Nano-CAD docs</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../nav.css" />
   </head>
-  <body class="doc-page">
-    <header>
-      <a href="index.html">Nano-CAD docs</a>
-      <span><a href="../index.html">Three-scale viewer</a></span>
+  <body class="page-scroll">
+<!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="../overview.html">Nano-CAD</a>
+      <span class="site-page">Documentation</span>
+      <span class="site-badge">simulated results</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="../overview.html">Overview</a>
+        <a href="../device.html">Device explorer</a>
+        <a href="../system.html">System model</a>
+        <a href="../models.html">3D models</a>
+        <a href="../index.html">Atomistic viewer</a>
+        <a href="../docs/index.html" aria-current="page">Docs</a>
+      </nav>
     </header>
+    <!-- /site-header -->
+    <div class="doc-page">
+    <p class="doc-crumb"><a href="index.html">Docs</a> / Three-scale scene export</p>
     <main>
-<h1>Three-scale scene export</h1>
+<h1 id="three-scale-scene-export">Three-scale scene export<a class="anchor" href="#three-scale-scene-export" aria-label="Link to this section">#</a></h1>
 <p>This document describes the M8-01 scene export. A visualization tool reads one JSON file and animates the planetary gearbox across three scales.</p>
-<h2>Where the code lives</h2>
+<h2 id="where-the-code-lives">Where the code lives<a class="anchor" href="#where-the-code-lives" aria-label="Link to this section">#</a></h2>
 <p>The export is in <code>crates/jigs/src/scene.rs</code>. It belongs to <code>nanocad-jigs</code> because that crate owns <code>PlanetaryAssembly</code>, the rigid-body device, and the URDF export.</p>
-<h2>The three layers</h2>
+<h2 id="the-three-layers">The three layers<a class="anchor" href="#the-three-layers" aria-label="Link to this section">#</a></h2>
 <p>The scene has three layers. A viewer shows one layer and cross-fades to the next.</p>
 <ul><li><code>atomistic</code> is the L1 view. It holds every atom with its element and its position.</li><li><code>device</code> is the L2 view. It holds every rigid body with its pose and its velocities. It also holds the joints, the gear couplings, and the gear constraints.</li><li><code>coarse</code> is the handoff view. It holds a gear pitch circle for each gear and a bounding cylinder for each body.</li></ul>
-<h2>Coordinate system and units</h2>
+<h2 id="coordinate-system-and-units">Coordinate system and units<a class="anchor" href="#coordinate-system-and-units" aria-label="Link to this section">#</a></h2>
 <ul><li>The frame is right-handed and Cartesian.</li><li>The z axis is the gear axis. The gears lie in the x-y plane.</li><li>Length is SI metres. Angle is SI radians.</li><li>An orientation is a unit quaternion <code>[w, x, y, z]</code>. It maps a body-frame vector to the world frame.</li><li>The atomistic positions are the world-frame positions at the zero configuration. The device poses are the current poses of the rigid-body system. The two agree at the zero configuration.</li></ul>
 <p>A viewer animates an atomistic body with the device transform of the body named by <code>atomistic.atoms[].body</code>. That index points into <code>device.bodies</code>.</p>
-<h2>Determinism</h2>
+<h2 id="determinism">Determinism<a class="anchor" href="#determinism" aria-label="Link to this section">#</a></h2>
 <p>The export is deterministic. The body order, the joint order, and the atom order are the construction order. The code does not iterate a map.</p>
-<h2>Public API</h2>
+<h2 id="public-api">Public API<a class="anchor" href="#public-api" aria-label="Link to this section">#</a></h2>
 <pre><code>pub fn build_scene(
     assembly: &amp;PlanetaryAssembly,
     set: &amp;PlanetarySet,
@@ -39,7 +54,7 @@ pub fn write_scene_json(
     pretty: bool,
 ) -&gt; Result&lt;(), SceneError&gt;</code></pre>
 <p><code>build_scene</code> requires the <code>PlanetarySet</code> that produced the assembly records. It compares the embedded design and returns <code>SceneError::DesignMismatch</code> when the two differ.</p>
-<h2>Schema</h2>
+<h2 id="schema">Schema<a class="anchor" href="#schema" aria-label="Link to this section">#</a></h2>
 <p>The top level holds the schema name, the version, the units, the frame note, the derived design, and the three layers.</p>
 <pre><code class="language-json">{
   &quot;schema&quot;: &quot;nanocad.scene&quot;,
@@ -137,9 +152,9 @@ pub fn write_scene_json(
 <p>The example is shortened. A real file holds every atom, every body, and every joint.</p>
 <p>Notes on the schema:</p>
 <ul><li><code>element</code> is the chemical symbol. An unsupported element becomes <code>Z&amp;lt;n&amp;gt;</code>, where <code>&amp;lt;n&amp;gt;</code> is the atomic number.</li><li><code>part_id</code> is <code>null</code> for the ground. The other bodies use the part ids <code>planetary.sun</code>, <code>planetary.planet.&amp;lt;i&amp;gt;</code>, <code>planetary.ring</code>, and <code>planetary.carrier</code>.</li><li><code>anchor_world_m</code> is <code>null</code> for a prismatic joint. A prismatic joint does not expose its anchor.</li><li><code>axis_b_body</code> is <code>null</code> for a prismatic joint. It does not expose the value.</li><li><code>pitch_circle</code> is <code>null</code> for the ground and for the carrier. The carrier is a plate, not a gear.</li><li><code>bounding_cylinder</code> is <code>null</code> for the ground. The ground has no atoms.</li></ul>
-<h2>Tests</h2>
+<h2 id="tests">Tests<a class="anchor" href="#tests" aria-label="Link to this section">#</a></h2>
 <p><code>crates/jigs/src/scene.rs</code> holds eight tests. They check the layer counts for the default design, finite positions, the atom count against the generated parts, the atom positions against the topology, the JSON round trip, the determinism, the pitch circles, and the file write.</p>
-<h2>Limitations</h2>
+<h2 id="limitations">Limitations<a class="anchor" href="#limitations" aria-label="Link to this section">#</a></h2>
 <ul><li>The atomistic layer is a static snapshot. It has no bonds and no atom type.</li><li>The device layer has no joint limits and no joint names for a joint that the assembly does not name. Such a joint falls back to <code>revolute_&amp;lt;i&amp;gt;</code>.</li><li>The coarse layer uses the device axis only. A tilted body does not tilt its bounding cylinder.</li><li>The export does not read the parameter library. It reads geometry from the generated parts and the design.</li></ul>
     </main>
     <footer>
@@ -148,5 +163,6 @@ pub fn write_scene_json(
       results. The viewer and its scene are schematic, not a built device. No
       medical claim.
     </footer>
+    </div>
   </body>
 </html>

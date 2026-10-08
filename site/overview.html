@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nano-CAD - overview (simulated)</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="nav.css" />
+    <style>
+      .ov { max-width: 1120px; margin: 0 auto; padding: 28px 22px 60px; }
+      .ov h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: -0.01em; }
+      .ov h2 { font-size: 13px; margin: 38px 0 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 650; }
+      .lede { max-width: 760px; color: #c9d1d9; font-size: 16px; margin: 0 0 18px; }
+      .note { max-width: 760px; color: #8b949e; font-size: 13px; margin: 0 0 20px; }
+      .cta { display: flex; gap: 10px; flex-wrap: wrap; }
+      .btn { display: inline-block; padding: 9px 14px; border-radius: 8px; text-decoration: none; font-size: 14px; border: 1px solid #30363d; color: #e6edf3; background: #161b22; }
+      .btn:hover { background: #21262d; }
+      .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; font-weight: 600; }
+      .btn.primary:hover { background: #388bfd; }
+
+      .ladder { display: grid; grid-template-columns: 70px 1fr 1.4fr 170px; border: 1px solid #30363d; border-radius: 10px; overflow: hidden; font-size: 13.5px; }
+      .ladder > div { padding: 9px 12px; border-top: 1px solid #21262d; display: flex; align-items: center; }
+      .ladder > .hd { border-top: 0; background: #161b22; color: #8b949e; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+      .lv { font-weight: 700; color: #58a6ff; font-variant-numeric: tabular-nums; }
+      .ladder a { color: #58a6ff; text-decoration: none; }
+      .span-note { grid-column: 1 / -1; background: #11161d; color: #8b949e; font-size: 12.5px; }
+
+      .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+      .card { display: flex; flex-direction: column; border: 1px solid #30363d; border-radius: 12px; background: #161b22; padding: 16px 16px 14px; }
+      .card h3 { margin: 0 0 4px; font-size: 17px; }
+      .chip { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; background: #1f2a3a; color: #9cc8ff; margin-right: 4px; }
+      .card dl { margin: 10px 0 12px; font-size: 13.5px; }
+      .card dt { color: #8b949e; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 8px; }
+      .card dd { margin: 2px 0 0; color: #c9d1d9; }
+      .card .go { margin-top: auto; }
+      .card code { font-size: 12px; }
+
+      .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; font-size: 13px; }
+      .flow .step { flex: 1 1 160px; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; background: #161b22; }
+      .flow .step b { display: block; color: #e6edf3; margin-bottom: 3px; }
+      .flow .step span { color: #8b949e; }
+      .flow .arrow { align-self: center; color: #58a6ff; font-size: 18px; }
+
+      .status { list-style: none; padding: 0; margin: 0; max-width: 860px; }
+      .status li { display: grid; grid-template-columns: 74px 1fr; gap: 12px; padding: 9px 0; border-top: 1px solid #21262d; font-size: 14px; }
+      .status li:first-child { border-top: 0; }
+      .st { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; border-radius: 4px; padding: 3px 0; text-align: center; height: fit-content; }
+      .st.pass { background: #1f4d2e; color: #9fe2b5; }
+      .st.limit { background: #4d431f; color: #ecd98e; }
+      .st.open { background: #5a2424; color: #f2a5a5; }
+      .status a { color: #58a6ff; text-decoration: none; }
+
+      .foot { margin-top: 44px; padding-top: 14px; border-top: 1px solid #21262d; color: #8b949e; font-size: 12.5px; }
+      .foot code { color: #c9d1d9; }
+      @media (max-width: 720px) {
+        .ladder { grid-template-columns: 52px 1fr; }
+        .ladder .wide { display: none; }
+      }
+    </style>
+  </head>
+  <body class="page-scroll">
+    <!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="overview.html">Nano-CAD</a>
+      <span class="site-page">What is here and how the views connect</span>
+      <span class="site-badge">simulated</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="overview.html" aria-current="page">Overview</a>
+        <a href="device.html">Device explorer</a>
+        <a href="system.html">System model</a>
+        <a href="models.html">3D models</a>
+        <a href="index.html">Atomistic viewer</a>
+        <a href="docs/index.html">Docs</a>
+      </nav>
+    </header>
+    <!-- /site-header -->
+    <main class="ov">
+      <h1>Nano-CAD</h1>
+      <p class="lede">
+        An open, multiscale CAD and simulation platform for atomically precise machines. The worked
+        design study is a respirocyte: a 1 &micro;m oxygen carrier proposed by Robert Freitas, taken
+        from quantum chemistry of its binding site up to its behaviour in the circulation.
+      </p>
+      <p class="note">
+        Every number on these pages is a simulated estimate from model chemistry and lumped models.
+        Nothing here is a built or tested device, and nothing here is a medical claim.
+      </p>
+      <div class="cta">
+        <a class="btn primary" href="device.html">Open the device explorer</a>
+        <a class="btn" href="docs/respirocyte_feasibility.html">Read the feasibility summary</a>
+        <a class="btn" href="docs/DECISIONS.html">Decision log</a>
+      </div>
+
+      <h2>Scales and where to see them</h2>
+      <div class="ladder" role="table" aria-label="Simulation levels">
+        <div class="hd" role="columnheader">Level</div>
+        <div class="hd" role="columnheader">Model</div>
+        <div class="hd wide" role="columnheader">What it answers</div>
+        <div class="hd wide" role="columnheader">View</div>
+
+        <div class="lv">L4</div><div>Lumped system (ODE)</div>
+        <div class="wide">Fill time, power, tank pressure over the lung and tissue cycle</div>
+        <div class="wide"><a href="system.html">System model</a></div>
+
+        <div class="lv">L3</div><div>Continuum adapters</div>
+        <div class="wide">Flow and structure beside the device</div>
+        <div class="wide"><a href="docs/three-scale.html">Docs: three scales</a></div>
+
+        <div class="lv">L2</div><div>Device layer</div>
+        <div class="wide">Rigid bodies, joints, layout at true scale</div>
+        <div class="wide"><a href="models.html">3D models</a></div>
+
+        <div class="lv">L1</div><div>Atomistic engine (Rust)</div>
+        <div class="wide">Parts, forces, seals, pocket carry by molecular dynamics</div>
+        <div class="wide"><a href="index.html">Atomistic viewer</a></div>
+
+        <div class="lv">L0</div><div>Quantum chemistry (PySCF)</div>
+        <div class="wide">O2 binding, the release switch, the distal guard</div>
+        <div class="wide"><a href="docs/DECISIONS.html#adr-0131">Docs: ADR-0131</a></div>
+
+        <div class="span-note">
+          The device explorer crosses L4 to L1 in one continuous zoom: from the whole hull down to the
+          atoms of one carrier site.
+        </div>
+      </div>
+
+      <h2>The views</h2>
+      <div class="cards">
+        <section class="card">
+          <h3>Device explorer</h3>
+          <div><span class="chip">L4 &rarr; L1</span><span class="chip">20 &micro;m &rarr; 0.2 nm</span></div>
+          <dl>
+            <dt>See</dt>
+            <dd>The 1 &micro;m hull with its rotor banks, then one carrier heme site, atom by atom.</dd>
+            <dt>Do</dt>
+            <dd>Scroll to zoom, drag to rotate, or jump to either end. A scale bar tracks the level.</dd>
+            <dt>Data</dt>
+            <dd><code>/api/system</code> layout and the <code>carrier_site</code> part.</dd>
+          </dl>
+          <a class="btn go" href="device.html">Open</a>
+        </section>
+
+        <section class="card">
+          <h3>System model</h3>
+          <div><span class="chip">L4</span><span class="chip">real size</span></div>
+          <dl>
+            <dt>See</dt>
+            <dd>Rotor banks, tank and cascade stages; the fill and discharge time course; indicators.</dd>
+            <dt>Do</dt>
+            <dd>Edit any parameter and recompute in under a second. Each value shows its source:
+              measured, estimated, assumed or reference.</dd>
+            <dt>Data</dt>
+            <dd><code>respirocyte_system.py</code> through <code>/api/system</code>.</dd>
+          </dl>
+          <a class="btn go" href="system.html">Open</a>
+        </section>
+
+        <section class="card">
+          <h3>3D models</h3>
+          <div><span class="chip">L2</span><span class="chip">true relative scale</span></div>
+          <dl>
+            <dt>See</dt>
+            <dd>The respirocyte beside a red blood cell, the oxygen rotor, and the passive carrier.</dd>
+            <dt>Do</dt>
+            <dd>Switch scenes and rotate. No server needed.</dd>
+            <dt>Data</dt>
+            <dd>Self-contained schematic geometry.</dd>
+          </dl>
+          <a class="btn go" href="models.html">Open</a>
+        </section>
+
+        <section class="card">
+          <h3>Atomistic viewer</h3>
+          <div><span class="chip">L1</span><span class="chip">L0&ndash;L2 scene</span></div>
+          <dl>
+            <dt>See</dt>
+            <dd>Any registered part or machine atom by atom, with its components and layers.</dd>
+            <dt>Do</dt>
+            <dd>Edit parameters live, score and optimize, build the sorting rotor, ask the assistant.</dd>
+            <dt>Data</dt>
+            <dd>The Rust part generators, through the app server.</dd>
+          </dl>
+          <a class="btn go" href="index.html">Open</a>
+        </section>
+
+        <section class="card">
+          <h3>Docs</h3>
+          <div><span class="chip">all levels</span></div>
+          <dl>
+            <dt>See</dt>
+            <dd>The plan, the architecture, the parameter contract, the task backlog and the decision log.</dd>
+            <dt>Do</dt>
+            <dd>Follow any result to the decision that records its method and limits.</dd>
+            <dt>Data</dt>
+            <dd>Generated from the repository markdown.</dd>
+          </dl>
+          <a class="btn go" href="docs/index.html">Open</a>
+        </section>
+      </div>
+
+      <h2>How the views connect</h2>
+      <div class="flow">
+        <div class="step"><b>L0 quantum</b><span>Binding and switch energies of the heme site</span></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="step"><b>L1 atomistic</b><span>Parts, seal barriers, pocket carry from MD</span></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="step"><b>Parameters</b><span>Each value tagged with its source (<a href="docs/PARAMETERS.html">contract</a>)</span></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="step"><b>L4 system</b><span>Device time course and the circulation cycle</span></div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="step"><b>Device explorer</b><span>Draws the system layout around the atomistic site</span></div>
+      </div>
+
+      <h2>Where the respirocyte study stands</h2>
+      <ul class="status">
+        <li><span class="st pass">pass</span>
+          <span>A passive heme carrier meets the oxygen flux at 1&ndash;3 % by volume with no engine, and beats
+            the active pump on volume and power. <a href="docs/DECISIONS.html#adr-0126">ADR-0126</a></span></li>
+        <li><span class="st limit">limit</span>
+          <span>In the real circulation the tank charges to only a few atm in each loop. The pump design
+            acts as a flow-through pump near ambient, not a 1000 atm store. <a href="docs/DECISIONS.html#adr-0132">ADR-0132</a></span></li>
+        <li><span class="st open">open</span>
+          <span>The O2 carried back by the top pump stage is not converged. That stage is off the critical
+            path. <a href="docs/DECISIONS.html#adr-0134">ADR-0134</a></span></li>
+        <li><span class="st open">open</span>
+          <span>The lifetime of a synthetic site against autoxidation is unmeasured and spans 12 minutes to
+            800 days across references. <a href="docs/DECISIONS.html#adr-0127">ADR-0127</a></span></li>
+      </ul>
+      <p class="note" style="margin-top:12px">
+        The full table of tests, methods and uncertainties is in the
+        <a href="docs/respirocyte_feasibility.html" style="color:#58a6ff">feasibility summary</a>.
+      </p>
+
+      <div class="foot">
+        Apache-2.0. Run locally with <code>python3 app/server.py --port 8123</code>. The device explorer and the
+        system model need the server. The atomistic viewer works without it on its saved scene, but needs it
+        to build, optimize or chat. The 3D models and the docs are static.
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,120 @@
+/* Shared header for every Nano-CAD page (ADR-0135).
+ *
+ * Literal colours, not the :root variables: models.html defines its own
+ * --bg/--panel/--accent, and the header must look the same everywhere.
+ * The header is exactly 46 px tall; system.html and device.html size their
+ * panes as calc(100vh - 46px). site/check.py keeps the nav identical. */
+
+.site-header {
+  box-sizing: border-box;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 14px 0 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  color: #e6edf3;
+  font: 14px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  white-space: nowrap;
+}
+
+.site-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e6edf3;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+}
+
+.site-brand::before {
+  content: "";
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #9cc8ff 0%, #4f9cf0 45%, #1f4d8f 100%);
+  box-shadow: 0 0 0 2px #2b3a52;
+}
+
+.site-page {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8b949e;
+  font-size: 13px;
+}
+
+.site-badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 4px;
+  background: #f0b429;
+  color: #0d1117;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.site-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.site-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.site-nav a {
+  padding: 7px 10px;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.site-nav a:hover {
+  background: #21262d;
+  color: #ffffff;
+}
+
+.site-nav a[aria-current="page"] {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+  box-shadow: inset 0 -2px 0 #58a6ff;
+}
+
+.site-nav a:focus-visible,
+.site-brand:focus-visible {
+  outline: 2px solid #58a6ff;
+  outline-offset: 1px;
+}
+
+/* A scrolling page: let the body grow so the sticky header stays in view. */
+body.page-scroll {
+  height: auto;
+  min-height: 100%;
+}
+
+@media (max-width: 980px) {
+  .site-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .site-page {
+    display: none;
+  }
+}

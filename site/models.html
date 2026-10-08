@@ -22,15 +22,15 @@
     font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     overflow: hidden;
   }
-  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  #view { position: fixed; top: 46px; left: 0; right: 0; bottom: 0; width: 100%; height: calc(100% - 46px); display: block; cursor: grab; }
   #view.dragging { cursor: grabbing; }
 
-  header {
-    position: fixed; top: 0; left: 0; right: 0; padding: 18px 22px 0;
+  .intro {
+    position: fixed; top: 46px; left: 0; right: 0; padding: 18px 22px 0;
     pointer-events: none;
   }
-  header h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
-  header p { margin: 6px 0 0; color: var(--dim); max-width: 680px; font-size: 13px; }
+  .intro h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .2px; }
+  .intro p { margin: 6px 0 0; color: var(--dim); max-width: 680px; font-size: 13px; }
 
   .card {
     position: fixed; background: rgba(20, 26, 46, .82);
@@ -52,7 +52,7 @@
   .key { display: flex; align-items: center; gap: 9px; margin: 5px 0; font-size: 13px; }
   .sw { width: 13px; height: 13px; border-radius: 3px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.18); }
 
-  #info { right: 22px; top: 22px; text-align: right; min-width: 210px; }
+  #info { right: 22px; top: 68px; text-align: right; min-width: 210px; }
   #info .big { font-size: 15px; font-weight: 600; }
   #info .sub { color: var(--dim); font-size: 12px; margin-top: 3px; }
   #info .rule { height: 1px; background: var(--line); margin: 9px 0; }
@@ -67,18 +67,33 @@
   .hintline { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
   @media (max-width: 720px) {
     #legend { display: none; }
-    header p { display: none; }
+    .intro p { display: none; }
   }
 </style>
+<link rel="stylesheet" href="nav.css" />
 </head>
 <body>
+<!-- site-header -->
+<header class="site-header">
+  <a class="site-brand" href="overview.html">Nano-CAD</a>
+  <span class="site-page">3D models at true relative scale</span>
+  <span class="site-badge">simulated / schematic</span>
+  <nav class="site-nav" aria-label="Nano-CAD views">
+    <a href="overview.html">Overview</a>
+    <a href="device.html">Device explorer</a>
+    <a href="system.html">System model</a>
+    <a href="models.html" aria-current="page">3D models</a>
+    <a href="index.html">Atomistic viewer</a>
+    <a href="docs/index.html">Docs</a>
+  </nav>
+</header>
+<!-- /site-header -->
 <canvas id="view"></canvas>
 
-<header>
+<div class="intro">
   <h1 id="title">Respirocyte and red blood cell - a scale comparison</h1>
   <p id="blurb">A simulated design study. Both objects are drawn at true relative scale. The respirocyte is about 1 micrometre across; a red blood cell is about 8 micrometres.</p>
-  <p style="pointer-events:auto"><a href="/" style="color:var(--accent)">Atomistic viewer</a> &middot; <a href="device.html" style="color:var(--accent)">Device explorer</a> &middot; <a href="system.html" style="color:var(--accent)">System model</a></p>
-</header>
+</div>
 
 <div id="scalebar" class="card">
   <div class="bar" id="sb-bar" style="width:80px"></div>

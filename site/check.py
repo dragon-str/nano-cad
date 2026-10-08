@@ -17,6 +17,7 @@ only.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -103,11 +104,41 @@ def check_docs() -> str:
     return "docs ok: %d markdown inputs have HTML pages" % len(inputs)
 
 
+def check_nav() -> str:
+    """Every app page carries the same header, and every local link resolves."""
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import site_nav  # noqa: E402
+
+    problems = site_nav.check()
+    if problems:
+        fail("; ".join(problems))
+
+    pages = list(site_nav.PAGES)
+    checked = 0
+    for name in pages:
+        text = (SITE_DIR / name).read_text(encoding="utf-8")
+        for href in re.findall(r'href="([^"]+)"', text):
+            if href.startswith(("http:", "https:", "mailto:", "data:", "#")):
+                continue
+            target, _, anchor = href.partition("#")
+            path = (SITE_DIR / target.lstrip("/")) if target not in ("", "/") else SITE_DIR / "index.html"
+            if not path.is_file():
+                fail("site/%s links to missing %s" % (name, href))
+            if anchor and ('id="%s"' % anchor) not in path.read_text(encoding="utf-8"):
+                fail("site/%s links to missing anchor %s" % (name, href))
+            checked += 1
+    sample = SITE_DIR / "docs" / "index.html"
+    if 'class="site-header"' not in sample.read_text(encoding="utf-8"):
+        fail("site/docs pages lack the shared header; run scripts/build_docs_site.py")
+    return "nav ok: %d pages share one header, %d local links resolve" % (len(pages), checked)
+
+
 def main() -> "None":
     scene_path = Path(sys.argv[1]) if len(sys.argv) > 1 else SITE_DIR / "scene.json"
     print(check_scene(scene_path))
     print(check_viewer())
     print(check_docs())
+    print(check_nav())
     print("check: all checks passed")
 
 

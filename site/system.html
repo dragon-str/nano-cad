@@ -6,6 +6,7 @@
     <title>Nano-CAD respirocyte system model (simulated)</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="nav.css" />
     <style>
       .sys-body { margin: 0; background: #11141a; color: #d8dde6; font: 13px/1.4 system-ui, sans-serif; }
       .sys-grid { display: grid; grid-template-columns: 330px 1fr 380px; height: calc(100vh - 46px); }
@@ -38,15 +39,21 @@
     </style>
   </head>
   <body class="sys-body">
-    <header class="viewer-header">
-      <h1>Nano-CAD</h1>
-      <span class="scene-title">Respirocyte system model (real size, 1 um hull)</span>
-      <span class="badge">simulated / estimated</span>
-      <nav>
-        <a href="/">Atomistic viewer</a> &middot; <a href="device.html">Device explorer</a> &middot;
-        <a href="docs/index.html">Docs</a> &middot; <a href="system.js">Source</a>
+    <!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="overview.html">Nano-CAD</a>
+      <span class="site-page">Respirocyte system model (real size, 1 um hull)</span>
+      <span class="site-badge">simulated / estimated</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="overview.html">Overview</a>
+        <a href="device.html">Device explorer</a>
+        <a href="system.html" aria-current="page">System model</a>
+        <a href="models.html">3D models</a>
+        <a href="index.html">Atomistic viewer</a>
+        <a href="docs/index.html">Docs</a>
       </nav>
     </header>
+    <!-- /site-header -->
     <div class="sys-grid">
       <div class="sys-col" id="left">
         <h3>Design</h3>

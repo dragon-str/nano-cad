@@ -3883,3 +3883,30 @@ far-density slab (z 0.9-1.3 nm) is depleted by the rotor, so the fit x-axis is
 a local density, not the bulk; the pocket region also contains rotor atoms, so
 its free volume is below its geometric volume. Simulated estimates, not
 converged.
+
+## ADR-0135: One header and an overview page for every view
+
+Context. The site grew one page at a time: the atomistic viewer, the system
+model, the 3D models page, the device explorer and the docs. Each page had its
+own header and its own list of links. Three pages lacked a link that another
+page had, the 3D models page used a different header style, and no page said
+how the views relate. The user asked for a better interface, kept to plain
+HTML, JS and Canvas.
+
+Decision. One header for every page, from one source. `scripts/site_nav.py`
+holds the nav list and writes the header between two comment markers in each
+app page; `scripts/build_docs_site.py` imports the same function for the docs.
+`site/nav.css` styles it with fixed colours and a fixed 46 px height, which the
+canvas pages already subtract. The header is static HTML, not injected by a
+script, so it works without JavaScript and on `file://`. A new entry page,
+`site/overview.html`, explains each view, the level it covers and the data
+flow between them, and lists where the study stands with links to the ADRs.
+The docs builder gives each heading an anchor (`#adr-NNNN` for decisions), so
+a page can link to one decision. `site/check.py` fails on a stale header and
+on a broken local link or anchor.
+
+Limits. `/` still serves the atomistic viewer, to keep existing links; the
+brand mark leads to the overview. The status list on the overview page is
+written by hand and must be updated with new findings. The system model page
+still needs about 735 px of width because of its three fixed columns.
+

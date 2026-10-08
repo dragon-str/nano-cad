@@ -4,25 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Glossary - Nano-CAD docs</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../nav.css" />
   </head>
-  <body class="doc-page">
-    <header>
-      <a href="index.html">Nano-CAD docs</a>
-      <span><a href="../index.html">Three-scale viewer</a></span>
+  <body class="page-scroll">
+<!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="../overview.html">Nano-CAD</a>
+      <span class="site-page">Documentation</span>
+      <span class="site-badge">simulated results</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="../overview.html">Overview</a>
+        <a href="../device.html">Device explorer</a>
+        <a href="../system.html">System model</a>
+        <a href="../models.html">3D models</a>
+        <a href="../index.html">Atomistic viewer</a>
+        <a href="../docs/index.html" aria-current="page">Docs</a>
+      </nav>
     </header>
+    <!-- /site-header -->
+    <div class="doc-page">
+    <p class="doc-crumb"><a href="index.html">Docs</a> / Glossary</p>
     <main>
-<h1>Glossary</h1>
+<h1 id="glossary">Glossary<a class="anchor" href="#glossary" aria-label="Link to this section">#</a></h1>
 <p>Terms used in this repository. The level names L0 to L4 follow <code>ARCHITECTURE.md</code>.</p>
-<h2>Data model</h2>
+<h2 id="data-model">Data model<a class="anchor" href="#data-model" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>Atom</strong> — The smallest component of a part. An atom has an element, a position, a charge, and a type. The model stores atoms in struct-of-arrays form.</li><li><strong>Bond</strong> — A connection between two atoms. A bond has an order and a type. Topology uses atom indices, not pointers.</li><li><strong>Part</strong> — A named collection of atoms and bonds, plus a material and metadata. A part is the unit that the generators build.</li><li><strong>Assembly</strong> — Parts placed by transforms, with constraints and mates. An assembly is the L2 arrangement of parts.</li><li><strong>Jig</strong> — A constraint that acts on a simulation. The jig types are anchor, motor, spring, thermostat, rigid body, and joint.</li><li><strong>Constraint</strong> — A rule that limits the motion of atoms or bodies. A jig applies a constraint.</li></ul>
-<h2>Jig types</h2>
+<h2 id="jig-types">Jig types<a class="anchor" href="#jig-types" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>Anchor</strong> — A jig that fixes an atom or a group of atoms in place.</li><li><strong>Motor</strong> — A jig that drives motion. A motor applies a constant angular velocity or a torque.</li><li><strong>Spring</strong> — A jig that applies a spring force between atoms or bodies.</li><li><strong>Thermostat</strong> — A jig that holds the temperature at a set value. Langevin and Berendsen are the planned types.</li><li><strong>Rigid body</strong> — A body whose shape does not change. At L2 the engine moves a rigid body by its position and its orientation.</li><li><strong>Joint</strong> — A constraint between rigid bodies. The joint types are revolute, prismatic, fixed, and gear coupling.</li></ul>
-<h2>Model levels</h2>
+<h2 id="model-levels">Model levels<a class="anchor" href="#model-levels" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>L0</strong> — The quantum adapter. It reaches PySCF or xTB through ASE.</li><li><strong>L1</strong> — The atomistic engine. This is our Rust engine for parts, forces, and jigs.</li><li><strong>L2</strong> — The device layer. It holds rigid bodies, joints, and the parameter handoff.</li><li><strong>L3</strong> — The continuum adapter. It reaches external FEA and flow solvers.</li><li><strong>L4</strong> — The system layer. It holds lumped ODE models with CellML or SBML interop.</li></ul>
-<h2>Engine terms</h2>
+<h2 id="engine-terms">Engine terms<a class="anchor" href="#engine-terms" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>Pair list</strong> — A flat list of 32-bit atom index pairs that are close enough to interact. The engine reads the pair list for every force evaluation.</li><li><strong>Skin</strong> — A Verlet skin. This is a buffer distance around the force cutoff. The pair list stays valid until an atom moves more than half the skin.</li></ul>
-<h2>Formats</h2>
+<h2 id="formats">Formats<a class="anchor" href="#formats" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>NCZ</strong> — The native document format. It is a versioned zip of JSON metadata and binary arrays, little endian, with a schema version in the header.</li><li><strong>MMP</strong> — The NanoEngineer file format. nano-cad imports and exports MMP for interop with the old tree.</li></ul>
     </main>
     <footer>
@@ -31,5 +46,6 @@
       results. The viewer and its scene are schematic, not a built device. No
       medical claim.
     </footer>
+    </div>
   </body>
 </html>

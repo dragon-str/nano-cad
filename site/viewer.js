@@ -1652,16 +1652,32 @@
     drawCaption();
   }
 
+  // The library panel floats over the canvas's left edge; start the caption
+  // to its right so it stays readable (and stays in "Save PNG").
+  function captionLeft() {
+    var lib = document.getElementById("library");
+    if (!lib || lib.hidden || lib.offsetParent === null) {
+      return 12;
+    }
+    var libRect = lib.getBoundingClientRect();
+    var canvasRect = canvas.getBoundingClientRect();
+    if (libRect.top - canvasRect.top > 40) {
+      return 12;
+    }
+    return Math.max(12, Math.round(libRect.right - canvasRect.left + 12));
+  }
+
   function drawCaption() {
+    var x = captionLeft();
     ctx.globalAlpha = 1;
     ctx.fillStyle = "rgba(240, 180, 41, 0.9)";
     ctx.font = "bold 12px ui-monospace, Menlo, monospace";
-    ctx.fillText("simulated / schematic", 12, 20);
+    ctx.fillText("simulated / schematic", x, 20);
     ctx.fillStyle = "rgba(139, 148, 158, 0.9)";
     ctx.font = "11px ui-monospace, Menlo, monospace";
     ctx.fillText(
       "yaw " + view.yaw.toFixed(2) + " rad  tilt " + view.tilt.toFixed(2) + " rad",
-      12,
+      x,
       36
     );
   }

@@ -22,6 +22,10 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from site_nav import render_header  # noqa: E402
+
+DOCS_HEADER = render_header("docs", "Documentation", "simulated results", prefix="../", indent="    ")
 OUT_DIR = REPO_ROOT / "site" / "docs"
 
 # These files must exist. A missing core document is a hard error.
@@ -41,13 +45,14 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title} - Nano-CAD docs</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../nav.css" />
   </head>
-  <body class="doc-page">
-    <header>
-      <a href="index.html">Nano-CAD docs</a>
-      <span><a href="../index.html">Three-scale viewer</a></span>
-    </header>
+  <body class="page-scroll">
+{header}
+    <div class="doc-page">
+    <p class="doc-crumb"><a href="index.html">Docs</a> / {title}</p>
     <main>
 {body}
     </main>
@@ -57,6 +62,7 @@ PAGE_TEMPLATE = """<!DOCTYPE html>
       results. The viewer and its scene are schematic, not a built device. No
       medical claim.
     </footer>
+    </div>
   </body>
 </html>
 """
@@ -203,9 +209,19 @@ def parse_list(lines: "list[str]", index: int, ordered: bool) -> "tuple[str, int
     return "".join(parts), index
 
 
+def heading_id(text: str, seen: "dict[str, int]") -> str:
+    """Return a stable, page-unique anchor for one heading."""
+    adr = re.match(r"^ADR-(\d{4})\b", text)
+    slug = "adr-" + adr.group(1) if adr else re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "section"
+    count = seen.get(slug, 0)
+    seen[slug] = count + 1
+    return slug if count == 0 else "%s-%d" % (slug, count + 1)
+
+
 def convert_markdown(text: str) -> str:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     out: list[str] = []
+    seen_ids: dict[str, int] = {}
     index = 0
     count = len(lines)
 
@@ -235,7 +251,11 @@ def convert_markdown(text: str) -> str:
         match = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", line)
         if match:
             level = len(match.group(1))
-            out.append("<h%d>%s</h%d>" % (level, inline(match.group(2)), level))
+            anchor = heading_id(re.sub(r"[`*_]", "", match.group(2)), seen_ids)
+            out.append(
+                '<h%d id="%s">%s<a class="anchor" href="#%s" aria-label="Link to this section">#</a></h%d>'
+                % (level, anchor, inline(match.group(2)), anchor, level)
+            )
             index += 1
             continue
 
@@ -293,6 +313,7 @@ def first_heading(text: str) -> "str | None":
 
 def render_page(title: str, body: str, source: str) -> str:
     return PAGE_TEMPLATE.format(
+        header=DOCS_HEADER,
         title=html.escape(title),
         body=body,
         source=html.escape(source),
@@ -321,7 +342,7 @@ def render_index(pages: "list[dict[str, str]]") -> str:
         parts.append("</ul></div>")
 
     body = "\n".join(parts)
-    return PAGE_TEMPLATE.format(title="Index", body=body, source="generated index")
+    return PAGE_TEMPLATE.format(header=DOCS_HEADER, title="Index", body=body, source="generated index")
 
 
 # --------------------------------------------------------------------------

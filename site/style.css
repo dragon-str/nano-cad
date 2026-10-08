@@ -341,19 +341,34 @@ input[type="range"] {
   padding: 1.5rem 1.25rem 4rem;
 }
 
-.doc-page header {
-  display: flex;
-  align-items: baseline;
-  gap: 1rem;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--panel-border);
-  margin-bottom: 1.5rem;
-  padding-bottom: 0.75rem;
+.doc-crumb {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
 }
 
-.doc-page header a {
+.doc-crumb a {
   color: var(--accent);
   text-decoration: none;
+}
+
+.doc-page h1,
+.doc-page h2,
+.doc-page h3 {
+  scroll-margin-top: 62px; /* below the 46 px sticky header */
+}
+
+.doc-page .anchor {
+  margin-left: 0.4rem;
+  color: var(--text-dim);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+
+.doc-page :is(h1, h2, h3, h4):hover .anchor,
+.doc-page .anchor:focus-visible {
+  opacity: 1;
 }
 
 .doc-page h1,

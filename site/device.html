@@ -6,6 +6,7 @@
     <title>Nano-CAD device scale explorer (simulated)</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="nav.css" />
     <style>
       .dev-body { margin: 0; background: #0b0d11; color: #d8dde6; font: 13px/1.4 system-ui, sans-serif; }
       #stage { display: block; width: 100vw; height: calc(100vh - 46px); cursor: grab; touch-action: none; }
@@ -26,17 +27,21 @@
     </style>
   </head>
   <body class="dev-body">
-    <header class="viewer-header">
-      <h1>Nano-CAD</h1>
-      <span class="scene-title">Device scale explorer</span>
-      <span class="badge">simulated / schematic</span>
-      <nav>
-        <a href="/">Atomistic viewer</a> &middot;
-        <a href="system.html">System model</a> &middot;
-        <a href="models.html">3D models</a> &middot;
-        <a href="device.js">Source</a>
+    <!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="overview.html">Nano-CAD</a>
+      <span class="site-page">Device scale explorer</span>
+      <span class="site-badge">simulated / schematic</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="overview.html">Overview</a>
+        <a href="device.html" aria-current="page">Device explorer</a>
+        <a href="system.html">System model</a>
+        <a href="models.html">3D models</a>
+        <a href="index.html">Atomistic viewer</a>
+        <a href="docs/index.html">Docs</a>
       </nav>
     </header>
+    <!-- /site-header -->
     <canvas id="stage"></canvas>
     <div class="dev-hud">
       <button id="zoom-out" type="button">&#8722;</button>

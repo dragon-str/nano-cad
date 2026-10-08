@@ -4,27 +4,42 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Nano-CAD - Nano-CAD docs</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../nav.css" />
   </head>
-  <body class="doc-page">
-    <header>
-      <a href="index.html">Nano-CAD docs</a>
-      <span><a href="../index.html">Three-scale viewer</a></span>
+  <body class="page-scroll">
+<!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="../overview.html">Nano-CAD</a>
+      <span class="site-page">Documentation</span>
+      <span class="site-badge">simulated results</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="../overview.html">Overview</a>
+        <a href="../device.html">Device explorer</a>
+        <a href="../system.html">System model</a>
+        <a href="../models.html">3D models</a>
+        <a href="../index.html">Atomistic viewer</a>
+        <a href="../docs/index.html" aria-current="page">Docs</a>
+      </nav>
     </header>
+    <!-- /site-header -->
+    <div class="doc-page">
+    <p class="doc-crumb"><a href="index.html">Docs</a> / Nano-CAD</p>
     <main>
-<h1>Nano-CAD</h1>
+<h1 id="nano-cad">Nano-CAD<a class="anchor" href="#nano-cad" aria-label="Link to this section">#</a></h1>
 <p>An open, multiscale, atomically precise CAD and simulation platform for molecular nanotechnology and nanomedicine.</p>
 <p>Status: <strong>pre-alpha.</strong> The core is built end to end and <strong>793 Rust tests plus 93 Python and app tests and 11 JavaScript tests pass</strong> (14 Python tests skip without their optional dependency). The 11-crate workspace has: units, the model and the NCZ/MMP/XYZ/PDB formats, a force engine (bond, angle, torsion, out-of-plane, van der Waals, electrostatic, periodic minimum image, velocity Verlet, conjugate gradient with an L-BFGS stage, a deterministic parallel reduction and a multi-lane nonbonded kernel, Langevin and Berendsen thermostats), part generators (diamond, graphite, nanotube, involute gear, spur gear, planetary set, respirocyte rotor, pump and tank), parameter records and extraction (stiffness, friction, failure, thermal), jigs, rigid-body device joints (revolute, prismatic, gear, fixed, with a velocity-level constraint pass), URDF and three-scale scene export, the CLI, PyO3 bindings, and an MCP server. An agent builds the planetary gearbox through the tool surface alone and measures the analytic 3.5 gear ratio. A clean checkout reproduces the demo with <code>just reproduce</code>. The periodic water box matches OpenMM 8.6.1 to 1e-14 relative and the OpenMM PME check agrees at 2.42e-4 relative at 10 nm. The later-phase adapters are started: L0 quantum (PySCF), L3 continuum (structural and flow), L4 lumped system (SBML and CellML subsets), FL-01, FL-02 and NM-01, RDKit molecule I/O, and a respirocyte seal-leakage model. M8-02 generates the 90-second video at <code>docs/media/nano-cad-gearbox.mp4</code>; its atom layer is the gear generator output, a solid hydrogen-capped diamond lattice in four verified atomic layers. A 3D viewer with zoom level of detail, a generated documentation site, and an interactive app with a live parameter panel and a chat interface live in <code>site/</code> and <code>app/</code>. The app scores the default set with atom count, contact ratio, clearance, a quasi-static slip barrier and its relaxed form, and a harmonic mesh mode and a loaded-contact friction force, and each metric carries a fidelity badge. An optimize stage searches the tooth counts with CMA-ES to lower the slip barrier. See <code>docs/benchmarks.md</code>, <code>docs/validation.md</code>, <code>docs/viewer.md</code> and <code>docs/report.md</code>.</p>
-<h2>Doctrine</h2>
+<h2 id="doctrine">Doctrine<a class="anchor" href="#doctrine" aria-label="Link to this section">#</a></h2>
 <ul><li>Open core under Apache-2.0. Open formats. A governed verified-data library.</li><li>One headless core. The agent, the GUI, and scripts all call the same API.</li><li>Vertical slices before breadth. One part, end to end, before a whole layer.</li><li>Verification first. Every force term needs a finite-difference gradient test.</li><li>SI units internally, with explicit unit types. Never mix Angstrom and nanometre.</li><li>No medical claims. Output is a design hypothesis, not a validated device.</li></ul>
-<h2>Documents</h2>
+<h2 id="documents">Documents<a class="anchor" href="#documents" aria-label="Link to this section">#</a></h2>
 <p>Read in this order.</p>
 <table><thead><tr><th>File</th><th>Purpose</th></tr></thead><tbody><tr><td><code>AGENTS.md</code></td><td>Operating manual for a coding agent. Start here.</td></tr><tr><td><code>PLAN.md</code></td><td>Vision, scope, phases, milestones, risks, funding.</td></tr><tr><td><code>ARCHITECTURE.md</code></td><td>Layers, repo layout, data model, stack, interfaces.</td></tr><tr><td><code>PARAMETERS.md</code></td><td>The multiscale parameter schema. The central contract.</td></tr><tr><td><code>TASKS.md</code></td><td>The iterative backlog. Pick the next unchecked task.</td></tr><tr><td><code>DECISIONS.md</code></td><td>The decision log (ADRs). Record decisions here.</td></tr><tr><td><code>docs/benchmarks.md</code></td><td>Public benchmark page: hardware, timing, caveats.</td></tr><tr><td><code>docs/validation.md</code></td><td>Cross-check results against OpenMM and GROMACS.</td></tr><tr><td><code>docs/viewer.md</code></td><td>The 3D viewer, the docs site, and the interactive app.</td></tr></tbody></table>
-<h2>Reproduce the demo</h2>
+<h2 id="reproduce-the-demo">Reproduce the demo<a class="anchor" href="#reproduce-the-demo" aria-label="Link to this section">#</a></h2>
 <p>A clean checkout reproduces the planetary gearbox demo with one command. The first run needs network access to download <code>maturin</code> and <code>pytest</code>.</p>
 <pre><code class="language-sh">just reproduce</code></pre>
 <p>The script checks the toolchains, builds the extension with maturin from <code>python/</code>, runs the Rust tests, runs the MCP demo test, and prints the measured gear ratio. See <code>docs/reproduce.md</code> for the prerequisites, the exact commands, what each step proves, and what is not reproduced.</p>
-<h2>License</h2>
+<h2 id="license">License<a class="anchor" href="#license" aria-label="Link to this section">#</a></h2>
 <p>Apache-2.0. See <code>LICENSE</code>. This project is inspired by NanoEngineer, which is GPLv2. No NanoEngineer code was copied. We read it for algorithms only and reimplemented from scratch.</p>
     </main>
     <footer>
@@ -33,5 +48,6 @@
       results. The viewer and its scene are schematic, not a built device. No
       medical claim.
     </footer>
+    </div>
   </body>
 </html>

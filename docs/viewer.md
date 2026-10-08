@@ -342,6 +342,27 @@ check: all checks passed
   commands only. It clamps every value and reports the engine error verbatim.
 - No medical claim is made. The output is a design hypothesis.
 
+## Site layout and navigation
+
+Every page carries the same 46 px header: the Nano-CAD mark, the page title, the
+`simulated` badge and one nav bar (Overview, Device explorer, System model, 3D
+models, Atomistic viewer, Docs). The current page is marked. The header stays in
+view while a long page scrolls.
+
+- `site/overview.html` is the entry page. It explains each view, the scale it
+  covers (L0 to L4), how data flows between the views, and where the
+  respirocyte study stands, with links to the decisions.
+- `site/nav.css` styles the header. It uses fixed colours, so a page's own
+  colour variables cannot change it.
+- `scripts/site_nav.py` holds the nav list and writes the header block
+  between `<!-- site-header -->` and `<!-- /site-header -->` in each page. Edit
+  the list there, then run `python3 scripts/site_nav.py`.
+- `scripts/build_docs_site.py` uses the same header for the docs pages, and
+  gives every heading an anchor. An ADR heading gets `#adr-NNNN`, for example
+  `docs/DECISIONS.html#adr-0132`.
+- `python3 site/check.py` fails if a page header differs from the list, or if a
+  local link or anchor on an app page does not resolve.
+
 ## System model page
 
 `/system` (link "System model" in the header) shows the respirocyte at real

@@ -4,23 +4,38 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AGENTS.md — Operating Manual - Nano-CAD docs</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="../nav.css" />
   </head>
-  <body class="doc-page">
-    <header>
-      <a href="index.html">Nano-CAD docs</a>
-      <span><a href="../index.html">Three-scale viewer</a></span>
+  <body class="page-scroll">
+<!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="../overview.html">Nano-CAD</a>
+      <span class="site-page">Documentation</span>
+      <span class="site-badge">simulated results</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="../overview.html">Overview</a>
+        <a href="../device.html">Device explorer</a>
+        <a href="../system.html">System model</a>
+        <a href="../models.html">3D models</a>
+        <a href="../index.html">Atomistic viewer</a>
+        <a href="../docs/index.html" aria-current="page">Docs</a>
+      </nav>
     </header>
+    <!-- /site-header -->
+    <div class="doc-page">
+    <p class="doc-crumb"><a href="index.html">Docs</a> / AGENTS.md — Operating Manual</p>
     <main>
-<h1>AGENTS.md — Operating Manual</h1>
+<h1 id="agents-md-operating-manual">AGENTS.md — Operating Manual<a class="anchor" href="#agents-md-operating-manual" aria-label="Link to this section">#</a></h1>
 <p>This file tells a coding agent how to work in this repository. Read it first.</p>
-<h2>Read order</h2>
+<h2 id="read-order">Read order<a class="anchor" href="#read-order" aria-label="Link to this section">#</a></h2>
 <ol><li><code>AGENTS.md</code> (this file)</li><li><code>PLAN.md</code> — what we are building and why</li><li><code>ARCHITECTURE.md</code> — how it is built</li><li><code>PARAMETERS.md</code> — the central data contract</li><li><code>TASKS.md</code> — the backlog</li><li><code>DECISIONS.md</code> — the decision log</li></ol>
-<h2>Ground rules</h2>
+<h2 id="ground-rules">Ground rules<a class="anchor" href="#ground-rules" aria-label="Link to this section">#</a></h2>
 <ol><li><strong>License.</strong> All code is Apache-2.0. Never copy GPL code. The upstream NanoEngineer C engine is GPLv2. You may read it for algorithms. You must reimplement. During development it lives at <code>/tmp/nanoengineer</code>.</li><li><strong>Units.</strong> Use SI internally. Use the units module. Never mix Angstrom and nanometre. Put the unit in the variable name when it is ambiguous, for example <code>length_m</code> or <code>time_s</code>.</li><li><strong>Verification.</strong> Every analytic force term needs a finite-difference gradient test. A term does not merge without one.</li><li><strong>No overclaiming.</strong> Write "simulated", never "built", "proven", or "validated for medicine". Mark estimates as estimates.</li><li><strong>Vertical slices.</strong> Build a thin end-to-end path before a broad layer. The first slice is the planetary gearbox. See <code>PLAN.md</code>.</li><li><strong>Small commits.</strong> One task per commit. Keep the tree green.</li></ol>
-<h2>The work loop</h2>
+<h2 id="the-work-loop">The work loop<a class="anchor" href="#the-work-loop" aria-label="Link to this section">#</a></h2>
 <ol><li>Open <code>TASKS.md</code>. Pick the first unchecked task in the current milestone. If the user named a task, do that one.</li><li>Mark it in progress. Append <code> &amp;lt;!-- WIP --&amp;gt;</code> to the task line.</li><li>Implement the task. Add tests at the same time.</li><li>Run the verification commands below. Fix every failure.</li><li>Update <code>TASKS.md</code>: change <code>[ ]</code> to <code>[x]</code>, remove <code>&amp;lt;!-- WIP --&amp;gt;</code>, and append a one-line result note.</li><li>If you made an architectural decision, add an entry to <code>DECISIONS.md</code>.</li><li>Commit. The message says what changed and which task it closes.</li><li>Report to the user in Simplified Technical English. State the route.</li></ol>
-<h2>Verification commands</h2>
+<h2 id="verification-commands">Verification commands<a class="anchor" href="#verification-commands" aria-label="Link to this section">#</a></h2>
 <p>Create these as the tree grows. They are the gate.</p>
 <pre><code>cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -28,17 +43,17 @@ cargo test --workspace
 cargo bench            # timing only, not a gate
 just py-test           # pytest through uv (numpy&gt;=2, scipy)
 just verify            # runs all gates</code></pre>
-<h2>Resource limits (hard rule)</h2>
+<h2 id="resource-limits-hard-rule">Resource limits (hard rule)<a class="anchor" href="#resource-limits-hard-rule" aria-label="Link to this section">#</a></h2>
 <p>The development machine is a Mac mini with 16 GB of memory. On 2026-09-25 a quantum-chemistry run started 10 PySCF workers at 3 GB each, used 27 GB and crashed the machine.</p>
 <ul><li>Before any parallel or long job, read the memory size (<code>sysctl -n hw.memsize</code>) and plan the total. All jobs together must stay under 40 percent of physical memory (about 6.5 GB).</li><li>A parallel script must set a per-worker memory budget, cap its worker count from that budget, and run a watchdog that stops every worker when the summed resident memory passes the cap. <code>scripts/fe_o2_switch_scan.py</code> is the model.</li><li>Run one heavy job at a time. Do not start a second job while one runs.</li><li>Print the plan (<code>--dry-run</code>) before a new heavy run.</li><li>A progress check must treat "no job process" as finished. Never measure a default PID: PID 0 sums the whole machine.</li><li>Keep Python environments out of <code>/tmp</code>; macOS clears it. Use <code>~/.cache/nano-cad/</code> (for example <code>~/.cache/nano-cad/qm</code>).</li></ul>
-<h2>Definition of done</h2>
+<h2 id="definition-of-done">Definition of done<a class="anchor" href="#definition-of-done" aria-label="Link to this section">#</a></h2>
 <p>A task is done only when all of these are true.</p>
 <ul><li>The code compiles with no warnings.</li><li>Tests are added and pass.</li><li>A finite-difference gradient test exists for any new force term.</li><li>The energy-conservation check passes for any new integrator or thermostat.</li><li>The relevant docs are updated.</li><li><code>TASKS.md</code> shows the task checked with a result note.</li><li>No GPL code was copied.</li></ul>
-<h2>Code conventions</h2>
+<h2 id="code-conventions">Code conventions<a class="anchor" href="#code-conventions" aria-label="Link to this section">#</a></h2>
 <ul><li><strong>Rust.</strong> <code>rustfmt</code>, <code>clippy</code>. Library crates use <code>#![forbid(unsafe_code)]</code> except a single audited FFI crate. Use <code>thiserror</code> in libraries. Do not panic in library code.</li><li><strong>Python.</strong> <code>ruff</code> and <code>black</code>. Type hints on public functions.</li><li><strong>Naming.</strong> <code>snake_case</code>. Suffix quantities with their unit.</li><li><strong>Comments.</strong> Explain why, not what. Keep them short.</li><li><strong>Tests.</strong> Unit tests beside the code. Golden files under <code>tests/golden/</code>. Benchmarks under <code>benchmarks/</code>.</li></ul>
-<h2>What not to touch</h2>
+<h2 id="what-not-to-touch">What not to touch<a class="anchor" href="#what-not-to-touch" aria-label="Link to this section">#</a></h2>
 <ul><li>Do not add credentials, tokens, or personal data to this repository.</li><li>Do not add a dependency without checking its license. Record it in <code>ARCHITECTURE.md</code>.</li><li>Do not change the parameter schema without a version bump and an ADR.</li></ul>
-<h2>Reporting to the user</h2>
+<h2 id="reporting-to-the-user">Reporting to the user<a class="anchor" href="#reporting-to-the-user" aria-label="Link to this section">#</a></h2>
 <ul><li>Open every reply with one route line, for example <code>-&amp;gt; Claude Opus</code>.</li><li>Write in Simplified Technical English. Short sentences. Active voice.</li><li>Report what is done, what is verified, and what is still open.</li><li>Never report a delegated change as done before you read the diff.</li></ul>
     </main>
     <footer>
@@ -47,5 +62,6 @@ just verify            # runs all gates</code></pre>
       results. The viewer and its scene are schematic, not a built device. No
       medical claim.
     </footer>
+    </div>
   </body>
 </html>

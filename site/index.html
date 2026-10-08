@@ -6,24 +6,24 @@
     <title>Nano-CAD viewer (simulated / schematic)</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="nav.css" />
   </head>
   <body class="viewer-body">
-    <header class="viewer-header">
-      <h1>Nano-CAD</h1>
-      <span id="scene-title" class="scene-title">Loading ...</span>
-      <span class="badge">simulated / schematic</span>
-      <nav>
+    <!-- site-header -->
+    <header class="site-header">
+      <a class="site-brand" href="overview.html">Nano-CAD</a>
+      <span class="site-page" id="scene-title">Loading ...</span>
+      <span class="site-badge">simulated / schematic</span>
+      <nav class="site-nav" aria-label="Nano-CAD views">
+        <a href="overview.html">Overview</a>
         <a href="device.html">Device explorer</a>
-        &middot;
         <a href="system.html">System model</a>
-        &middot;
         <a href="models.html">3D models</a>
-        &middot;
+        <a href="index.html" aria-current="page">Atomistic viewer</a>
         <a href="docs/index.html">Docs</a>
-        &middot;
-        <a href="viewer.js">Source</a>
       </nav>
     </header>
+    <!-- /site-header -->
 
     <div id="app">
       <canvas id="gl-canvas"></canvas>
