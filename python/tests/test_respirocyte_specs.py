@@ -51,9 +51,61 @@ def test_site_lifetime_falls_as_autoxidation_rises():
     rows = rs.lifetime_table(0.073)
     lives = [r["lifetime_days"] for r in rows]
     assert lives == sorted(lives)
-    assert lives[0] < 1.0 and lives[-1] > 100.0
+    # The measured references span seconds (no distal H-bond) to about 6 days.
+    assert lives[0] < 1.0 and 5.0 < lives[-1] < 7.0
 
 
-def test_engineered_pocket_beats_the_red_cell():
-    engineered = rs.AUTOXIDATION_PER_S["engineered pocket"]
-    assert rs.autoxidation_lifetime_s(engineered) > rs.RBC_LIFETIME_S
+def test_every_reference_rate_is_sourced_and_positive():
+    for name, k, temp_c, pmid, _ in rs.AUTOXIDATION_REFERENCES:
+        assert k > 0, name
+        assert pmid.isdigit(), name
+        assert 20.0 <= temp_c <= 40.0, name
+
+
+def test_no_measured_heme_carrier_reaches_the_target_or_the_red_cell():
+    slowest = min(rs.AUTOXIDATION_PER_S.values())
+    assert slowest > rs.AUTOXIDATION_TARGET_PER_S
+    assert rs.autoxidation_lifetime_s(slowest) < rs.RBC_LIFETIME_S
+
+
+def test_native_myoglobin_matches_brantley():
+    # 0.055 per hour at 37 C (PubMed 8463233): a half-life of about 12.6 h.
+    k = rs.AUTOXIDATION_PER_S["myoglobin, native"]
+    assert rs.autoxidation_lifetime_s(k) / 3600.0 == pytest.approx(12.6, rel=0.01)
+
+
+def test_two_channel_fit_reproduces_hemoglobin():
+    fit = rs.fit_two_channel()
+    assert fit["k_ox_per_s"] > 0 and fit["k_bi_per_s_mmhg"] > 0
+    assert fit["max_rel_residual"] < 0.10
+    # The oxy channel alone must agree with HbA in air within a factor of 2.
+    assert 0.5 < fit["hba_air_check_ratio"] < 2.0
+    for p, t_h in rs.HB_PLASMA_HALF_LIFE_H:
+        k = rs.autoxidation_rate(p, rs.HB_P50_MMHG, rs.HB_HILL_N, fit=fit)
+        assert math.log(2) / k / 3600.0 == pytest.approx(t_h, rel=0.10)
+
+
+def test_autoxidation_is_faster_in_venous_blood():
+    art = rs.autoxidation_rate(95.0, rs.HB_P50_MMHG, rs.HB_HILL_N)
+    ven = rs.autoxidation_rate(40.0, rs.HB_P50_MMHG, rs.HB_HILL_N)
+    assert ven > art
+
+
+def test_pocket_cases_are_ordered_and_bracket_the_central_value():
+    cases = {r["case"]: r for r in rs.pocket_autoxidation(26.8, 2.0)}
+    assert cases["optimistic"]["k_per_s"] < cases["central"]["k_per_s"] < cases["pessimistic"]["k_per_s"]
+    assert cases["central"]["k_per_s"] < cases["hemoglobin-like pocket"]["k_per_s"]
+
+
+def test_a_higher_affinity_site_lasts_longer():
+    def central(p50):
+        return next(r for r in rs.pocket_autoxidation(p50, 2.0) if r["case"] == "central")["half_life_h"]
+
+    assert central(10.0) > central(26.8) > central(40.0)
+
+
+def test_carrier_lifetime_comes_from_the_pocket_model():
+    dend = next(m for m in rs.carrier_reference() if m["name"] == "dendrimer-heme")
+    spec = rs.carrier_spec(dend)
+    central = next(r for r in rs.pocket_autoxidation(26.8, 2.0) if r["case"] == "central")
+    assert spec["site_lifetime_days"] * 24.0 == pytest.approx(central["half_life_h"], rel=1e-9)
