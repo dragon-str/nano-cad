@@ -243,6 +243,37 @@ impl Topology {
         (0..self.bond_count()).filter_map(|index| self.bond(index))
     }
 
+    /// Returns a copy without the listed atoms, and the index map.
+    ///
+    /// The map has one entry per original atom: the new index, or `None` for
+    /// a removed atom. Bonds that touch a removed atom are dropped; the rest
+    /// keep their order and kind. Indexes out of range are ignored.
+    pub fn without_atoms(&self, remove: &[usize]) -> (Topology, Vec<Option<u32>>) {
+        let mut gone = vec![false; self.atom_count()];
+        for &index in remove {
+            if let Some(flag) = gone.get_mut(index) {
+                *flag = true;
+            }
+        }
+        let mut out = Topology::new();
+        let mut map = Vec::with_capacity(self.atom_count());
+        for (index, removed) in gone.iter().enumerate() {
+            match (removed, self.atom(index)) {
+                (false, Some(atom)) => map.push(Some(out.add_atom(atom))),
+                _ => map.push(None),
+            }
+        }
+        for bond in self.bonds() {
+            let u = map.get(bond.u as usize).copied().flatten();
+            let v = map.get(bond.v as usize).copied().flatten();
+            if let (Some(u), Some(v)) = (u, v) {
+                // Both ends exist in `out`, so this cannot fail.
+                let _ = out.add_bond(Bond::new(u, v, bond.order, bond.bond_type));
+            }
+        }
+        (out, map)
+    }
+
     fn position_slice(&self, index: usize) -> Option<&[f64]> {
         if index >= self.atom_count() {
             return None;
@@ -439,5 +470,23 @@ mod tests {
         topology.add_atom(atom(Element::HYDROGEN, 0.0, "H"));
         topology.positions_m_mut().copy_from_slice(&[7.0, 8.0, 9.0]);
         assert_eq!(topology.position_m(0), Some([7.0, 8.0, 9.0]));
+    }
+
+    #[test]
+    fn without_atoms_drops_the_atom_and_its_bonds_and_maps_the_rest() {
+        let mut t = Topology::new();
+        for x in 0..4 {
+            t.add_atom(Atom::new(Element::CARBON, [x as f64, 0.0, 0.0], 0.0, "C"));
+        }
+        t.add_bond(Bond::new(0, 1, 1, BondType::Single)).unwrap();
+        t.add_bond(Bond::new(1, 2, 2, BondType::Double)).unwrap();
+        t.add_bond(Bond::new(2, 3, 1, BondType::Single)).unwrap();
+        let (out, map) = t.without_atoms(&[1, 99]);
+        assert_eq!(out.atom_count(), 3);
+        assert_eq!(map, vec![Some(0), None, Some(1), Some(2)]);
+        assert_eq!(out.bond_count(), 1);
+        let b = out.bond(0).unwrap();
+        assert_eq!((b.u, b.v, b.order), (1, 2, 1));
+        assert_eq!(out.position_m(1), Some([2.0, 0.0, 0.0]));
     }
 }

@@ -240,6 +240,9 @@ pub struct HemeRotorSet {
     /// For each site, the (site atom, rotor atom) pairs of the covalent
     /// attachment tethers. The site atom is a tether end carbon.
     pub site_anchor: Vec<Vec<(usize, usize)>>,
+    /// For each site, its tethers (ADR-0137). The rotor atom indexes are those
+    /// of `rotor`, after the replaced hydrogens were removed.
+    pub site_tethers: Vec<Vec<Tether>>,
     /// The azimuth of each pocket, in radians.
     pub azimuth_rad: Vec<f64>,
     /// Whether each pocket shows the loaded state.
@@ -652,12 +655,13 @@ impl HemeRotorGenerator {
             }),
             None => solid,
         };
-        let rotor = capped_lattice(fill_solid(solid.as_ref()))?;
+        let mut rotor = capped_lattice(fill_solid(solid.as_ref()))?;
 
         let mut sites = Vec::with_capacity(count);
         let mut arms = Vec::with_capacity(count);
         let mut site_iron = Vec::with_capacity(count);
         let mut site_anchor: Vec<Vec<(usize, usize)>> = Vec::with_capacity(count);
+        let mut site_tethers: Vec<Vec<Tether>> = Vec::with_capacity(count);
         let mut loaded = Vec::with_capacity(count);
         let mut pin_side = Vec::with_capacity(count);
         for (k, &az) in azimuths.iter().enumerate() {
@@ -667,8 +671,9 @@ impl HemeRotorGenerator {
             let fe = [iron_r_m * c, iron_r_m * s, 0.0];
             let is_loaded = ArmCamTrack::loaded_fraction(az) >= 0.5;
             loaded.push(is_loaded);
-            let (site, fe_i, anchors) = build_heme_site(fe, u, t, &rotor, is_loaded)?;
-            site_anchor.push(anchors);
+            let (site, fe_i, tethers) = build_heme_site(fe, u, t, &rotor, is_loaded)?;
+            site_anchor.push(tethers.iter().map(|x| (x.site_atom, x.wall_atom)).collect());
+            site_tethers.push(tethers);
             site_iron.push(fe_i);
             sites.push(
                 Part::new(format!("heme_site_{k}"), site).with_material("Fe-porphine (model)"),
@@ -698,12 +703,35 @@ impl HemeRotorGenerator {
             arms.push(Part::new(format!("ligand_arm_{k}"), placed).with_material("diamond + NH2"));
         }
 
+        // Each tether replaced a rotor hydrogen: remove those, and renumber.
+        let gone: Vec<usize> = site_tethers
+            .iter()
+            .flatten()
+            .map(|x| x.wall_hydrogen)
+            .collect();
+        let (pruned, map) = rotor.without_atoms(&gone);
+        rotor = pruned;
+        let remap = |i: usize| -> Result<usize, PartError> {
+            map.get(i)
+                .copied()
+                .flatten()
+                .map(|v| v as usize)
+                .ok_or_else(|| PartError::InvalidGeometry("a tether anchor was removed".to_owned()))
+        };
+        for (pairs, tethers) in site_anchor.iter_mut().zip(site_tethers.iter_mut()) {
+            for (pair, tether) in pairs.iter_mut().zip(tethers.iter_mut()) {
+                tether.wall_atom = remap(tether.wall_atom)?;
+                pair.1 = tether.wall_atom;
+            }
+        }
+
         Ok(HemeRotorSet {
             rotor: Part::new("heme_rotor", rotor).with_material("diamond"),
             sites,
             arms,
             site_iron,
             site_anchor,
+            site_tethers,
             arm_tip: vec![cap; count],
             azimuth_rad: azimuths,
             loaded,
@@ -729,9 +757,197 @@ impl HemeRotorGenerator {
 /// `wall`, and the bound O2 when `loaded`. The ring lies in the plane spanned
 /// by `t` and `cross(u, t)`; the iron-O2 axis is `u`. Returns the site, the
 /// iron index, and the (site atom, wall atom) anchor pairs.
-/// One built heme-like site: its topology, its iron index, and the
-/// (site atom, wall atom) pairs of the covalent tethers.
-type HemeSite = (Topology, usize, Vec<(usize, usize)>);
+/// One covalent tether from a porphine meso carbon to a wall carbon.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tether {
+    /// The tether end carbon inside the site part, bonded to `wall_atom`.
+    pub site_atom: usize,
+    /// The wall carbon the tether bonds to.
+    pub wall_atom: usize,
+    /// The wall hydrogen the tether replaces. The generator removes it, so
+    /// after assembly this index no longer names an atom of the wall.
+    pub wall_hydrogen: usize,
+    /// Carbons between the meso carbon and the wall carbon.
+    pub bridge_atoms: usize,
+    /// Valence strain of the tether (bonds, angles, meso planarity) in the
+    /// harmonic MM3-scale field of `tether_energy`, in kJ/mol (ADR-0137).
+    pub strain_kj_mol: f64,
+    /// The soft steric penalty of the placed bridge carbons, in kJ/mol. A
+    /// placement margin, not a physical energy.
+    pub steric_kj_mol: f64,
+}
+
+/// One built heme-like site: its topology, its iron index, and its tethers.
+type HemeSite = (Topology, usize, Vec<Tether>);
+
+// The tether field (ADR-0137): the MM3-scale constants of the valence
+// relaxation (`nanocad_meter::valence_relax`), plus an in-plane term at the sp2
+// meso carbon and a soft steric wall. Lengths in angstrom, energy in kJ/mol.
+const TETHER_K_BOND: f64 = 449.0 * 1.0e-20 * 6.022_140_76e23 / 1000.0; // kJ/mol/A^2
+const TETHER_K_ANGLE: f64 = 0.67e-18 * 6.022_140_76e23 / 1000.0; // kJ/mol/rad^2
+const TETHER_R0_CC: f64 = 1.544;
+const TETHER_R0_SP2: f64 = 1.51;
+const TETHER_STERIC_A: f64 = 3.0;
+/// The clearance from a bridge carbon to a hydrogen, in angstrom. The bridge
+/// carbons carry their own hydrogens, which are not in the field; this margin
+/// keeps the chain off the wall and ring hydrogens.
+const TETHER_STERIC_H_A: f64 = 2.0;
+/// A tether may use this much more strain than the best one if it is shorter,
+/// in kJ/mol: a shorter link holds the ring more rigidly.
+const TETHER_SHORTER_MARGIN_KJ_MOL: f64 = 10.0;
+
+fn bend(a: [f64; 3], b: [f64; 3], c: [f64; 3]) -> f64 {
+    let u = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let v = [c[0] - b[0], c[1] - b[1], c[2] - b[2]];
+    let nu = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
+    let nv = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if nu == 0.0 || nv == 0.0 {
+        return 0.0;
+    }
+    ((u[0] * v[0] + u[1] * v[1] + u[2] * v[2]) / (nu * nv))
+        .clamp(-1.0, 1.0)
+        .acos()
+}
+
+/// The fixed ends and surroundings of one candidate tether, in angstrom.
+struct TetherFrame {
+    meso: [f64; 3],
+    ring_nb: Vec<[f64; 3]>,
+    ring_normal: [f64; 3],
+    wall: [f64; 3],
+    wall_nb: Vec<[f64; 3]>,
+    obstacles: Vec<[f64; 3]>,
+    hydrogens: Vec<[f64; 3]>,
+}
+
+/// The tether energy for bridge carbons `x` (3 per atom): (valence, steric), in kJ/mol.
+fn tether_terms(f: &TetherFrame, x: &[f64]) -> (f64, f64) {
+    let n = x.len() / 3;
+    let mut chain = Vec::with_capacity(n + 2);
+    chain.push(f.meso);
+    for i in 0..n {
+        chain.push([x[3 * i], x[3 * i + 1], x[3 * i + 2]]);
+    }
+    chain.push(f.wall);
+    let tetra = (-1.0_f64 / 3.0).acos();
+    let mut e = 0.0;
+    for i in 0..chain.len() - 1 {
+        let r0 = if i == 0 { TETHER_R0_SP2 } else { TETHER_R0_CC };
+        e += 0.5 * TETHER_K_BOND * (dist(chain[i], chain[i + 1]) - r0).powi(2);
+    }
+    for r in &f.ring_nb {
+        e += 0.5 * TETHER_K_ANGLE * (bend(*r, chain[0], chain[1]) - 120.0_f64.to_radians()).powi(2);
+    }
+    let d1 = normalize([
+        chain[1][0] - chain[0][0],
+        chain[1][1] - chain[0][1],
+        chain[1][2] - chain[0][2],
+    ]);
+    let off = (d1[0] * f.ring_normal[0] + d1[1] * f.ring_normal[1] + d1[2] * f.ring_normal[2])
+        .clamp(-1.0, 1.0);
+    e += 0.5 * TETHER_K_ANGLE * off.asin().powi(2);
+    for i in 1..chain.len() - 1 {
+        e += 0.5 * TETHER_K_ANGLE * (bend(chain[i - 1], chain[i], chain[i + 1]) - tetra).powi(2);
+    }
+    let last = chain.len() - 1;
+    for w in &f.wall_nb {
+        e += 0.5 * TETHER_K_ANGLE * (bend(*w, chain[last], chain[last - 1]) - tetra).powi(2);
+    }
+    let valence = e;
+    let mut e = 0.0;
+    for q in &chain[1..last] {
+        for o in &f.obstacles {
+            let d = dist(*q, *o);
+            if d < TETHER_STERIC_A {
+                e += 0.5 * TETHER_K_BOND * (TETHER_STERIC_A - d).powi(2);
+            }
+        }
+        for o in &f.hydrogens {
+            let d = dist(*q, *o);
+            if d < TETHER_STERIC_H_A {
+                e += 0.5 * TETHER_K_BOND * (TETHER_STERIC_H_A - d).powi(2);
+            }
+        }
+    }
+    (valence, e)
+}
+
+fn tether_energy(f: &TetherFrame, x: &[f64]) -> f64 {
+    let (v, st) = tether_terms(f, x);
+    v + st
+}
+
+/// Places `n` bridge carbons by gradient descent from several starts.
+/// Returns the positions (angstrom) and the strain (kJ/mol).
+fn solve_tether(f: &TetherFrame, n: usize) -> (Vec<[f64; 3]>, f64) {
+    if n == 0 {
+        return (Vec::new(), tether_energy(f, &[]));
+    }
+    let axis = normalize([
+        f.wall[0] - f.meso[0],
+        f.wall[1] - f.meso[1],
+        f.wall[2] - f.meso[2],
+    ]);
+    let side = normalize(cross(axis, f.ring_normal));
+    let mut best: (Vec<f64>, f64) = (Vec::new(), f64::INFINITY);
+    for start in [
+        f.ring_normal,
+        side,
+        [-f.ring_normal[0], -f.ring_normal[1], -f.ring_normal[2]],
+        [-side[0], -side[1], -side[2]],
+    ] {
+        let mut x = Vec::with_capacity(3 * n);
+        for i in 1..=n {
+            let t = i as f64 / (n + 1) as f64;
+            let bow = 0.8 * (std::f64::consts::PI * t).sin();
+            for (k, s) in start.iter().enumerate() {
+                x.push(f.meso[k] + t * (f.wall[k] - f.meso[k]) + bow * s);
+            }
+        }
+        let mut e = tether_energy(f, &x);
+        let mut step = 0.05;
+        let h = 1.0e-5;
+        for _ in 0..3000 {
+            let mut g = vec![0.0; x.len()];
+            for k in 0..x.len() {
+                let keep = x[k];
+                x[k] = keep + h;
+                let ep = tether_energy(f, &x);
+                x[k] = keep - h;
+                let em = tether_energy(f, &x);
+                x[k] = keep;
+                g[k] = (ep - em) / (2.0 * h);
+            }
+            let norm = g.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if norm < 1.0e-6 {
+                break;
+            }
+            let trial: Vec<f64> = x
+                .iter()
+                .zip(&g)
+                .map(|(xi, gi)| xi - step * gi / norm)
+                .collect();
+            let et = tether_energy(f, &trial);
+            if et < e {
+                x = trial;
+                e = et;
+                step = (step * 1.2).min(0.2);
+            } else {
+                step *= 0.5;
+                if step < 1.0e-7 {
+                    break;
+                }
+            }
+        }
+        if e < best.1 {
+            best = (x, e);
+        }
+    }
+    let pts = (0..n)
+        .map(|i| [best.0[3 * i], best.0[3 * i + 1], best.0[3 * i + 2]])
+        .collect();
+    (pts, best.1)
+}
 
 fn build_heme_site(
     fe: [f64; 3],
@@ -777,52 +993,172 @@ fn build_heme_site(
         site.add_atom(Atom::new(Element::OXYGEN, o2, 0.0, "O_O2"));
     }
     bond_by_distance(&mut site)?;
-    // A two-carbon tether at each meso carbon, to the nearest wall carbon. The
-    // chain is a symmetric zigzag in the plane of the ring normal and the
-    // tether axis, so its hydrogens stay clear of the ring. The end carbon is
-    // the anchor, bonded to the wall atom when the unit is assembled.
-    let mut anchors: Vec<(usize, usize)> = Vec::new();
+    // A tether at each meso carbon (ADR-0137). Each candidate anchor is a wall
+    // carbon that carries a hydrogen; the tether replaces that hydrogen, so
+    // the anchor keeps four bonds. For 1 to 3 bridge carbons the bridge is
+    // placed by minimizing a harmonic valence strain with both ends fixed; the
+    // least strained tether wins, and a shorter one wins within a margin.
+    let a_per_m = 1.0e10;
+    let to_a = |p: [f64; 3]| [p[0] * a_per_m, p[1] * a_per_m, p[2] * a_per_m];
+    let mut wall_nbrs: Vec<Vec<usize>> = vec![Vec::new(); wall.atom_count()];
+    for b in wall.bonds() {
+        wall_nbrs[b.u as usize].push(b.v as usize);
+        wall_nbrs[b.v as usize].push(b.u as usize);
+    }
+    let mut site_nbrs: Vec<Vec<usize>> = vec![Vec::new(); site.atom_count()];
+    for b in site.bonds() {
+        site_nbrs[b.u as usize].push(b.v as usize);
+        site_nbrs[b.v as usize].push(b.u as usize);
+    }
+    let fe_a = to_a(fe);
+    let mut used_hydrogen: Vec<usize> = Vec::new();
+    let mut anchors: Vec<Tether> = Vec::new();
     for &mi in &meso_c {
         let m = site.position_m(mi).unwrap_or([0.0; 3]);
-        let mut best = (f64::INFINITY, [0.0; 3], 0usize);
-        for j in 0..wall.atom_count() {
+        let ma = to_a(m);
+        let meso_dir = normalize([ma[0] - fe_a[0], ma[1] - fe_a[1], ma[2] - fe_a[2]]);
+        let ring_nb: Vec<[f64; 3]> = site_nbrs[mi]
+            .iter()
+            .filter_map(|&k| site.position_m(k).map(to_a))
+            .collect();
+        // Heavy atoms the bridge must clear: the site so far, and the wall near the meso carbon.
+        let mut site_heavy: Vec<[f64; 3]> = Vec::new();
+        let mut site_h: Vec<[f64; 3]> = Vec::new();
+        for k in 0..site.atom_count() {
+            if k == mi || site_nbrs[mi].contains(&k) {
+                continue;
+            }
+            if let Some(p) = site.position_m(k) {
+                if site.element(k) == Some(Element::HYDROGEN) {
+                    site_h.push(to_a(p));
+                } else {
+                    site_heavy.push(to_a(p));
+                }
+            }
+        }
+        let mut best: Option<(Tether, Vec<[f64; 3]>, [f64; 3])> = None;
+        let mut options: Vec<(Tether, Vec<[f64; 3]>, [f64; 3])> = Vec::new();
+        for (j, nbrs) in wall_nbrs.iter().enumerate() {
             if wall.element(j) != Some(Element::CARBON) {
                 continue;
             }
-            let q = wall.position_m(j).unwrap_or([0.0; 3]);
-            let d = dist(m, q);
-            if d < best.0 {
-                best = (d, q, j);
+            let wa = match wall.position_m(j) {
+                Some(p) => to_a(p),
+                None => continue,
+            };
+            let span = dist(ma, wa);
+            if !(2.0..=6.0).contains(&span) {
+                continue;
+            }
+            let ahead = (wa[0] - ma[0]) * meso_dir[0]
+                + (wa[1] - ma[1]) * meso_dir[1]
+                + (wa[2] - ma[2]) * meso_dir[2];
+            if ahead < 0.2 * span {
+                continue;
+            }
+            let hs: Vec<usize> = nbrs
+                .iter()
+                .copied()
+                .filter(|&k| {
+                    wall.element(k) == Some(Element::HYDROGEN) && !used_hydrogen.contains(&k)
+                })
+                .collect();
+            // The hydrogen that points most toward the meso carbon is replaced.
+            let mut pick: Option<(usize, f64)> = None;
+            for &hk in &hs {
+                let hp = to_a(wall.position_m(hk).unwrap_or([0.0; 3]));
+                let toward = normalize([ma[0] - wa[0], ma[1] - wa[1], ma[2] - wa[2]]);
+                let hd = normalize([hp[0] - wa[0], hp[1] - wa[1], hp[2] - wa[2]]);
+                let c = toward[0] * hd[0] + toward[1] * hd[1] + toward[2] * hd[2];
+                if c > 0.0 && pick.is_none_or(|(_, best_c)| c > best_c) {
+                    pick = Some((hk, c));
+                }
+            }
+            let Some((hk, _)) = pick else { continue };
+            let wall_nb: Vec<[f64; 3]> = nbrs
+                .iter()
+                .filter(|&&k| k != hk)
+                .filter_map(|&k| wall.position_m(k).map(to_a))
+                .collect();
+            let mut obstacles = site_heavy.clone();
+            let mut hydrogens = site_h.clone();
+            for k in 0..wall.atom_count() {
+                if k == j || k == hk {
+                    continue;
+                }
+                if let Some(p) = wall.position_m(k) {
+                    let pa = to_a(p);
+                    if dist(pa, ma) >= 8.0 {
+                        continue;
+                    }
+                    if wall.element(k) == Some(Element::HYDROGEN) {
+                        hydrogens.push(pa);
+                    } else if !wall_nbrs[j].contains(&k) {
+                        obstacles.push(pa);
+                    }
+                }
+            }
+            let frame = TetherFrame {
+                meso: ma,
+                ring_nb: ring_nb.clone(),
+                ring_normal: u,
+                wall: wa,
+                wall_nb,
+                obstacles,
+                hydrogens,
+            };
+            for n in 1..=3usize {
+                if span > 1.25 * TETHER_R0_CC * (n + 1) as f64 {
+                    continue;
+                }
+                let (pts, _) = solve_tether(&frame, n);
+                let flat: Vec<f64> = pts.iter().flat_map(|q| q.iter().copied()).collect();
+                let (strain, steric) = tether_terms(&frame, &flat);
+                options.push((
+                    Tether {
+                        site_atom: 0,
+                        wall_atom: j,
+                        wall_hydrogen: hk,
+                        bridge_atoms: n,
+                        strain_kj_mol: strain,
+                        steric_kj_mol: steric,
+                    },
+                    pts,
+                    wa,
+                ));
             }
         }
-        let (l, wq, wj) = best;
-        let b = 1.54e-10;
-        let mut nb = (l / b).ceil() as usize;
-        if nb < 2 {
-            nb = 2;
+        let total = |t: &Tether| t.strain_kj_mol + t.steric_kj_mol;
+        let lowest = options
+            .iter()
+            .map(|o| total(&o.0))
+            .fold(f64::INFINITY, f64::min);
+        for o in options {
+            if total(&o.0) > lowest + TETHER_SHORTER_MARGIN_KJ_MOL {
+                continue;
+            }
+            let better = match &best {
+                None => true,
+                Some(b) => {
+                    o.0.bridge_atoms < b.0.bridge_atoms
+                        || (o.0.bridge_atoms == b.0.bridge_atoms && total(&o.0) < total(&b.0))
+                }
+            };
+            if better {
+                best = Some(o);
+            }
         }
-        if nb % 2 == 1 {
-            nb += 1;
-        }
-        if nb > 6 {
-            continue;
-        }
-        let uu = normalize([wq[0] - m[0], wq[1] - m[1], wq[2] - m[2]]);
-        let dot = uu[0] * w[0] + uu[1] * w[1] + uu[2] * w[2];
-        let nn = normalize([w[0] - dot * uu[0], w[1] - dot * uu[1], w[2] - dot * uu[2]]);
-        let cos_a = (l / (nb as f64 * b)).clamp(-1.0, 1.0);
-        let sin_a = (1.0 - cos_a * cos_a).sqrt();
-        let (mut axial, mut perp) = (0.0_f64, 0.0_f64);
+        let Some((mut tether, pts, wa)) = best else {
+            return Err(PartError::InvalidGeometry(
+                "a meso carbon has no wall carbon with a hydrogen in tether reach".to_owned(),
+            ));
+        };
+        let wq = [wa[0] / a_per_m, wa[1] / a_per_m, wa[2] / a_per_m];
+        used_hydrogen.push(tether.wall_hydrogen);
         let mut chain: Vec<usize> = Vec::new();
-        for i in 1..nb {
-            axial += b * cos_a;
-            perp += if i % 2 == 1 { b * sin_a } else { -b * sin_a };
-            let cp = [
-                m[0] + axial * uu[0] + perp * nn[0],
-                m[1] + axial * uu[1] + perp * nn[1],
-                m[2] + axial * uu[2] + perp * nn[2],
-            ];
-            chain.push(site.add_atom(Atom::new(Element::CARBON, cp, 0.0, "C")) as usize);
+        for p in &pts {
+            let pm = [p[0] / a_per_m, p[1] / a_per_m, p[2] / a_per_m];
+            chain.push(site.add_atom(Atom::new(Element::CARBON, pm, 0.0, "C")) as usize);
         }
         let mut prev = mi;
         for &ci in &chain {
@@ -860,7 +1196,8 @@ fn build_heme_site(
                 site.add_bond(Bond::new(ci as u32, h, 1, BondType::Single))?;
             }
         }
-        anchors.push((*chain.last().unwrap_or(&mi), wj));
+        tether.site_atom = *chain.last().unwrap_or(&mi);
+        anchors.push(tether);
     }
     Ok((site, fe_i as usize, anchors))
 }
@@ -1412,6 +1749,7 @@ pub fn water_rotor(spec: &WaterRotorSpec) -> Result<HemeRotorSet, PartError> {
         site_iron: Vec::new(),
         arm_tip: Vec::new(),
         site_anchor: Vec::new(),
+        site_tethers: Vec::new(),
         azimuth_rad: azimuths,
         loaded: flush,
         iron_radius_m: tip_in_m,
@@ -1779,6 +2117,9 @@ pub struct CarrierSite {
     pub site_iron: usize,
     /// The (site atom, scaffold atom) pairs of the covalent tethers.
     pub site_anchor: Vec<(usize, usize)>,
+    /// The tethers (ADR-0137), with scaffold indexes after the replaced
+    /// hydrogens were removed.
+    pub tethers: Vec<Tether>,
     /// The guard oxygen atom index inside the scaffold, when a guard was made.
     pub guard_oxygen: Option<usize>,
     /// The guard hydrogen atom index inside the scaffold.
@@ -1933,7 +2274,29 @@ impl CarrierSiteGenerator {
 
         let u = [0.0, 0.0, 1.0];
         let t = [1.0, 0.0, 0.0];
-        let (site, fe_i, anchors) = build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded)?;
+        let (site, fe_i, mut tethers) =
+            build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded)?;
+        // Each tether replaced a scaffold hydrogen: remove those, and renumber
+        // the anchors and the guard.
+        let gone: Vec<usize> = tethers.iter().map(|x| x.wall_hydrogen).collect();
+        let (pruned, map) = scaffold.without_atoms(&gone);
+        scaffold = pruned;
+        let remap = |i: usize| -> Result<usize, PartError> {
+            map.get(i)
+                .copied()
+                .flatten()
+                .map(|v| v as usize)
+                .ok_or_else(|| PartError::InvalidGeometry("a tether anchor was removed".to_owned()))
+        };
+        for tether in tethers.iter_mut() {
+            tether.wall_atom = remap(tether.wall_atom)?;
+        }
+        let guard = match guard {
+            Some((o, h)) => Some((remap(o)?, remap(h)?)),
+            None => None,
+        };
+        let anchors: Vec<(usize, usize)> =
+            tethers.iter().map(|x| (x.site_atom, x.wall_atom)).collect();
         let o2_idx = if spec.loaded {
             let oxy: Vec<usize> = (0..site.atom_count())
                 .filter(|&i| site.element(i) == Some(Element::OXYGEN))
@@ -1951,6 +2314,7 @@ impl CarrierSiteGenerator {
             site: Part::new("carrier_site", site).with_material("Fe-porphine (model)"),
             site_iron: fe_i,
             site_anchor: anchors,
+            tethers,
             guard_oxygen: guard.map(|g| g.0),
             guard_hydrogen: guard.map(|g| g.1),
             o2: o2_idx,
@@ -2487,6 +2851,84 @@ mod carrier_tests {
             "mouth radius {} m is too tight for O2",
             c.mouth_radius_m
         );
+    }
+
+    fn degrees(t: &Topology) -> Vec<usize> {
+        let mut d = vec![0usize; t.atom_count()];
+        for b in t.bonds() {
+            d[b.u as usize] += 1;
+            d[b.v as usize] += 1;
+        }
+        d
+    }
+
+    #[test]
+    fn no_carbon_in_the_carrier_site_has_more_than_four_bonds() {
+        // ADR-0137: the old builder bonded each tether to a wall carbon
+        // without removing its hydrogen, which made five-bonded carbons.
+        let part = site().merged_part().expect("merge");
+        let d = degrees(&part.topology);
+        for (i, &n) in d.iter().enumerate() {
+            if part.topology.element(i) == Some(Element::CARBON) {
+                assert!(n <= 4, "carbon {i} has {n} bonds");
+            }
+        }
+    }
+
+    #[test]
+    fn the_carrier_tethers_have_tetrahedral_like_angles() {
+        let c = site();
+        assert_eq!(c.tethers.len(), 4);
+        let part = c.merged_part().expect("merge");
+        let t = &part.topology;
+        let mut nbrs = vec![Vec::new(); t.atom_count()];
+        for b in t.bonds() {
+            nbrs[b.u as usize].push(b.v as usize);
+            nbrs[b.v as usize].push(b.u as usize);
+        }
+        let base = c.scaffold.atom_count();
+        for tether in &c.tethers {
+            assert!((1..=3).contains(&tether.bridge_atoms));
+            // Walk from the anchor into the site over the bridge carbons.
+            let mut prev = tether.wall_atom;
+            let mut cur = base + tether.site_atom;
+            for _ in 0..tether.bridge_atoms {
+                let heavy: Vec<usize> = nbrs[cur]
+                    .iter()
+                    .copied()
+                    .filter(|&k| t.element(k) != Some(Element::HYDROGEN))
+                    .collect();
+                let next = heavy.iter().copied().find(|&k| k != prev).expect("chain");
+                let p = |k: usize| t.position_m(k).expect("p");
+                let ang = bend(p(prev), p(cur), p(next)).to_degrees();
+                assert!((95.0..=140.0).contains(&ang), "bridge angle {ang}");
+                prev = cur;
+                cur = next;
+            }
+            let len = dist(
+                t.position_m(base + tether.site_atom).expect("s"),
+                t.position_m(tether.wall_atom).expect("w"),
+            );
+            assert!((1.45e-10..=1.75e-10).contains(&len), "anchor bond {len}");
+        }
+    }
+
+    #[test]
+    fn no_rotor_carbon_gains_a_fifth_bond_from_a_tether() {
+        let set = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        let mut d = degrees(&set.rotor.topology);
+        for anchors in &set.site_anchor {
+            for &(_, w) in anchors {
+                d[w] += 1;
+            }
+        }
+        for (i, &n) in d.iter().enumerate() {
+            if set.rotor.topology.element(i) == Some(Element::CARBON) {
+                assert!(n <= 4, "rotor carbon {i} has {n} bonds with its tethers");
+            }
+        }
     }
 
     #[test]
