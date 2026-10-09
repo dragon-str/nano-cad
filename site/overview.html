@@ -220,12 +220,18 @@
         <li><span class="st limit">limit</span>
           <span>In the real circulation the tank charges to only a few atm in each loop. The pump design
             acts as a flow-through pump near ambient, not a 1000 atm store. <a href="docs/DECISIONS.html#adr-0132">ADR-0132</a></span></li>
-        <li><span class="st open">open</span>
-          <span>The O2 carried back by the top pump stage is not converged. That stage is off the critical
-            path. <a href="docs/DECISIONS.html#adr-0134">ADR-0134</a></span></li>
-        <li><span class="st open">open</span>
-          <span>The lifetime of a synthetic site against autoxidation is unmeasured and spans 12 minutes to
-            800 days across references. <a href="docs/DECISIONS.html#adr-0127">ADR-0127</a></span></li>
+        <li><span class="st limit">limit</span>
+          <span>The top pump stage carries back about one O2 per pass, so it pumps with a thin margin
+            (net 0.57), and one pocket of eight stalls. Keep the cascade as margin, not a
+            requirement. <a href="docs/DECISIONS.html#adr-0138">ADR-0138</a></span></li>
+        <li><span class="st limit">limit</span>
+          <span>A heme carrier without repair lasts about a day against autoxidation (31 h central),
+            so it needs about 30 g of new carrier each day. No measured carrier reaches the 8-day
+            target. <a href="docs/DECISIONS.html#adr-0136">ADR-0136</a></span></li>
+        <li><span class="st pass">pass</span>
+          <span>The ring mounts to the diamond wall by a rigid ethynyl link. The corrected build has no
+            five-bonded carbons, and the tethered ring is stiff (tilt rms 0.56&deg; at 310 K) while the
+            free ring is soft. <a href="docs/DECISIONS.html#adr-0137">ADR-0137</a></span></li>
       </ul>
       <p class="note" style="margin-top:12px">
         The full table of tests, methods and uncertainties is in the

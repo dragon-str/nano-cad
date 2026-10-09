@@ -3884,6 +3884,10 @@ a local density, not the bulk; the pocket region also contains rotor atoms, so
 its free volume is below its geometric volume. Simulated estimates, not
 converged.
 
+Revision. ADR-0138 found a protocol error in the runs above (the bound O2 was
+not removed from the released pockets) and gives the corrected carry. Read
+ADR-0138 for the current number.
+
 ## ADR-0135: One header and an overview page for every view
 
 Context. The site grew one page at a time: the atomistic viewer, the system
@@ -3910,3 +3914,156 @@ brand mark leads to the overview. The status list on the overview page is
 written by hand and must be updated with new findings. The system model page
 still needs about 735 px of width because of its three fixed columns.
 
+
+## ADR-0136: The site lifetime is about a day without repair; the reference rates were wrong
+
+Context. ADR-0127 modelled the site lifetime from four autoxidation rates
+with no sources. A check against the literature found two of them wrong. The
+"myoglobin" rate, 1.2e-7 /s (67 days), is about 130 times too slow. The
+"engineered pocket" rate, 1e-8 /s (800 days), matches no measured system; it
+is a hope, not a reference. The carrier lifetime in ADR-0127 used the myoglobin
+value.
+
+Decision. `respirocyte_specs.py` now holds a sourced table
+(`AUTOXIDATION_REFERENCES`, each with its PubMed id) and a mechanistic estimate
+of our pocket (`pocket_autoxidation`). Measured references (37 C, pH 7, air):
+
+| reference | half-life | k (1/s) | PMID |
+|---|---|---|---|
+| myoglobin H64A, no distal H-bond | 43 s | 1.6e-2 | 8463233 |
+| albumin-heme, covalent, red-cell p50 | 5 h | 3.9e-5 | 15656571 |
+| myoglobin, native | 12.6 h | 1.5e-5 | 8463233 |
+| hemoglobin A | 24 h | 8.1e-6 | 3422420 |
+| albumin-heme FecycP(His), best synthetic | 25 h | 7.7e-6 | 12009926 |
+| heme-cyclodextrin (25 C) | 30 h | 6.4e-6 | 19178464 |
+| myoglobin L29F, crowded pocket | 5.8 d | 1.4e-6 | 8463233 |
+
+The model is the two-channel mechanism of Brantley et al. (1993, PMID 8463233):
+superoxide (HO2) dissociation from the oxy site, k_ox Y(p), and the
+bimolecular reaction of O2 with a deoxy site that holds a water,
+k_bi p (1 - Y(p)). It is fitted to hemoglobin in plasma at three pO2 (Furlan
+and Bachofen 1976, PMID 1248570): worst residual 6 %. The fitted oxy channel
+is 0.70 times the independent HbA-in-air rate, a fair cross-check. Two pocket
+factors scale the channels: f_ox (the distal H-bond and pocket polarity;
+assumed 0.3 / 1 / 30) and f_bi (water access; estimated 0.01 / 0.1 / 1 from
+the dry pocket of ADR-0130 and the crowded L29F pocket). The rate is
+time-weighted over arterial (95 mmHg, 20 %) and venous (40 mmHg, 80 %) blood.
+
+Results (dendrimer-heme, p50 26.8 mmHg, 73 g in the body):
+
+| case | f_ox | f_bi | half-life | replacement |
+|---|---|---|---|---|
+| hemoglobin-like pocket | 1 | 1 | 9.5 h | 60 g/day |
+| optimistic | 0.3 | 0.01 | 5.5 d | 8.6 g/day |
+| central | 1 | 0.1 | 31 h | 30 g/day |
+| pessimistic | 30 | 1 | 1.3 h | 73 g/day |
+
+Findings. (1) No measured heme carrier reaches the 8-day target (k below
+1e-6 /s); the best is myoglobin L29F at 5.8 days, the best synthetic about
+1 day. (2) Our pocket's central estimate is about 31 h, so a carrier without
+repair needs about 30 g of new carrier each day. (3) Once the pocket is dry,
+the superoxide channel dominates (67 % central), so the lever is f_ox, the
+distal H-bond, not the affinity: moving the p50 from 10 to 40 mmHg changes the
+half-life only from 33 to 29 h. (4) The guard is a hydroxyl, a proton donor;
+Brantley found that a more polar pocket speeds protonation and autoxidation.
+The guard may help or hurt, and only a QM or experimental test will decide it.
+This is the M28-22 risk, now with a number.
+
+Limits. The two pocket factors f_ox and f_bi are assumptions, not measurements.
+The central case is a judgement, not a fit. The two-channel fit uses three
+points, so it constrains two parameters with one degree of freedom. The rate
+table mixes temperatures (37 C and 25 C) and solvent conditions; the myoglobin
+H64A value is a lower bound on the distal effect, not our pocket. The model
+gives the site lifetime, not the device lifetime; the ring damage from
+superoxide (M28-22) and the repair path are still open.
+
+
+## ADR-0137: The tether is a rigid ethynyl link; the old mount left five-bonded carbons
+
+Context. The carrier site joined each porphine meso carbon to a diamond wall
+carbon with a bridge of one to three sp3 carbons. A first strain check
+(`scripts/tether_strain.py`, a harmonic bond-angle field) found that the
+as-built three-carbon bridge carries about 7000 kJ/mol of strain. Worse, a
+contact check found 90 non-bonded site-block contacts below 2.0 A, with a
+hydrogen to hydrogen distance of 0.59 A. The cause was a defect, not tight
+geometry: the builder bonded each tether to a wall carbon and did not remove
+the wall hydrogen, so that carbon had five bonds.
+
+Decision. Two changes. (1) `Topology::without_atoms` drops the replaced
+hydrogens and remaps the site indices. The builder removes the anchor
+hydrogen, so every carbon keeps four bonds, and it picks the wall carbon and
+bridge length with the lowest strain. (2) The bridge is an ethynyl link,
+meso-C#C-C(wall), in the CAD. A rigid, linear two-carbon link fixes the ring
+to the wall and holds the porphine plane, and its sp carbons carry no
+hydrogens, so it cannot form the close H...H contacts that the sp3 bridge
+formed. The builder places the two sp carbons and removes the wall hydrogen.
+`scripts/mount_uff.py` checks the result with an independent force field
+(RDKit UFF): it relaxes the site in a frozen scaffold shell, reports the mount
+strain and the close contacts, and runs a quasi-static hold test that moves
+the ring core rigidly and fits the spring constant.
+
+Results. The corrected sp3 build (slot radius 7.0 A, half-width 2.0 A) has
+1177 scaffold atoms, four C-C anchor bonds at 1.55-1.60 A, and 36 site-block
+contacts below 2.0 A (from 90). The UFF mount strain is 866 kJ/mol, and the
+tethered ring is stiff: axial rms 0.03 A, in-plane 0.03 A, tilt 0.56 deg at
+310 K. The control with the four tether bonds cut is soft (axial rms 0.09 A,
+tilt 1.5 deg), so the tethers, not the slot, hold the ring. The ethynyl
+screen (harmonic field) gives the lowest strain at slot radius 7.0-7.5 A,
+half-width 3.0 A: the two independent links carry about 180 and 550 kJ/mol.
+
+Limits. The ethynyl link is a design, not a synthesis. UFF is a crude force
+field for a metal-porphyrin; it gives the mount stiffness and the contact
+count, not the Fe-N or Fe-O energetics. The hold test freezes the scaffold
+shell at 7.0 A, so a wall mode below that radius is not seen. The reaction
+that forms the C#C bond, and the repair of a broken tether, are not modelled.
+
+## ADR-0138: The corrected top-stage carry; a protocol error in ADR-0134
+
+Context. ADR-0134 measured the top-stage carry from released pockets (0.30 O2)
+and concluded that a single stage pumps at 1000 atm with net 0.70. A review
+found a protocol error. The module scene keeps a bound O2 on the iron in the
+five loaded pockets. The ADR-0134 released runs did not remove it, so most of
+them measured a pocket that still held its bound O2 and had less room for free
+gas; the loaded runs stacked a second O2 on top. ADR-0134 also used a short gas
+box (z_front 1.4 nm) whose far slab the rotor surface depleted.
+
+Method. `top_stage_sweep.py` now always passes `--remove-bound-o2`, and the
+loaded runs use `--add-bound-o2` to place the bound O2 at the scanned geometry.
+The gas box is 4.4 nm tall, and the start density is calibrated (13.3 at
+600 atm, 17.6 at 1000 atm) so the near slab reaches the equation-of-state
+density. `pocket_carry_md.py` gains `--prefill` and `--start-empty`, so each
+released run starts empty or prefilled and brackets equilibrium from both
+sides. 40 runs, 400 ps each, one seed: 16 released at 600 atm, 16 at 1000 atm,
+8 loaded at 600 atm. The fit uses the last 200 ps.
+
+Results (free O2 in the pocket, mean of the last 200 ps):
+
+| condition | empty start | prefilled start |
+|---|---|---|
+| released, 600 atm | 0.40 | 0.64 / 1.43 |
+| released, 1000 atm | 1.18 | 1.10 / 1.33 |
+| loaded, 600 atm | 0.63 (fit) | - |
+
+Calibration: the near slab holds 8.7 O2/nm3 at 600 atm and 12.2 at 1000 atm
+(the equation of state gives 10.4 and 14.1). Fits of n = s * rho through the
+origin: released s_back 0.076 +- 0.009 (32 runs), loaded s_fwd 0.064 +- 0.014
+(8 runs).
+
+Findings. (1) The corrected released carry is about 1.06 O2 at 1000 atm, not
+0.30: ADR-0134 measured a pocket that still held its bound O2. (2) A single
+stage from blood stalls at about 920 atm, not 530 atm. (3) The top stage
+(600 to 1000 atm) still pumps, net 1 + 0.63 - 1.06 = 0.57 per pass, less than
+the 0.70 of ADR-0134. (4) The margin is thin and pocket-dependent: seven
+pockets pump (+0.25 to +0.98) and one, pocket 6, has a negative net (-0.57).
+(5) At 1000 atm the two starts agree (1.18 empty, 1.10 prefilled), so that
+number is converged; at 600 atm the empty start is a lower bound, because the
+pocket fills slowly at the lower density.
+
+Decision. Withdraw the ADR-0134 carry. The top stage pumps on average, but it
+is marginal. Keep the cascade as design margin, not a requirement, as ADR-0134
+decided, and do not count on every pocket. The device remains a flow-through
+pump near ambient (ADR-0132).
+
+Limits. One seed per pocket; the per-pocket scatter is wide. The pocket region
+contains rotor atoms, so its free volume is below its geometric volume. The
+near-slab density is not the bulk density. Simulated estimates.
