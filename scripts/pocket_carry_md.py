@@ -88,6 +88,13 @@ def main() -> int:
     p.add_argument("--equilibrate-ps", type=float, default=50.0)
     p.add_argument("--production-ps", type=float, default=500.0)
     p.add_argument("--sample-ps", type=float, default=1.0)
+    p.add_argument("--prefill", type=int, default=0,
+                   help="start this many of the O2 inside the pocket region (gas medium), so equilibrium "
+                        "is approached from above as well as from below")
+    p.add_argument("--start-empty", action="store_true",
+                   help="place no gas O2 inside the pocket region at the start (the low side of the bracket)")
+    p.add_argument("--block-ps", type=float, default=0.0,
+                   help="also report the pocket O2 count averaged over blocks of this length (convergence)")
     p.add_argument("--seed", type=int, default=1)
     p.add_argument("--platform", default="OpenCL")
     a = p.parse_args()
@@ -219,14 +226,44 @@ def main() -> int:
         d = rng.normal(size=3)
         return d / np.linalg.norm(d)
 
+    def in_pocket(g: np.ndarray) -> np.ndarray:
+        lx, ly, lz = g[:, 0] - shift[0], g[:, 1] - shift[1], g[:, 2] - shift[2]
+        r = np.hypot(lx, ly)
+        if a.water_rotor:
+            return (r < 0.66) & (lz > -0.80) & (lz < 0.0)
+        return (r < SLOT_R) & (lz >= 0.0) & (lz < SLOT_H + a.bore_len)
+
     o2_centres, water_sites = [], []
+    pocket_free_nm3 = None
+    prefilled = 0
     if a.medium == "gas":
         free = lattice(0.1, 0.30)
         voxel_nm3 = box_xy * box_xy * box_z / (round(box_xy / 0.1) ** 2 * round(box_z / 0.1))
         free_volume = len(free) * voxel_nm3
+        # The pocket's room for an O2 centre: a finer grid and a contact
+        # clearance (0.26 nm, about the O-C contact distance), not the 0.30 nm
+        # start clearance, which leaves almost no pocket volume.
+        fine = lattice(0.05, 0.26)
+        pocket_free = fine[in_pocket(fine)]
+        pocket_free_nm3 = len(pocket_free) * box_xy * box_xy * box_z / (
+            round(box_xy / 0.05) ** 2 * round(box_z / 0.05))
         n_o2 = int(round(a.o2_per_nm3 * free_volume))
         sites = lattice(a.o2_spacing, 0.30)
+        sites = sites[~in_pocket(sites)] if (a.prefill or a.start_empty) else sites
         o2_centres = sites[rng.choice(len(sites), size=min(n_o2, len(sites)), replace=False)]
+        if a.prefill:
+            # Greedy, 0.33 nm apart, from the free voxels inside the pocket;
+            # each replaces one gas molecule so the total count is unchanged.
+            picked: list[np.ndarray] = []
+            for i in rng.permutation(len(pocket_free)):
+                c = pocket_free[i]
+                if all(np.linalg.norm(c - q) >= 0.33 for q in picked):
+                    picked.append(c)
+                if len(picked) == a.prefill:
+                    break
+            prefilled = len(picked)
+            if picked:
+                o2_centres = np.vstack([o2_centres[: len(o2_centres) - prefilled], np.array(picked)])
     else:
         sites = lattice((WATER_VOLUME_A3 ** (1 / 3)) / 10.0, 0.29)
         n_o2 = max(1, int(round(a.o2_molar * len(sites) / 55.5)))
@@ -327,7 +364,10 @@ def main() -> int:
         arm = (r < SLOT_R) & (lz > CHAN_BACK) & (lz < 0.0)
         return pocket, arm
 
-    o2_pocket, o2_arm, w_pocket, w_arm, bulk_o2 = [], [], [], [], []
+    o2_pocket, o2_arm, w_pocket, w_arm, bulk_o2, top_o2 = [], [], [], [], [], []
+    # A second gas slab near the top of a tall box: the reservoir density,
+    # away from the rotor surface that adsorbs O2.
+    top_lo, top_hi = a.z_front - 1.0, a.z_front - 0.4
     map_r_edges = np.arange(0.0, 1.01, 0.1)
     map_z_edges = np.arange(-0.4, 0.81, 0.1)
     o2_map = np.zeros((len(map_r_edges) - 1, len(map_z_edges) - 1))
@@ -346,6 +386,7 @@ def main() -> int:
             # Bulk density far above the rim (local z 0.9-1.3 nm), for reference.
             lz = c[:, 2] - shift[2]
             bulk_o2.append(int(((lz > 0.9) & (lz < 1.3)).sum()))
+            top_o2.append(int(((lz > top_lo) & (lz < top_hi)).sum()))
         if water_o:
             pk, am = region(x[np.array(water_o)])
             w_pocket.append(int(pk.sum()))
@@ -353,6 +394,10 @@ def main() -> int:
 
     def mean(v: list[int]) -> float:
         return round(float(np.mean(v)), 3) if v else 0.0
+
+    def blocks(v: list[int]) -> list[float]:
+        n = int(round(a.block_ps / a.sample_ps)) if a.block_ps > 0 else 0
+        return [mean(v[i:i + n]) for i in range(0, len(v) - n + 1, n)] if n else []
 
     slab = 0.4 * box_xy * box_xy
     print(json.dumps({
@@ -369,10 +414,15 @@ def main() -> int:
         "production_ps": a.production_ps,
         "o2_in_pocket": mean(o2_pocket),
         "o2_in_pocket_max": max(o2_pocket) if o2_pocket else 0,
+        "o2_in_pocket_blocks": blocks(o2_pocket),
+        "prefill": prefilled,
+        "pocket_free_nm3": None if pocket_free_nm3 is None else round(pocket_free_nm3, 3),
         "o2_in_arm_channel": mean(o2_arm),
         "water_in_pocket": mean(w_pocket),
         "water_in_arm_channel": mean(w_arm),
         "bulk_o2_per_nm3_far": round(float(np.mean(bulk_o2)) / slab, 2) if bulk_o2 else 0.0,
+        "bulk_o2_per_nm3_top": (round(float(np.mean(top_o2)) / (0.6 * box_xy * box_xy), 2)
+                                if top_o2 and a.z_front >= 2.4 else None),
         "platform": plat.getName(),
     }))
     if a.map:
