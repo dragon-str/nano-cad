@@ -4067,3 +4067,65 @@ pump near ambient (ADR-0132).
 Limits. One seed per pocket; the per-pocket scatter is wide. The pocket region
 contains rotor atoms, so its free volume is below its geometric volume. The
 near-slab density is not the bulk density. Simulated estimates.
+
+
+## ADR-0139: The site can be self-sustaining; protect the ring, do not repair it
+
+Context. M29-14. Can the heme site be repaired without new material each day,
+and can a fully self-sustaining site last a very long time? ADR-0108 handled
+the reversible iron oxidation with a donor station. ADR-0136 set the site
+lifetime (central 31 h) and named the irreversible ring damage as the open
+risk (M28-22).
+
+Decision. The site degrades two ways. The iron oxidation is reversible and
+needs only electrons. The ring damage is irreversible: a broken ring needs new
+carbon, so no self-sustaining device can repair it. The strategy is to stop
+the ring from breaking, with three permanent elements:
+
+  1. the iron-repair donor on the empty arc (ADR-0108), so the site stays in
+     the Fe(II) state;
+  2. a distal pocket that suppresses autoxidation about 100-fold (a distal
+     H-bond holds the bound O2 and slows the superoxide channel; a dry pocket
+     keeps water off the iron and slows the water channel);
+  3. a co-located catalyst that dismutates the superoxide before it reaches
+     the ring, and then decomposes the peroxide.
+
+None of the three is consumed. The inputs are electrons (a charged onboard
+store) and protons (buffered blood). A consumable antioxidant would need new
+material each day and is rejected.
+
+Model. `respirocyte_repair.py` estimates the ring lifetime from the race
+between the catalyst, escape, and the ring attack. The superoxide is born on
+the iron; its irreversible fraction is phi = k_ring / (k_dismut + k_escape +
+k_ring), and the ring lifetime is ln2 / (k_autox phi). The rates (k_escape
+1e4 /s, k_ring 1e5 /s, catalyst 0 to 1e8 /s) are estimates. The rotor limit is
+1e11 cycles at 1000 rev/s, 3.2 years.
+
+Results (ring lifetime, years):
+
+| pocket | no catalyst | Mn mimic | enzyme-like |
+|---|---|---|---|
+| central (1x) | 0.004 | 0.004 | 0.04 |
+| H-bonded, dry (10x) | 0.04 | 0.04 | 0.4 |
+| optimized (100x) | 0.4 | 0.4 | 3.9 |
+| native-mutant span (1000x) | 3.9 | 4.2 | 39 |
+
+Findings. (1) The iron repair has a 16,000-fold margin, so the iron is always
+reduced (oxidized fraction 6e-5). (2) The optimized pocket alone gives 0.4
+years and the catalyst alone 0.04 years; together they give 3.9 years, so the
+site then outlives the 3.2-year rotor. (3) The electron budget is negligible:
+5e-7 electrons per second for a dendrimer carrier, about 8e-26 A. (4) To reach
+decades, use a stronger pocket (the 1000-fold native-to-mutant span of
+Brantley) or a faster catalyst; the 1000-fold pocket with the enzyme-like
+catalyst gives 39 years.
+
+Decision. Build the site with the optimized distal pocket, the co-located
+dismutase and catalase catalyst, and the iron-repair donor. Then the rotor, or
+the scaffold, sets the device lifetime, not the site chemistry. For a passive
+carrier, with no rotor, the site lifetime is the limit.
+
+Limits. The superoxide fate rates are assumed, not measured. The escape rate,
+the ring-attack rate, and the catalyst turnover set phi, and none is known, so
+the ring-damage fraction is the single largest uncertainty (the M28-22 risk).
+The 100-fold pocket suppression is a design goal, not a demonstration. The
+catalyst is a design, not a synthesis.
