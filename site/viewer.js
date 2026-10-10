@@ -100,6 +100,7 @@
     S: "#e0c000",
     B: "#ffb86c",
     Fe: "#e0662c",
+    Mn: "#9f7bd6",
   };
 
   var view = { yaw: -0.65, tilt: 1.02, zoom: 1, panX: 0, panY: 0 };

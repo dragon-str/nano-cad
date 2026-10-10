@@ -47,6 +47,8 @@ impl Element {
     pub const POTASSIUM: Self = Self(19);
     /// Calcium.
     pub const CALCIUM: Self = Self(20);
+    /// Manganese.
+    pub const MANGANESE: Self = Self(25);
     /// Iron.
     pub const IRON: Self = Self(26);
     /// Copper.

@@ -1050,6 +1050,11 @@ fn build_heme_site(
             if !(2.0..=6.0).contains(&span) {
                 continue;
             }
+            // The tether is an in-plane link: reject an anchor far off the ring
+            // plane, so the proximal pocket does not pull it out of plane.
+            if (wa[2] - ma[2]).abs() > 0.5 * span {
+                continue;
+            }
             let ahead = (wa[0] - ma[0]) * meso_dir[0]
                 + (wa[1] - ma[1]) * meso_dir[1]
                 + (wa[2] - ma[2]) * meso_dir[2];
@@ -1089,6 +1094,10 @@ fn build_heme_site(
                 if let Some(p) = wall.position_m(k) {
                     let pa = to_a(p);
                     if dist(pa, ma) >= 8.0 {
+                        continue;
+                    }
+                    // Far off the ring plane, e.g. below the proximal pocket.
+                    if (pa[2] - ma[2]).abs() > 1.5 {
                         continue;
                     }
                     if wall.element(k) == Some(Element::HYDROGEN) {
@@ -2087,6 +2096,16 @@ pub struct CarrierSiteSpec {
     pub guard_azimuth_rad: f64,
     /// Whether the site shows the bound O2.
     pub loaded: bool,
+    /// Radius of the proximal pocket that houses the repair donor.
+    pub proximal_radius_m: f64,
+    /// Depth of the proximal pocket below the ring slot.
+    pub proximal_depth_m: f64,
+    /// Azimuth of the distal catalyst site, in radians.
+    pub catalyst_azimuth_rad: f64,
+    /// Whether to build the repair donor (ADR-0108).
+    pub donor: bool,
+    /// Whether to build the dismutase/catalase catalyst (ADR-0139).
+    pub catalyst: bool,
 }
 
 impl Default for CarrierSiteSpec {
@@ -2102,8 +2121,41 @@ impl Default for CarrierSiteSpec {
             half_width_m: 1.2e-9,
             guard_azimuth_rad: 0.0,
             loaded: true,
+            proximal_radius_m: 3.0e-10,
+            proximal_depth_m: 3.0e-10,
+            catalyst_azimuth_rad: PI,
+            donor: true,
+            catalyst: true,
         }
     }
+}
+
+/// The repair donor (ADR-0108): a proximal group that can re-reduce the iron
+/// to Fe(II) after an oxidation. It sits in a pocket on the far side of the
+/// ring from the O2, so it never meets a bound O2. Modelled as a proximal
+/// hydroxyl (a tyrosine-like one-electron donor); the identity and the redox
+/// potential are a model, per ADR-0108.
+#[derive(Clone, Debug)]
+pub struct DonorSite {
+    /// The donor oxygen atom index inside the scaffold.
+    pub oxygen: usize,
+    /// The donor hydrogen atom index inside the scaffold.
+    pub hydrogen: usize,
+    /// Distance from the donor oxygen to the iron, in metres.
+    pub fe_distance_m: f64,
+}
+
+/// The dismutase/catalase catalyst (ADR-0139): a manganese centre in the
+/// pocket wall with an open site that faces the pocket. It dismutates the
+/// superoxide before it can attack the ring. Modelled as a substitutional Mn
+/// that keeps three wall bonds and leaves one open position; the turnover is
+/// a model, per ADR-0139.
+#[derive(Clone, Debug)]
+pub struct CatalystSite {
+    /// The manganese atom index inside the scaffold.
+    pub manganese: usize,
+    /// Distance from the manganese to the iron, in metres.
+    pub fe_distance_m: f64,
 }
 
 /// A carrier site: the diamond scaffold (with the distal guard) and the heme.
@@ -2130,6 +2182,10 @@ pub struct CarrierSite {
     pub pocket_radius_m: f64,
     /// Radius of the mouth, in metres.
     pub mouth_radius_m: f64,
+    /// The repair donor (ADR-0108), when built.
+    pub donor: Option<DonorSite>,
+    /// The dismutase/catalase catalyst (ADR-0139), when built.
+    pub catalyst: Option<CatalystSite>,
 }
 
 /// Builds a passive carrier heme site.
@@ -2228,12 +2284,152 @@ fn norm(v: [f64; 3]) -> f64 {
     (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt()
 }
 
+/// Places an oxygen on the cap carbon `c` (its hydrogen `h`) along the
+/// direction to `target`, with the hydrogen turned away. The oxygen can then
+/// bond the target. Returns the (oxygen, hydrogen) indices.
+fn place_ligand_oh(
+    top: &mut Topology,
+    c: usize,
+    h: usize,
+    target: [f64; 3],
+) -> Result<(usize, usize), PartError> {
+    let cp = top
+        .position_m(c)
+        .ok_or_else(|| PartError::InvalidGeometry("no ligand carbon".to_owned()))?;
+    let d = normalize([target[0] - cp[0], target[1] - cp[1], target[2] - cp[2]]);
+    let o = [
+        cp[0] + 1.43e-10 * d[0],
+        cp[1] + 1.43e-10 * d[1],
+        cp[2] + 1.43e-10 * d[2],
+    ];
+    top.set_element(h, Element::OXYGEN)?;
+    top.set_atom_type(h, "O_hydroxyl")?;
+    top.set_position_m(h, o)?;
+    let mut perp = cross(d, [0.0, 0.0, 1.0]);
+    if norm(perp) < 1.0e-9 {
+        perp = cross(d, [1.0, 0.0, 0.0]);
+    }
+    perp = normalize(perp);
+    let (s, co) = 108.5_f64.to_radians().sin_cos();
+    let hdir = normalize([
+        -co * d[0] + s * perp[0],
+        -co * d[1] + s * perp[1],
+        -co * d[2] + s * perp[2],
+    ]);
+    let hp = [
+        o[0] + 0.96e-10 * hdir[0],
+        o[1] + 0.96e-10 * hdir[1],
+        o[2] + 0.96e-10 * hdir[2],
+    ];
+    let hi = top.add_atom(Atom::new(Element::HYDROGEN, hp, 0.0, "H"));
+    top.add_bond(Bond::new(h as u32, hi, 1, BondType::Single))?;
+    Ok((h, hi as usize))
+}
+
+/// Adds the repair donor (ADR-0108): a proximal hydroxyl on the floor of the
+/// proximal pocket, with the oxygen pointing up at the iron. It sits on the
+/// far side of the ring from the O2, so it never meets a bound O2.
+fn add_donor_oh(top: &mut Topology) -> Result<Option<DonorSite>, PartError> {
+    let fe = [0.0, 0.0, 0.0];
+    let mut best: Option<(f64, usize, usize)> = None;
+    for b in top.bonds() {
+        let (u, v) = (b.u as usize, b.v as usize);
+        let (c, h) = match (top.element(u), top.element(v)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (u, v),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (v, u),
+            _ => continue,
+        };
+        let Some(cp) = top.position_m(c) else {
+            continue;
+        };
+        // Below the ring, and pointing up at the iron.
+        if cp[2] >= -0.5e-10 {
+            continue;
+        }
+        let d = dist(cp, fe);
+        if !(2.6e-10..=6.0e-10).contains(&d) {
+            continue;
+        }
+        if best.is_none_or(|(bs, _, _)| d < bs) {
+            best = Some((d, c, h));
+        }
+    }
+    let Some((_, c, h)) = best else {
+        return Ok(None);
+    };
+    let (o, hi) = place_ligand_oh(top, c, h, fe)?;
+    let op = top.position_m(o).unwrap_or([0.0; 3]);
+    Ok(Some(DonorSite {
+        oxygen: o,
+        hydrogen: hi,
+        fe_distance_m: dist(op, fe),
+    }))
+}
+
+/// Finds the catalyst carbon (ADR-0139): the pocket-wall cap carbon near
+/// `azimuth_rad` whose open side faces the pocket. Returns the (carbon,
+/// hydrogen) pair; the caller replaces the carbon with manganese and removes
+/// the hydrogen, leaving the open site into the pocket.
+fn find_catalyst_carbon(
+    top: &Topology,
+    target: [f64; 3],
+    max_radius_m: f64,
+) -> Option<(usize, usize)> {
+    // Hydrogens per carbon, so the chosen carbon has exactly one and the
+    // removed hydrogen leaves a clean open site on the manganese.
+    let mut hydrogens: Vec<usize> = vec![0; top.atom_count()];
+    for b in top.bonds() {
+        if top.element(b.u as usize) == Some(Element::HYDROGEN) {
+            hydrogens[b.v as usize] += 1;
+        }
+        if top.element(b.v as usize) == Some(Element::HYDROGEN) {
+            hydrogens[b.u as usize] += 1;
+        }
+    }
+    let mut best: Option<(f64, usize, usize)> = None;
+    for b in top.bonds() {
+        let (u, v) = (b.u as usize, b.v as usize);
+        let (c, h) = match (top.element(u), top.element(v)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (u, v),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (v, u),
+            _ => continue,
+        };
+        if hydrogens[c] != 1 {
+            continue;
+        }
+        let Some(cp) = top.position_m(c) else {
+            continue;
+        };
+        // On the pocket wall, not the outer slot wall (which holds the tethers).
+        if cp[2] <= 0.0 || cp[0].hypot(cp[1]) > max_radius_m {
+            continue;
+        }
+        let Some(hp) = top.position_m(h) else {
+            continue;
+        };
+        // The hydrogen points into the pocket (toward the axis).
+        let hd = normalize([hp[0] - cp[0], hp[1] - cp[1], hp[2] - cp[2]]);
+        let rad = normalize([cp[0], cp[1], 0.0]);
+        let inward = -(hd[0] * rad[0] + hd[1] * rad[1]);
+        if inward < 0.0 {
+            continue;
+        }
+        // Nearest to the intended wall position.
+        let score = dist(cp, target);
+        if best.is_none_or(|(bs, _, _)| score < bs) {
+            best = Some((score, c, h));
+        }
+    }
+    best.map(|(_, c, h)| (c, h))
+}
+
 impl CarrierSiteGenerator {
     /// Builds the carrier site from an explicit spec.
     pub fn build_spec(&self, spec: &CarrierSiteSpec) -> Result<CarrierSite, PartError> {
         let z_top = spec.slot_half_m + spec.pocket_height_m + spec.mouth_length_m;
+        let z_floor = -(spec.floor_m + spec.proximal_depth_m);
         let slab = Box3 {
-            min_m: [-spec.half_width_m, -spec.half_width_m, -spec.floor_m],
+            min_m: [-spec.half_width_m, -spec.half_width_m, z_floor],
             max_m: [spec.half_width_m, spec.half_width_m, z_top],
         };
         let slot = Cylinder {
@@ -2255,11 +2451,21 @@ impl CarrierSiteGenerator {
             radius_m: spec.mouth_radius_m,
             height_m: spec.mouth_length_m + 1.0e-9,
         };
+        // The proximal pocket, on the far side of the ring, houses the repair
+        // donor (ADR-0108).
+        let proximal = Cylinder {
+            center_m: [0.0, 0.0, 0.5 * z_floor],
+            radius_m: spec.proximal_radius_m,
+            height_m: -z_floor,
+        };
         let cut: Box<dyn Solid> = Box::new(Union {
             a: Box::new(slot),
             b: Box::new(Union {
                 a: Box::new(pocket),
-                b: Box::new(mouth),
+                b: Box::new(Union {
+                    a: Box::new(mouth),
+                    b: Box::new(proximal),
+                }),
             }),
         });
         let solid = Difference {
@@ -2271,14 +2477,42 @@ impl CarrierSiteGenerator {
         let o2 = [O_O_M * sn60, 0.0, FE_O_M + O_O_M * cs60];
         let target = if spec.loaded { o2 } else { [0.0, 0.0, FE_O_M] };
         let guard = add_guard_oh(&mut scaffold, spec.guard_azimuth_rad, target)?;
+        let donor = if spec.donor {
+            add_donor_oh(&mut scaffold)?
+        } else {
+            None
+        };
+        // The catalyst: a pocket-wall carbon becomes manganese, with its
+        // hydrogen removed so the open site faces the pocket (ADR-0139).
+        let mut catalyst_c: Option<usize> = None;
+        let mut catalyst_h: Option<usize> = None;
+        if spec.catalyst {
+            let (sc, cc) = spec.catalyst_azimuth_rad.sin_cos();
+            let cat_target = [
+                0.7 * spec.pocket_radius_m * cc,
+                0.7 * spec.pocket_radius_m * sc,
+                spec.slot_half_m + 0.4 * spec.pocket_height_m,
+            ];
+            if let Some((c, h)) =
+                find_catalyst_carbon(&scaffold, cat_target, spec.pocket_radius_m + 1.0e-10)
+            {
+                scaffold.set_element(c, Element::MANGANESE)?;
+                scaffold.set_atom_type(c, "Mn")?;
+                catalyst_c = Some(c);
+                catalyst_h = Some(h);
+            }
+        }
 
         let u = [0.0, 0.0, 1.0];
         let t = [1.0, 0.0, 0.0];
         let (site, fe_i, mut tethers) =
             build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded)?;
-        // Each tether replaced a scaffold hydrogen: remove those, and renumber
-        // the anchors and the guard.
-        let gone: Vec<usize> = tethers.iter().map(|x| x.wall_hydrogen).collect();
+        // Each tether replaced a scaffold hydrogen, and the catalyst lost one:
+        // remove those, and renumber the anchors, the guard, and the catalyst.
+        let mut gone: Vec<usize> = tethers.iter().map(|x| x.wall_hydrogen).collect();
+        if let Some(h) = catalyst_h {
+            gone.push(h);
+        }
         let (pruned, map) = scaffold.without_atoms(&gone);
         scaffold = pruned;
         let remap = |i: usize| -> Result<usize, PartError> {
@@ -2293,6 +2527,25 @@ impl CarrierSiteGenerator {
         }
         let guard = match guard {
             Some((o, h)) => Some((remap(o)?, remap(h)?)),
+            None => None,
+        };
+        let donor = match donor {
+            Some(d) => Some(DonorSite {
+                oxygen: remap(d.oxygen)?,
+                hydrogen: remap(d.hydrogen)?,
+                fe_distance_m: d.fe_distance_m,
+            }),
+            None => None,
+        };
+        let catalyst = match catalyst_c {
+            Some(c) => {
+                let mn = remap(c)?;
+                let p = scaffold.position_m(mn).unwrap_or([0.0; 3]);
+                Some(CatalystSite {
+                    manganese: mn,
+                    fe_distance_m: dist(p, [0.0, 0.0, 0.0]),
+                })
+            }
             None => None,
         };
         let anchors: Vec<(usize, usize)> =
@@ -2320,6 +2573,8 @@ impl CarrierSiteGenerator {
             o2: o2_idx,
             pocket_radius_m: spec.pocket_radius_m,
             mouth_radius_m: spec.mouth_radius_m,
+            donor,
+            catalyst,
         })
     }
 
@@ -2927,6 +3182,54 @@ mod carrier_tests {
         for (i, &n) in d.iter().enumerate() {
             if set.rotor.topology.element(i) == Some(Element::CARBON) {
                 assert!(n <= 4, "rotor carbon {i} has {n} bonds with its tethers");
+            }
+        }
+    }
+
+    #[test]
+    fn the_repair_donor_sits_below_the_ring_out_of_the_o2_path() {
+        let c = site();
+        let d = c.donor.expect("donor");
+        let o = c.scaffold.topology.position_m(d.oxygen).expect("donor o");
+        assert!(
+            (3.0e-10..=6.5e-10).contains(&d.fe_distance_m),
+            "Fe-O(donor) {} m",
+            d.fe_distance_m
+        );
+        // Proximal: below the ring, on the far side from the distal pocket.
+        assert!(o[2] < 0.0, "donor oxygen is not proximal: z={}", o[2]);
+        let dir = normalize(o);
+        assert!(dir[2] < -0.5, "the donor is not off the distal axis");
+        assert_eq!(c.scaffold.topology.atom_type(d.oxygen), Some("O_hydroxyl"));
+    }
+
+    #[test]
+    fn the_catalyst_is_manganese_with_an_open_site() {
+        let c = site();
+        let cat = c.catalyst.expect("catalyst");
+        assert_eq!(
+            c.scaffold.topology.element(cat.manganese),
+            Some(Element::MANGANESE)
+        );
+        assert_eq!(c.scaffold.topology.atom_type(cat.manganese), Some("Mn"));
+        // Three wall bonds and one open position into the pocket.
+        let bonds = c
+            .scaffold
+            .topology
+            .bonds()
+            .filter(|b| b.u as usize == cat.manganese || b.v as usize == cat.manganese)
+            .count();
+        assert_eq!(bonds, 3, "the manganese has {bonds} bonds");
+        assert!(cat.fe_distance_m > 2.5e-10, "Mn too close to Fe");
+    }
+
+    #[test]
+    fn the_self_sustaining_groups_keep_every_carbon_four_bonded() {
+        let part = site().merged_part().expect("merge");
+        let d = degrees(&part.topology);
+        for (i, &n) in d.iter().enumerate() {
+            if part.topology.element(i) == Some(Element::CARBON) {
+                assert!(n <= 4, "carbon {i} has {n} bonds");
             }
         }
     }

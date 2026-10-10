@@ -77,10 +77,29 @@ fn main() {
         })
         .collect();
 
+    let donor = match &site.donor {
+        Some(d) => format!(
+            "{{\"oxygen\":{},\"hydrogen\":{},\"fe_distance\":{:.3}}}",
+            d.oxygen,
+            d.hydrogen,
+            d.fe_distance_m * 1.0e10
+        ),
+        None => "null".to_owned(),
+    };
+    let catalyst = match &site.catalyst {
+        Some(c) => format!(
+            "{{\"manganese\":{},\"fe_distance\":{:.3}}}",
+            c.manganese,
+            c.fe_distance_m * 1.0e10
+        ),
+        None => "null".to_owned(),
+    };
+
     let json = format!(
         "{{\"units\":\"angstrom\",\"iron\":{iron},\"bore_radius\":{:.4},\
          \"face_z\":{face_z:.4},\"mouth_z\":{mouth_z:.4},\"block_atoms\":{block_atoms},\
-         \"axis\":[0.0,0.0,1.0],\"slot_radius\":{:.4},\"tethers\":[{}],\"atoms\":[{}],\"bonds\":[{}]}}",
+         \"axis\":[0.0,0.0,1.0],\"slot_radius\":{:.4},\"tethers\":[{}],\
+         \"donor\":{donor},\"catalyst\":{catalyst},\"atoms\":[{}],\"bonds\":[{}]}}",
         spec.pocket_radius_m * 1.0e10,
         spec.slot_radius_m * 1.0e10,
         tethers.join(","),
@@ -95,7 +114,7 @@ fn main() {
         let strain: f64 = site.tethers.iter().map(|t| t.strain_kj_mol).sum();
         let steric: f64 = site.tethers.iter().map(|t| t.steric_kj_mol).sum();
         println!(
-            "wrote {path}: {block_atoms} scaffold atoms, iron {iron}, slot {:.2} A half {:.2} A, tethers {:?}, valence strain {strain:.1}, steric {steric:.1} kJ/mol",
+            "wrote {path}: {block_atoms} scaffold atoms, iron {iron}, slot {:.2} A half {:.2} A, tethers {:?}, valence strain {strain:.1}, steric {steric:.1} kJ/mol, donor {donor}, catalyst {catalyst}",
             spec.slot_radius_m * 1.0e10,
             spec.slot_half_m * 1.0e10,
             site.tethers.iter().map(|t| t.bridge_atoms).collect::<Vec<_>>()

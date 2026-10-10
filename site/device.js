@@ -14,7 +14,7 @@
   var BANK_COLORS = { load: "#4f9cf0", water: "#3fc1b0", discharge: "#f0a04f", cascade: "#b48cf0", shell: "#39424f" };
   var ELEMENT_COLORS = {
     H: "#e8eef5", C: "#8b98a5", N: "#5b8def", O: "#f05a5a",
-    F: "#7ee787", Si: "#c9a227", P: "#ff9e64", S: "#e0c000", B: "#ffb86c", Fe: "#e0662c",
+    F: "#7ee787", Si: "#c9a227", P: "#ff9e64", S: "#e0c000", B: "#ffb86c", Fe: "#e0662c", Mn: "#9f7bd6",
   };
   var ATOM_RADII = { H: 0.31e-10, C: 0.76e-10, N: 0.71e-10, O: 0.66e-10, Fe: 1.32e-10 };
 
