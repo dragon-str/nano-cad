@@ -4124,8 +4124,19 @@ dismutase and catalase catalyst, and the iron-repair donor. Then the rotor, or
 the scaffold, sets the device lifetime, not the site chemistry. For a passive
 carrier, with no rotor, the site lifetime is the limit.
 
-Limits. The superoxide fate rates are assumed, not measured. The escape rate,
-the ring-attack rate, and the catalyst turnover set phi, and none is known, so
-the ring-damage fraction is the single largest uncertainty (the M28-22 risk).
-The 100-fold pocket suppression is a design goal, not a demonstration. The
-catalyst is a design, not a synthesis.
+Sourced envelope (M29-15). The assumed rates are replaced by ranges from the
+literature, in `FATE_REFERENCES`. The spontaneous dismutation is 0.1 to 1 /s
+(Bielski 1985, at about 1 uM superoxide). A Mn-porphyrin SOD mimic turns over
+1e6 to 1e8 /s. An enzyme-like catalyst reaches 1e5 to 1e9 /s. Escape by
+diffusion is 1e6 to 1e10 /s. The ring attack is 1e2 to 1e6 /s; it is the least
+certain value. `fate_scenarios` combines the worst and best ends. For the
+optimized pocket (100x), the ring lifetime is 1.1 years pessimistic, 3.9 years
+central, and 4e7 years optimistic. So the design outlives the 3.2-year rotor
+unless the catalyst is slow (1e6 /s) and the ring attack is fast (1e6 /s) at
+the same time. The catalyst turnover is the lever.
+
+Limits. The superoxide fate rates are ranges, not measurements. The ring-attack
+rate is the least certain, so the pessimistic case is a lower bound, not a
+prediction. The 100-fold pocket suppression is a design goal, not a
+demonstration. The catalyst is a design, not a synthesis. The M28-22 ring-damage
+risk stays open until the ring-attack rate is measured.

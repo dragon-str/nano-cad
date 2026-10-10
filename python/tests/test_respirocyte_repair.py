@@ -60,3 +60,26 @@ def test_the_optimize_summary_reports_a_target_met():
     opt = rr.optimize()
     assert opt["target_met"]
     assert opt["pocket_only"]["ring_lifetime_s"] < opt["both"]["ring_lifetime_s"]
+
+
+def test_the_fate_references_are_ordered_ranges():
+    names = [name for name, _, _, _ in rr.FATE_REFERENCES]
+    assert len(names) == len(set(names))
+    for name, low, high, source in rr.FATE_REFERENCES:
+        assert 0.0 < low <= high, name
+        assert source
+
+
+def test_the_sourced_envelope_brackets_the_central_estimate():
+    sc = rr.fate_scenarios(rr.POCKET_CASES[-2][1])
+    assert [s["scenario"] for s in sc] == ["pessimistic", "central", "optimistic"]
+    life = [s["ring_lifetime_years"] for s in sc]
+    assert life[0] < life[1] < life[2]
+    assert sc[0]["outlives_rotor"] is False
+    assert sc[2]["outlives_rotor"] is True
+
+
+def test_the_envelope_central_case_matches_the_design_table():
+    central = rr.fate_scenarios(rr.POCKET_CASES[-2][1])[1]
+    row = rr.site_design(rr.POCKET_CASES[-2][1], rr.CATALYST_CASES[2][1])
+    assert central["ring_lifetime_years"] == pytest.approx(row["ring_lifetime_years"])

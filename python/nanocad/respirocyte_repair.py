@@ -58,9 +58,10 @@ POCKET_CASES: tuple[tuple[str, float], ...] = (
     ("native-mutant span (limit)", 1000.0),
 )
 
-# The superoxide is born on the iron. It has three fates, all assumed rates in
-# events per second: it meets the catalyst, it escapes to the blood, or it
-# attacks the meso carbon. Only the ring attack is irreversible.
+# The superoxide is born on the iron. It has three fates, all pseudo-first
+# order rates in events per second for one superoxide in the pocket: it meets
+# the catalyst, it escapes to the blood, or it attacks the meso carbon. Only
+# the ring attack is irreversible.
 SUPEROXIDE_RING_ATTACK_PER_S = 1.0e5
 SUPEROXIDE_ESCAPE_PER_S = 1.0e4
 CATALYST_CASES: tuple[tuple[str, float], ...] = (
@@ -69,6 +70,66 @@ CATALYST_CASES: tuple[tuple[str, float], ...] = (
     ("enzyme-like catalyst", 1.0e6),
     ("engineered catalyst (limit)", 1.0e8),
 )
+
+# The literature basis for the fate competition (ADR-0139). Each entry is
+# (name, low, high, source). The rates are per second for one superoxide in the
+# pocket, with the co-located catalyst taken as one molar. The ring-attack rate
+# is the least certain: heme degradation by superoxide and peroxide is known
+# but not quantified for this pocket, so the range is deliberately wide.
+FATE_REFERENCES: tuple[tuple[str, float, float, str], ...] = (
+    ("spontaneous dismutation", 0.1, 1.0, "Bielski 1985, at about 1 uM superoxide"),
+    ("Mn-porphyrin catalyst", 1.0e6, 1.0e8, "Mn porphyrin SOD-mimic k_cat"),
+    ("enzyme-like catalyst", 1.0e5, 1.0e9, "SOD k_cat to k_cat/K_M (McCord-Fridovich)"),
+    ("superoxide escape", 1.0e6, 1.0e10, "diffusion out of the pocket, D/r^2"),
+    ("ring attack", 1.0e2, 1.0e6, "heme degradation, poorly quantified"),
+)
+
+
+def fate_scenarios(suppression: float) -> list[dict]:
+    """The ring lifetime for three sourced scenarios (ADR-0139).
+
+    The pessimistic case uses the slowest catalyst and the fastest ring attack;
+    the optimistic case uses the fastest catalyst and the slowest ring attack.
+    The central case is the M29-14 estimate.
+    """
+    ref = {name: (lo, hi) for name, lo, hi, _ in FATE_REFERENCES}
+    rotor = rotor_lifetime_s()
+    out = []
+    for label, k_dismut, k_ring, k_escape in (
+        (
+            "pessimistic",
+            ref["Mn-porphyrin catalyst"][0],
+            ref["ring attack"][1],
+            ref["superoxide escape"][0],
+        ),
+        (
+            "central",
+            1.0e6,
+            SUPEROXIDE_RING_ATTACK_PER_S,
+            SUPEROXIDE_ESCAPE_PER_S,
+        ),
+        (
+            "optimistic",
+            ref["enzyme-like catalyst"][1],
+            ref["ring attack"][0],
+            ref["superoxide escape"][1],
+        ),
+    ):
+        fates = superoxide_fates(k_dismut, k_escape, k_ring)
+        k_autox = central_rate_per_s() / suppression
+        life = ring_lifetime_s(k_autox, fates["f_ring_attack"])
+        out.append(
+            {
+                "scenario": label,
+                "k_dismut_per_s": k_dismut,
+                "k_ring_per_s": k_ring,
+                "k_escape_per_s": k_escape,
+                "f_ring_attack": fates["f_ring_attack"],
+                "ring_lifetime_years": life / (DAYS_PER_YEAR * rs.SECONDS_PER_DAY),
+                "outlives_rotor": life > rotor,
+            }
+        )
+    return out
 
 # Iron repair (ADR-0108): a one-electron donor on the empty arc. Moser-Dutton
 # tunnelling gives 0.1/s at 22 A and 25/s at 18 A. Use the conservative end.
@@ -200,6 +261,16 @@ def report() -> str:
         lines.append(
             f"{row['pocket']:<26}{row['catalyst']:<24}{life_s:>14}"
             f"{('yes' if row['outlives_rotor'] else 'no'):>16}"
+        )
+    lines.append("")
+    lines.append("sourced fate envelope (optimized pocket, 100x suppression):")
+    lines.append(f"{'scenario':<14}{'k_dismut':>12}{'k_ring':>12}{'ring life':>14}{'outlives':>10}")
+    for sc in fate_scenarios(POCKET_CASES[-2][1]):
+        life = sc["ring_lifetime_years"]
+        life_s = f"{life:.2f} y" if life < 1000.0 else f"{life:.0e} y"
+        lines.append(
+            f"{sc['scenario']:<14}{sc['k_dismut_per_s']:>12.0e}{sc['k_ring_per_s']:>12.0e}"
+            f"{life_s:>14}{('yes' if sc['outlives_rotor'] else 'no'):>10}"
         )
     lines.append("")
     lines.append("no material is consumed; the inputs are electrons and protons.")

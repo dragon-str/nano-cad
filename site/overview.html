@@ -227,7 +227,13 @@
         <li><span class="st pass">pass</span>
           <span>The site can be self-sustaining with no new material: an iron-repair donor, a
             100-fold distal pocket, and a co-located dismutase/catalase catalyst give a 3.9-year ring
-            lifetime, so the site outlives the 3.2-year rotor. The ring itself cannot be repaired.
+             lifetime, so the site outlives the 3.2-year rotor. The ring itself cannot be repaired.
+             <a href="docs/DECISIONS.html#adr-0139">ADR-0139</a></span></li>
+        <li><span class="st pass">pass</span>
+          <span>The donor and the catalyst are now built into the site CAD, and the assumed fate rates are
+            replaced by literature ranges. For the optimized pocket the ring lifetime is 1.1 years
+            pessimistic, 3.9 central, and 4e7 optimistic, so the design outlives the rotor unless the
+            catalyst is slow and the ring attack is fast at once.
             <a href="docs/DECISIONS.html#adr-0139">ADR-0139</a></span></li>
         <li><span class="st pass">pass</span>
           <span>The ring mounts to the diamond wall by a rigid ethynyl link. The corrected build has no
