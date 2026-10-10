@@ -4184,3 +4184,48 @@ superoxide-to-H2O2 conversion is taken as complete (conservative; escape only
 lowers the damage). The catalase-like rate of a Mn-porphyrin is an estimate.
 The 100-fold pocket suppression is a design goal. The catalyst is a design, not
 a synthesis.
+
+## ADR-0141: The repair donor and the catalyst are built into the oxygen rotor
+
+Context. M29-15 built the self-sustaining groups (the iron-repair donor and the
+dismutase/catalase catalyst) into the free carrier site
+(`CarrierSiteGenerator`). The device's oxygen rotor (`HemeRotorGenerator`) holds
+the same heme site in each rim pocket, but did not carry the groups. So the
+device's sites had no ring-damage protection. The rotor is the device form of
+the site (ADR-0111), so the groups must live there too.
+
+Decision. `crates/parts/src/heme_rotor.rs`. The rotor builds the two groups on
+each pocket before the site, so the tether search cannot claim their carbons.
+The catalyst is the distal pocket-wall cap carbon with a single hydrogen that
+points into the pocket; the build sets it to manganese and removes the hydrogen,
+leaving three wall bonds and one open site. The donor is the nearest proximal
+scaffold cap carbon; the build turns it into a hydroxyl whose oxygen points at
+the iron. The parameters `repair_donor` and `catalyst` (default 1) switch them.
+The set exposes `site_donor` and `site_catalyst`, one entry per pocket.
+
+Results. Every one of the eight pockets gets a donor and a catalyst.
+
+| group | free site (M29-15) | rotor (this ADR) |
+|---|---|---|
+| catalyst Fe-Mn | 6.37 A | 6.16 to 6.86 A |
+| catalyst Mn bonds | 3 | 3 |
+| donor Fe-O | 3.61 A | 7.14 to 7.63 A |
+
+No carbon gains a fifth bond from a tether or the catalyst. The rotor has 13755
+atoms with both groups.
+
+Findings. (1) The catalyst integrates cleanly: its distance and its open site
+match the free carrier site. (2) The donor cannot reach the free-site distance.
+The arm collar (radius `arm_radius_m + arm_collar_gap_m` = 7.2 A) occupies the
+proximal axis, so the nearest proximal scaffold carbon sits on the collar wall.
+The donor oxygen then lands 7.1 to 7.6 A from the iron, about twice the free
+site. (3) The M29-14 repair model assumes a fixed repair rate (0.1 /s),
+independent of the donor distance. A donor at 7.4 A transfers an electron far
+slower than one at 3.6 A, so the rotor's repair margin is weaker than the model
+states.
+
+Limits. The donor distance is a geometry result, not an electron-transfer
+calculation. The manganese centre is placed by a build rule, not by energy. The
+catalyst is a design, not a synthesis. The donor conflict with the arm collar is
+an open design issue: the options are a donor mounted on the arm, a narrower
+collar, or an external reductant (blood glutathione or ascorbate).

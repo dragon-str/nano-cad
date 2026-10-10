@@ -95,7 +95,14 @@ static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("arm_collar_gap_m", Some(Unit::Metre), 4.6e-10, 3.8e-10, 1.0e-9, false, "carbon gap between the arm and the collar that closes the arm channel from the ring slot"),
     ParameterSpec::new("arm_collar_length_m", Some(Unit::Metre), 4.0e-10, 2.0e-10, 1.5e-9, false, "length of the arm collar below the ring slot"),
     ParameterSpec::new("cam_release_margin_m", Some(Unit::Metre), 2.0e-10, 0.0, 1.0e-9, false, "extra withdrawal of the release track beyond the 4.0 A design, taken up by the lattice steps of the groove wall"),
+    ParameterSpec::new("repair_donor", None, 1.0, 0.0, 1.0, true, "1 builds the iron-repair donor on the collar wall of each pocket (ADR-0108, ADR-0141)"),
+    ParameterSpec::new("catalyst", None, 1.0, 0.0, 1.0, true, "1 builds the dismutase/catalase manganese centre on each pocket wall (ADR-0139, ADR-0141)"),
 ];
+
+/// The longest iron-to-donor distance the rotor accepts, in metres. The arm
+/// collar occupies the proximal axis, so the nearest scaffold carbon sits on
+/// the collar wall, further than the 3.6 A of the free carrier site (ADR-0141).
+const ROTOR_DONOR_REACH_M: f64 = 9.2e-10;
 
 /// The carbon-centre gap between the cam pin and a groove wall: the two
 /// hydrogen caps at van der Waals contact (1.09 + 2.4 + 1.09 A, rounded up to
@@ -243,6 +250,11 @@ pub struct HemeRotorSet {
     /// For each site, its tethers (ADR-0137). The rotor atom indexes are those
     /// of `rotor`, after the replaced hydrogens were removed.
     pub site_tethers: Vec<Vec<Tether>>,
+    /// For each site, the iron-repair donor (ADR-0108), when built. The rotor
+    /// atom indexes are those of `rotor`, after the removed atoms were pruned.
+    pub site_donor: Vec<Option<DonorSite>>,
+    /// For each site, the dismutase/catalase catalyst (ADR-0139), when built.
+    pub site_catalyst: Vec<Option<CatalystSite>>,
     /// The azimuth of each pocket, in radians.
     pub azimuth_rad: Vec<f64>,
     /// Whether each pocket shows the loaded state.
@@ -395,6 +407,8 @@ impl HemeRotorGenerator {
         let arm_len_m = r.require("arm_length_m")?;
         let phase_rad = r.require("pocket_phase_rad")?;
         let release_margin_m = r.require("cam_release_margin_m")?;
+        let build_donor = r.require("repair_donor")?.round() >= 0.5;
+        let build_catalyst = r.require("catalyst")?.round() >= 0.5;
         let pin_offset_m = r.require("cam_pin_offset_m")?;
         let pin_top_m = r.require("cam_pin_top_m")?;
         let half_m = 0.5 * thick_m;
@@ -662,6 +676,9 @@ impl HemeRotorGenerator {
         let mut site_iron = Vec::with_capacity(count);
         let mut site_anchor: Vec<Vec<(usize, usize)>> = Vec::with_capacity(count);
         let mut site_tethers: Vec<Vec<Tether>> = Vec::with_capacity(count);
+        let mut site_donor: Vec<Option<DonorSite>> = Vec::with_capacity(count);
+        let mut site_catalyst: Vec<Option<CatalystSite>> = Vec::with_capacity(count);
+        let mut catalyst_hydrogens: Vec<usize> = Vec::new();
         let mut loaded = Vec::with_capacity(count);
         let mut pin_side = Vec::with_capacity(count);
         for (k, &az) in azimuths.iter().enumerate() {
@@ -671,6 +688,32 @@ impl HemeRotorGenerator {
             let fe = [iron_r_m * c, iron_r_m * s, 0.0];
             let is_loaded = ArmCamTrack::loaded_fraction(az) >= 0.5;
             loaded.push(is_loaded);
+            // The self-sustaining groups (ADR-0141) are built on the rotor
+            // before the site, so the tether search cannot claim their carbons.
+            let donor = if build_donor {
+                add_rotor_donor(&mut rotor, fe, u)?
+            } else {
+                None
+            };
+            let catalyst = if build_catalyst {
+                match find_rotor_catalyst_carbon(&rotor, fe, u, bore_m + 1.5e-10) {
+                    Some((c_i, h_i)) => {
+                        rotor.set_element(c_i, Element::MANGANESE)?;
+                        rotor.set_atom_type(c_i, "Mn")?;
+                        catalyst_hydrogens.push(h_i);
+                        let p = rotor.position_m(c_i).unwrap_or(fe);
+                        Some(CatalystSite {
+                            manganese: c_i,
+                            fe_distance_m: dist(p, fe),
+                        })
+                    }
+                    None => None,
+                }
+            } else {
+                None
+            };
+            site_donor.push(donor);
+            site_catalyst.push(catalyst);
             let (site, fe_i, tethers) = build_heme_site(fe, u, t, &rotor, is_loaded)?;
             site_anchor.push(tethers.iter().map(|x| (x.site_atom, x.wall_atom)).collect());
             site_tethers.push(tethers);
@@ -703,12 +746,14 @@ impl HemeRotorGenerator {
             arms.push(Part::new(format!("ligand_arm_{k}"), placed).with_material("diamond + NH2"));
         }
 
-        // Each tether replaced a rotor hydrogen: remove those, and renumber.
-        let gone: Vec<usize> = site_tethers
+        // Each tether and the catalyst replaced a rotor hydrogen: remove those,
+        // and renumber.
+        let mut gone: Vec<usize> = site_tethers
             .iter()
             .flatten()
             .map(|x| x.wall_hydrogen)
             .collect();
+        gone.extend(catalyst_hydrogens.iter().copied());
         let (pruned, map) = rotor.without_atoms(&gone);
         rotor = pruned;
         let remap = |i: usize| -> Result<usize, PartError> {
@@ -724,6 +769,13 @@ impl HemeRotorGenerator {
                 pair.1 = tether.wall_atom;
             }
         }
+        for donor in site_donor.iter_mut().flatten() {
+            donor.oxygen = remap(donor.oxygen)?;
+            donor.hydrogen = remap(donor.hydrogen)?;
+        }
+        for catalyst in site_catalyst.iter_mut().flatten() {
+            catalyst.manganese = remap(catalyst.manganese)?;
+        }
 
         Ok(HemeRotorSet {
             rotor: Part::new("heme_rotor", rotor).with_material("diamond"),
@@ -732,6 +784,8 @@ impl HemeRotorGenerator {
             site_iron,
             site_anchor,
             site_tethers,
+            site_donor,
+            site_catalyst,
             arm_tip: vec![cap; count],
             azimuth_rad: azimuths,
             loaded,
@@ -1759,6 +1813,8 @@ pub fn water_rotor(spec: &WaterRotorSpec) -> Result<HemeRotorSet, PartError> {
         arm_tip: Vec::new(),
         site_anchor: Vec::new(),
         site_tethers: Vec::new(),
+        site_donor: Vec::new(),
+        site_catalyst: Vec::new(),
         azimuth_rad: azimuths,
         loaded: flush,
         iron_radius_m: tip_in_m,
@@ -2421,6 +2477,116 @@ fn find_catalyst_carbon(
         }
     }
     best.map(|(_, c, h)| (c, h))
+}
+
+/// Adds the repair donor to a rotor pocket (ADR-0108, ADR-0141): the nearest
+/// scaffold cap carbon on the proximal side of the ring (opposite the O2)
+/// becomes a hydroxyl with its oxygen pointing at the iron. The pocket axis is
+/// `u`, so proximal means a negative projection on `u`. Returns `None` when no
+/// carbon is in reach.
+fn add_rotor_donor(
+    top: &mut Topology,
+    fe: [f64; 3],
+    u: [f64; 3],
+) -> Result<Option<DonorSite>, PartError> {
+    let mut best: Option<(f64, usize, usize)> = None;
+    for b in top.bonds() {
+        let (a, c) = (b.u as usize, b.v as usize);
+        let (c_i, h_i) = match (top.element(a), top.element(c)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (a, c),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (c, a),
+            _ => continue,
+        };
+        let Some(cp) = top.position_m(c_i) else {
+            continue;
+        };
+        let along = (cp[0] - fe[0]) * u[0] + (cp[1] - fe[1]) * u[1] + (cp[2] - fe[2]) * u[2];
+        // Proximal: on the far side of the ring from the O2.
+        if along >= -0.5e-10 {
+            continue;
+        }
+        let d = dist(cp, fe);
+        if !(2.6e-10..=ROTOR_DONOR_REACH_M).contains(&d) {
+            continue;
+        }
+        if best.is_none_or(|(bs, _, _)| d < bs) {
+            best = Some((d, c_i, h_i));
+        }
+    }
+    let Some((_, c_i, h_i)) = best else {
+        return Ok(None);
+    };
+    let (o, hi) = place_ligand_oh(top, c_i, h_i, fe)?;
+    let op = top.position_m(o).unwrap_or([0.0; 3]);
+    Ok(Some(DonorSite {
+        oxygen: o,
+        hydrogen: hi,
+        fe_distance_m: dist(op, fe),
+    }))
+}
+
+/// Finds the catalyst carbon for a rotor pocket (ADR-0139, ADR-0141): the
+/// distal pocket-wall cap carbon nearest the iron, whose single hydrogen
+/// points into the pocket. Returns the (carbon, hydrogen) pair; the caller
+/// replaces the carbon with manganese and removes the hydrogen.
+fn find_rotor_catalyst_carbon(
+    top: &Topology,
+    fe: [f64; 3],
+    u: [f64; 3],
+    max_radius_m: f64,
+) -> Option<(usize, usize)> {
+    let mut hydrogens: Vec<usize> = vec![0; top.atom_count()];
+    for b in top.bonds() {
+        if top.element(b.u as usize) == Some(Element::HYDROGEN) {
+            hydrogens[b.v as usize] += 1;
+        }
+        if top.element(b.v as usize) == Some(Element::HYDROGEN) {
+            hydrogens[b.u as usize] += 1;
+        }
+    }
+    let mut best: Option<(f64, usize, usize)> = None;
+    for b in top.bonds() {
+        let (a, c) = (b.u as usize, b.v as usize);
+        let (c_i, h_i) = match (top.element(a), top.element(c)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (a, c),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (c, a),
+            _ => continue,
+        };
+        if hydrogens[c_i] != 1 {
+            continue;
+        }
+        let Some(cp) = top.position_m(c_i) else {
+            continue;
+        };
+        let rel = [cp[0] - fe[0], cp[1] - fe[1], cp[2] - fe[2]];
+        let along = rel[0] * u[0] + rel[1] * u[1] + rel[2] * u[2];
+        // Distal: on the pocket side of the ring, where the O2 binds.
+        if along <= 0.0 {
+            continue;
+        }
+        let perp = [
+            rel[0] - along * u[0],
+            rel[1] - along * u[1],
+            rel[2] - along * u[2],
+        ];
+        if norm(perp) > max_radius_m {
+            continue;
+        }
+        let Some(hp) = top.position_m(h_i) else {
+            continue;
+        };
+        // The hydrogen points into the pocket (toward the pocket axis).
+        let hd = normalize([hp[0] - cp[0], hp[1] - cp[1], hp[2] - cp[2]]);
+        let rad = normalize(perp);
+        if -(hd[0] * rad[0] + hd[1] * rad[1] + hd[2] * rad[2]) < 0.0 {
+            continue;
+        }
+        let d = dist(cp, fe);
+        if best.is_none_or(|(bs, _, _)| d < bs) {
+            best = Some((d, c_i, h_i));
+        }
+    }
+    best.map(|(_, c_i, h_i)| (c_i, h_i))
 }
 
 impl CarrierSiteGenerator {
@@ -3232,6 +3398,87 @@ mod carrier_tests {
                 assert!(n <= 4, "carbon {i} has {n} bonds");
             }
         }
+    }
+
+    #[test]
+    fn every_rotor_pocket_has_a_donor_and_a_catalyst() {
+        let set = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        assert_eq!(set.site_donor.len(), set.azimuth_rad.len());
+        assert_eq!(set.site_catalyst.len(), set.azimuth_rad.len());
+        assert!(
+            set.site_donor.iter().all(|d| d.is_some()),
+            "a pocket has no repair donor"
+        );
+        assert!(
+            set.site_catalyst.iter().all(|c| c.is_some()),
+            "a pocket has no catalyst"
+        );
+    }
+
+    #[test]
+    fn the_rotor_repair_donor_is_proximal_and_in_reach() {
+        // ADR-0141: the arm collar occupies the proximal axis, so the donor
+        // sits on the collar wall, further from the iron than the free site.
+        let set = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        for (k, donor) in set.site_donor.iter().enumerate() {
+            let d = donor.as_ref().expect("donor");
+            assert!(
+                (3.0e-10..=ROTOR_DONOR_REACH_M).contains(&d.fe_distance_m),
+                "Fe-O(donor) {} m is out of reach",
+                d.fe_distance_m
+            );
+            let az = set.azimuth_rad[k];
+            let (s, c) = az.sin_cos();
+            let u = [c, s, 0.0];
+            let fe = set.sites[k]
+                .topology
+                .position_m(set.site_iron[k])
+                .expect("fe");
+            let o = set.rotor.topology.position_m(d.oxygen).expect("donor o");
+            let along = (o[0] - fe[0]) * u[0] + (o[1] - fe[1]) * u[1] + (o[2] - fe[2]) * u[2];
+            assert!(along < 0.0, "the donor is not proximal: {along} m");
+            assert_eq!(set.rotor.topology.atom_type(d.oxygen), Some("O_hydroxyl"));
+        }
+    }
+
+    #[test]
+    fn the_rotor_catalyst_is_manganese_with_an_open_site() {
+        let set = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        for cat in set.site_catalyst.iter().flatten() {
+            assert_eq!(
+                set.rotor.topology.element(cat.manganese),
+                Some(Element::MANGANESE)
+            );
+            assert_eq!(set.rotor.topology.atom_type(cat.manganese), Some("Mn"));
+            // Three wall bonds and one open position into the pocket.
+            let bonds = set
+                .rotor
+                .topology
+                .bonds()
+                .filter(|b| b.u as usize == cat.manganese || b.v as usize == cat.manganese)
+                .count();
+            assert_eq!(bonds, 3, "the manganese has {bonds} bonds");
+            assert!(cat.fe_distance_m > 2.5e-10, "Mn too close to Fe");
+        }
+    }
+
+    #[test]
+    fn the_rotor_repair_groups_can_be_disabled() {
+        let set = HemeRotorGenerator
+            .build(
+                &ParameterSet::new()
+                    .with("repair_donor", 0.0)
+                    .with("catalyst", 0.0),
+            )
+            .expect("builds");
+        assert!(set.site_donor.iter().all(|d| d.is_none()));
+        assert!(set.site_catalyst.iter().all(|c| c.is_none()));
     }
 
     #[test]
