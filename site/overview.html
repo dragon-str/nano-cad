@@ -226,14 +226,16 @@
             requirement. <a href="docs/DECISIONS.html#adr-0138">ADR-0138</a></span></li>
         <li><span class="st pass">pass</span>
           <span>The site can be self-sustaining with no new material: an iron-repair donor, a
-            100-fold distal pocket, and a co-located dismutase/catalase catalyst give a 3.9-year ring
-             lifetime, so the site outlives the 3.2-year rotor. The ring itself cannot be repaired.
-             <a href="docs/DECISIONS.html#adr-0139">ADR-0139</a></span></li>
+            100-fold distal pocket, and a co-located dismutase/catalase catalyst. The ring damage is
+            mediated by H2O2, so the rate is bounded by the measured heme + H2O2 reaction (3.6e3 /M/s).
+            The optimized pocket with a Mn-porphyrin mimic gives a 10-year ring lifetime, so the site
+            outlives the 3.2-year rotor. The ring itself cannot be repaired.
+            <a href="docs/DECISIONS.html#adr-0139">ADR-0139</a>,
+            <a href="docs/DECISIONS.html#adr-0140">ADR-0140</a></span></li>
         <li><span class="st pass">pass</span>
-          <span>The donor and the catalyst are now built into the site CAD, and the assumed fate rates are
-            replaced by literature ranges. For the optimized pocket the ring lifetime is 1.1 years
-            pessimistic, 3.9 central, and 4e7 optimistic, so the design outlives the rotor unless the
-            catalyst is slow and the ring attack is fast at once.
+          <span>The donor and the catalyst are built into the site CAD: a proximal pocket with a donor
+            hydroxyl on its floor (Fe-O 3.61&nbsp;&Aring;) and a manganese center on the pocket wall
+            (Fe-Mn 6.37&nbsp;&Aring;). Every carbon stays four-bonded.
             <a href="docs/DECISIONS.html#adr-0139">ADR-0139</a></span></li>
         <li><span class="st pass">pass</span>
           <span>The ring mounts to the diamond wall by a rigid ethynyl link. The corrected build has no

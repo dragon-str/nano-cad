@@ -1,28 +1,35 @@
-"""A self-sustaining repair strategy for the heme carrier site (M29-14).
+"""A self-sustaining repair strategy for the heme carrier site (M29-14, M28-22).
 
 The site degrades in two ways (ADR-0108, ADR-0136):
 
   * the iron oxidizes, Fe(II) -> Fe(III), and stops binding O2. This is
     reversible: a one-electron donor on the empty arc re-reduces it. The
     electrons are trivial and come from the device, so no material is used.
-  * the superoxide from that same oxidation attacks the porphyrin ring. This
-    is irreversible: a broken ring cannot be rebuilt without new carbon.
+  * the porphyrin ring is damaged. This is irreversible: a broken ring cannot
+    be rebuilt without new carbon.
 
 So a self-sustaining site cannot repair the ring. It must stop the ring from
 breaking. Three permanent elements do that:
 
   1. a distal pocket that suppresses autoxidation (a low superoxide rate);
-  2. a co-located catalyst that dismutates the superoxide before it reaches
-     the ring, and then decomposes the peroxide;
+  2. a co-located catalyst that dismutates the superoxide and then decomposes
+     the peroxide before it reaches the ring;
   3. the iron-repair donor, so the site stays in the Fe(II) state.
 
 None of the three is consumed. The only inputs are electrons (a charged
 onboard store) and protons (buffered blood). The alternative, a consumable
 antioxidant, would need new material each day and is rejected.
 
-This module estimates the ring lifetime from the race between the catalyst,
-escape, and the ring attack, and finds the design that outlives the rotor.
-All rates here are estimates; the model shows the design, not a measurement.
+Mechanism of the ring damage (M28-22). The autoxidation superoxide does not
+attack the ring directly. It converts almost completely into hydrogen peroxide
+by dismutation (Wazawa 1992, PMID 1420896). The H2O2 is the oxidant: it reacts
+with the Fe(II) heme to form a ferryl, which opens the ring (Yusa & Shikama
+1987, PMID 3427037). The ring lifetime is set by the race for the H2O2 between
+the heme and the co-located catalyst.
+
+This module estimates the ring lifetime from that race, and finds the design
+that outlives the rotor. All rates here are estimates or measured proxy values;
+the model shows the design, not a measurement of this pocket.
 """
 
 from __future__ import annotations
@@ -58,78 +65,34 @@ POCKET_CASES: tuple[tuple[str, float], ...] = (
     ("native-mutant span (limit)", 1000.0),
 )
 
-# The superoxide is born on the iron. It has three fates, all pseudo-first
-# order rates in events per second for one superoxide in the pocket: it meets
-# the catalyst, it escapes to the blood, or it attacks the meso carbon. Only
-# the ring attack is irreversible.
-SUPEROXIDE_RING_ATTACK_PER_S = 1.0e5
-SUPEROXIDE_ESCAPE_PER_S = 1.0e4
+# The ring damage is mediated by H2O2 (M28-22), so the rate is bounded by the
+# reaction of the heme with H2O2. The measured rate of deoxy-myoglobin
+# (Fe(II)) + H2O2 -> ferryl is 3.6e3 /M/s (Yusa & Shikama 1987, PMID 3427037).
+# This is an upper bound on the ring-damage rate: the ferryl can return to the
+# resting state instead of opening the ring, and the superoxide can escape
+# before it dismutates, both of which lower the damage.
+HEME_H2O2_PER_M_S = 3.6e3
+
+# The catalyst's catalase-like rate (H2O2 -> O2 + H2O), taken as a
+# pseudo-first-order rate with the co-located catalyst at one molar. A native
+# catalase is one of the fastest enzymes (k_cat/K_M about 1e7 /M/s); a
+# Mn-porphyrin or Mn-salen dual SOD/catalase mimic is slower, about 1e5 /M/s.
+# (label, rate).
 CATALYST_CASES: tuple[tuple[str, float], ...] = (
     ("no catalyst", 0.0),
-    ("Mn-porphyrin mimic", 1.0e4),
-    ("enzyme-like catalyst", 1.0e6),
-    ("engineered catalyst (limit)", 1.0e8),
+    ("Mn-porphyrin mimic", 1.0e5),
+    ("enzyme-like (catalase)", 1.0e7),
+    ("engineered catalyst (limit)", 1.0e9),
 )
 
-# The literature basis for the fate competition (ADR-0139). Each entry is
-# (name, low, high, source). The rates are per second for one superoxide in the
-# pocket, with the co-located catalyst taken as one molar. The ring-attack rate
-# is the least certain: heme degradation by superoxide and peroxide is known
-# but not quantified for this pocket, so the range is deliberately wide.
-FATE_REFERENCES: tuple[tuple[str, float, float, str], ...] = (
-    ("spontaneous dismutation", 0.1, 1.0, "Bielski 1985, at about 1 uM superoxide"),
-    ("Mn-porphyrin catalyst", 1.0e6, 1.0e8, "Mn porphyrin SOD-mimic k_cat"),
-    ("enzyme-like catalyst", 1.0e5, 1.0e9, "SOD k_cat to k_cat/K_M (McCord-Fridovich)"),
-    ("superoxide escape", 1.0e6, 1.0e10, "diffusion out of the pocket, D/r^2"),
-    ("ring attack", 1.0e2, 1.0e6, "heme degradation, poorly quantified"),
+# The literature basis for the ring damage (M28-22). Each entry is
+# (name, rate_per_m_per_s, source).
+RING_ATTACK_REFERENCES: tuple[tuple[str, float, str], ...] = (
+    ("heme + H2O2 -> ferryl", HEME_H2O2_PER_M_S, "Yusa & Shikama 1987, PMID 3427037"),
+    ("native catalase + H2O2", 1.0e7, "catalase k_cat/K_M, one of the fastest enzymes"),
+    ("Mn-porphyrin catalase-like", 1.0e5, "Mn porphyrin/salen dual SOD/catalase mimic"),
+    ("superoxide -> H2O2", float("inf"), "Wazawa 1992, PMID 1420896 (almost complete)"),
 )
-
-
-def fate_scenarios(suppression: float) -> list[dict]:
-    """The ring lifetime for three sourced scenarios (ADR-0139).
-
-    The pessimistic case uses the slowest catalyst and the fastest ring attack;
-    the optimistic case uses the fastest catalyst and the slowest ring attack.
-    The central case is the M29-14 estimate.
-    """
-    ref = {name: (lo, hi) for name, lo, hi, _ in FATE_REFERENCES}
-    rotor = rotor_lifetime_s()
-    out = []
-    for label, k_dismut, k_ring, k_escape in (
-        (
-            "pessimistic",
-            ref["Mn-porphyrin catalyst"][0],
-            ref["ring attack"][1],
-            ref["superoxide escape"][0],
-        ),
-        (
-            "central",
-            1.0e6,
-            SUPEROXIDE_RING_ATTACK_PER_S,
-            SUPEROXIDE_ESCAPE_PER_S,
-        ),
-        (
-            "optimistic",
-            ref["enzyme-like catalyst"][1],
-            ref["ring attack"][0],
-            ref["superoxide escape"][1],
-        ),
-    ):
-        fates = superoxide_fates(k_dismut, k_escape, k_ring)
-        k_autox = central_rate_per_s() / suppression
-        life = ring_lifetime_s(k_autox, fates["f_ring_attack"])
-        out.append(
-            {
-                "scenario": label,
-                "k_dismut_per_s": k_dismut,
-                "k_ring_per_s": k_ring,
-                "k_escape_per_s": k_escape,
-                "f_ring_attack": fates["f_ring_attack"],
-                "ring_lifetime_years": life / (DAYS_PER_YEAR * rs.SECONDS_PER_DAY),
-                "outlives_rotor": life > rotor,
-            }
-        )
-    return out
 
 # Iron repair (ADR-0108): a one-electron donor on the empty arc. Moser-Dutton
 # tunnelling gives 0.1/s at 22 A and 25/s at 18 A. Use the conservative end.
@@ -140,24 +103,20 @@ IRON_REPAIR_PER_S = 0.1
 ROTOR_REV_PER_S = 1000.0
 
 
-def superoxide_fates(k_dismut_per_s: float,
-                     k_escape_per_s: float = SUPEROXIDE_ESCAPE_PER_S,
-                     k_ring_per_s: float = SUPEROXIDE_RING_ATTACK_PER_S) -> dict:
-    """Split the superoxide between the catalyst, escape, and the ring."""
-    total = k_dismut_per_s + k_escape_per_s + k_ring_per_s
+def h2o2_fates(k_cat_per_s: float) -> dict:
+    """Split the pocket H2O2 between the heme (ring damage) and the catalyst."""
+    total = HEME_H2O2_PER_M_S + k_cat_per_s
     return {
-        "k_dismut_per_s": k_dismut_per_s,
-        "k_escape_per_s": k_escape_per_s,
-        "k_ring_per_s": k_ring_per_s,
-        "f_dismutated": k_dismut_per_s / total,
-        "f_escaped": k_escape_per_s / total,
-        "f_ring_attack": k_ring_per_s / total,
+        "k_heme_per_s": HEME_H2O2_PER_M_S,
+        "k_cat_per_s": k_cat_per_s,
+        "f_ring": HEME_H2O2_PER_M_S / total,
+        "f_catalyzed": k_cat_per_s / total,
     }
 
 
-def ring_lifetime_s(k_autox_per_s: float, f_ring_attack: float) -> float:
+def ring_lifetime_s(k_autox_per_s: float, f_ring: float) -> float:
     """Half-life of the ring against irreversible attack."""
-    k = k_autox_per_s * f_ring_attack
+    k = k_autox_per_s * f_ring
     return math.log(2.0) / k if k > 0.0 else float("inf")
 
 
@@ -189,20 +148,26 @@ def rotor_lifetime_s() -> float:
     return rs.MEMS_CYCLES_TO_FAILURE / ROTOR_REV_PER_S
 
 
-def site_design(suppression: float, k_dismut_per_s: float) -> dict:
-    """Ring lifetime and the fate split for one design point."""
+def ring_attack_rate_per_s(suppression: float, k_cat_per_s: float) -> float:
+    """The irreversible ring-damage rate for one design point."""
     k_autox = central_rate_per_s() / suppression
-    fates = superoxide_fates(k_dismut_per_s)
-    life = ring_lifetime_s(k_autox, fates["f_ring_attack"])
+    return k_autox * h2o2_fates(k_cat_per_s)["f_ring"]
+
+
+def site_design(suppression: float, k_cat_per_s: float) -> dict:
+    """Ring lifetime and the H2O2 split for one design point."""
+    k_autox = central_rate_per_s() / suppression
+    fates = h2o2_fates(k_cat_per_s)
+    life = ring_lifetime_s(k_autox, fates["f_ring"])
     rotor = rotor_lifetime_s()
     return {
         "suppression": suppression,
-        "k_dismut_per_s": k_dismut_per_s,
+        "k_cat_per_s": k_cat_per_s,
         "k_autox_per_s": k_autox,
         "autoxidation_half_life_h": math.log(2.0) / k_autox / HOUR_S,
-        "f_ring_attack": fates["f_ring_attack"],
-        "f_dismutated": fates["f_dismutated"],
-        "f_escaped": fates["f_escaped"],
+        "f_ring": fates["f_ring"],
+        "f_catalyzed": fates["f_catalyzed"],
+        "ring_attack_per_s": k_autox * fates["f_ring"],
         "ring_lifetime_s": life,
         "ring_lifetime_days": life / rs.SECONDS_PER_DAY,
         "ring_lifetime_years": life / (DAYS_PER_YEAR * rs.SECONDS_PER_DAY),
@@ -214,8 +179,8 @@ def design_table() -> list[dict]:
     """Every pocket case against every catalyst case."""
     out = []
     for pocket_label, suppression in POCKET_CASES:
-        for cat_label, k_dismut in CATALYST_CASES:
-            row = site_design(suppression, k_dismut)
+        for cat_label, k_cat in CATALYST_CASES:
+            row = site_design(suppression, k_cat)
             row["pocket"] = pocket_label
             row["catalyst"] = cat_label
             out.append(row)
@@ -238,6 +203,28 @@ def optimize() -> dict:
     }
 
 
+def ring_damage_scenarios(suppression: float) -> list[dict]:
+    """The ring lifetime across the sourced catalyst range (M28-22).
+
+    The heme + H2O2 rate is measured, so the only range is the catalyst. The
+    no-catalyst case is the upper bound on the damage.
+    """
+    rotor = rotor_lifetime_s()
+    out = []
+    for label, k_cat in CATALYST_CASES:
+        row = site_design(suppression, k_cat)
+        out.append(
+            {
+                "scenario": label,
+                "k_cat_per_s": k_cat,
+                "f_ring": row["f_ring"],
+                "ring_lifetime_years": row["ring_lifetime_years"],
+                "outlives_rotor": row["ring_lifetime_years"] * DAYS_PER_YEAR * rs.SECONDS_PER_DAY > rotor,
+            }
+        )
+    return out
+
+
 def carrier_repair_budget(material: dict) -> dict:
     """Electron budget for one carrier molecule (all its sites)."""
     sites = float(material.get("o2_sites_per_molecule", 1.0)) or 1.0
@@ -247,12 +234,13 @@ def carrier_repair_budget(material: dict) -> dict:
 def report() -> str:
     """A short text table of the design study."""
     opt = optimize()
-    lines = ["Self-sustaining site repair (M29-14)", ""]
+    lines = ["Self-sustaining site repair (M29-14, ring damage M28-22)", ""]
     lines.append(
         f"rotor limit: {opt['rotor_lifetime_years']:.1f} years "
         f"({rs.MEMS_CYCLES_TO_FAILURE:.0e} cycles at {ROTOR_REV_PER_S:.0f} rev/s)"
     )
     lines.append(f"central autoxidation: {math.log(2.0) / central_rate_per_s() / HOUR_S:.1f} h half-life")
+    lines.append(f"heme + H2O2 -> ferryl: {HEME_H2O2_PER_M_S:.1e} /M/s (measured, Yusa & Shikama 1987)")
     lines.append("")
     lines.append(f"{'pocket':<26}{'catalyst':<24}{'ring life':>14}{'outlives rotor':>16}")
     for row in design_table():
@@ -263,13 +251,13 @@ def report() -> str:
             f"{('yes' if row['outlives_rotor'] else 'no'):>16}"
         )
     lines.append("")
-    lines.append("sourced fate envelope (optimized pocket, 100x suppression):")
-    lines.append(f"{'scenario':<14}{'k_dismut':>12}{'k_ring':>12}{'ring life':>14}{'outlives':>10}")
-    for sc in fate_scenarios(POCKET_CASES[-2][1]):
+    lines.append("sourced catalyst range (optimized pocket, 100x suppression):")
+    lines.append(f"{'scenario':<26}{'k_cat /M/s':>12}{'f_ring':>12}{'ring life':>14}{'outlives':>10}")
+    for sc in ring_damage_scenarios(POCKET_CASES[-2][1]):
         life = sc["ring_lifetime_years"]
         life_s = f"{life:.2f} y" if life < 1000.0 else f"{life:.0e} y"
         lines.append(
-            f"{sc['scenario']:<14}{sc['k_dismut_per_s']:>12.0e}{sc['k_ring_per_s']:>12.0e}"
+            f"{sc['scenario']:<26}{sc['k_cat_per_s']:>12.0e}{sc['f_ring']:>12.2e}"
             f"{life_s:>14}{('yes' if sc['outlives_rotor'] else 'no'):>10}"
         )
     lines.append("")

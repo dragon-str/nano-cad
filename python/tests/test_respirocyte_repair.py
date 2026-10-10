@@ -1,4 +1,4 @@
-"""Self-sustaining site repair (M29-14)."""
+"""Self-sustaining site repair (M29-14) and the ring damage (M28-22)."""
 
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ def test_central_rate_matches_the_adr_0136_pocket():
     assert 25.0 < life_h < 35.0
 
 
-def test_the_fates_sum_to_one_and_the_catalyst_wins():
-    fates = rr.superoxide_fates(1.0e6)
-    assert fates["f_dismutated"] + fates["f_escaped"] + fates["f_ring_attack"] == pytest.approx(1.0)
-    assert fates["f_ring_attack"] < rr.superoxide_fates(0.0)["f_ring_attack"]
+def test_h2o2_fates_sum_to_one_and_the_catalyst_wins():
+    fates = rr.h2o2_fates(1.0e7)
+    assert fates["f_ring"] + fates["f_catalyzed"] == pytest.approx(1.0)
+    assert fates["f_ring"] < rr.h2o2_fates(0.0)["f_ring"]
+    assert rr.h2o2_fates(0.0)["f_ring"] == pytest.approx(1.0)
 
 
 def test_ring_lifetime_is_ln2_over_the_damage_rate():
@@ -33,9 +34,10 @@ def test_iron_repair_keeps_the_site_loaded():
     assert r["margin"] > 1000.0
 
 
-def test_the_optimized_design_outlives_the_rotor_but_the_central_does_not():
-    central = rr.site_design(rr.POCKET_CASES[0][1], rr.CATALYST_CASES[2][1])
-    best = rr.site_design(rr.POCKET_CASES[2][1], rr.CATALYST_CASES[2][1])
+def test_the_optimized_pocket_and_mimic_outlive_the_rotor_but_the_central_does_not():
+    mimic = rr.CATALYST_CASES[1][1]
+    central = rr.site_design(rr.POCKET_CASES[0][1], mimic)
+    best = rr.site_design(rr.POCKET_CASES[2][1], mimic)
     rotor_y = rr.rotor_lifetime_s() / (rr.DAYS_PER_YEAR * rs.SECONDS_PER_DAY)
     assert not central["outlives_rotor"]
     assert best["outlives_rotor"]
@@ -45,7 +47,7 @@ def test_the_optimized_design_outlives_the_rotor_but_the_central_does_not():
 def test_a_better_pocket_or_catalyst_extends_the_ring_lifetime():
     base = rr.site_design(1.0, 0.0)["ring_lifetime_s"]
     better_pocket = rr.site_design(100.0, 0.0)["ring_lifetime_s"]
-    better_catalyst = rr.site_design(1.0, 1.0e8)["ring_lifetime_s"]
+    better_catalyst = rr.site_design(1.0, 1.0e7)["ring_lifetime_s"]
     assert better_pocket > base
     assert better_catalyst > base
 
@@ -62,24 +64,24 @@ def test_the_optimize_summary_reports_a_target_met():
     assert opt["pocket_only"]["ring_lifetime_s"] < opt["both"]["ring_lifetime_s"]
 
 
-def test_the_fate_references_are_ordered_ranges():
-    names = [name for name, _, _, _ in rr.FATE_REFERENCES]
+def test_the_ring_attack_references_are_well_formed():
+    names = [name for name, _, _ in rr.RING_ATTACK_REFERENCES]
     assert len(names) == len(set(names))
-    for name, low, high, source in rr.FATE_REFERENCES:
-        assert 0.0 < low <= high, name
+    for name, rate, source in rr.RING_ATTACK_REFERENCES:
+        assert rate > 0.0, name
         assert source
 
 
-def test_the_sourced_envelope_brackets_the_central_estimate():
-    sc = rr.fate_scenarios(rr.POCKET_CASES[-2][1])
-    assert [s["scenario"] for s in sc] == ["pessimistic", "central", "optimistic"]
+def test_the_catalyst_range_lengthens_the_ring_lifetime():
+    sc = rr.ring_damage_scenarios(rr.POCKET_CASES[-2][1])
+    assert sc[0]["scenario"] == "no catalyst"
     life = [s["ring_lifetime_years"] for s in sc]
-    assert life[0] < life[1] < life[2]
+    assert life == sorted(life)
     assert sc[0]["outlives_rotor"] is False
-    assert sc[2]["outlives_rotor"] is True
+    assert sc[-1]["outlives_rotor"] is True
 
 
-def test_the_envelope_central_case_matches_the_design_table():
-    central = rr.fate_scenarios(rr.POCKET_CASES[-2][1])[1]
-    row = rr.site_design(rr.POCKET_CASES[-2][1], rr.CATALYST_CASES[2][1])
-    assert central["ring_lifetime_years"] == pytest.approx(row["ring_lifetime_years"])
+def test_the_no_catalyst_scenario_matches_the_design_table():
+    no_cat = rr.ring_damage_scenarios(rr.POCKET_CASES[-2][1])[0]
+    row = rr.site_design(rr.POCKET_CASES[-2][1], 0.0)
+    assert no_cat["ring_lifetime_years"] == pytest.approx(row["ring_lifetime_years"])

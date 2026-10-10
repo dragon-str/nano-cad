@@ -4140,3 +4140,47 @@ rate is the least certain, so the pessimistic case is a lower bound, not a
 prediction. The 100-fold pocket suppression is a design goal, not a
 demonstration. The catalyst is a design, not a synthesis. The M28-22 ring-damage
 risk stays open until the ring-attack rate is measured.
+
+## ADR-0140: The ring damage is mediated by H2O2; the rate is measured
+
+Context. M28-22. ADR-0139 named the ring-attack rate as the largest uncertainty
+and used an assumed range (1e2 to 1e6 /s). Can that rate come from measured
+data instead of a guess?
+
+Decision. The superoxide does not attack the ring directly. It converts almost
+completely into hydrogen peroxide by dismutation (Wazawa 1992, PMID 1420896).
+The H2O2 is the oxidant: it reacts with the Fe(II) heme to form a ferryl, which
+opens the ring (Yusa & Shikama 1987, PMID 3427037). So the ring damage is
+bounded by the heme-peroxide reaction, and that reaction is measured.
+
+Model. `respirocyte_repair.py` now estimates the ring lifetime from the race
+for the H2O2 between the heme and the co-located catalyst. The ring-damage
+fraction is phi = k_heme / (k_heme + k_cat), where k_heme is the measured
+deoxy-heme + H2O2 rate (3.6e3 /M/s) and k_cat is the catalyst's catalase-like
+rate. The ring lifetime is ln2 / (k_autox phi). The no-catalyst case (phi = 1)
+is an upper bound on the damage, because the ferryl can return to the resting
+state and the superoxide can escape, both of which lower it.
+
+Results (ring lifetime, years):
+
+| pocket | no catalyst | Mn mimic (1e5) | catalase (1e7) |
+|---|---|---|---|
+| central (1x) | 0.004 | 0.10 | 9.8 |
+| H-bonded, dry (10x) | 0.035 | 1.0 | 98 |
+| optimized (100x) | 0.35 | 10.2 | 981 |
+| native-mutant span (1000x) | 3.5 | 102 | 9800 |
+
+Findings. (1) The measured heme-peroxide rate (3.6e3 /M/s) replaces the assumed
+ring-attack range. (2) The optimized pocket with a Mn-porphyrin mimic gives a
+10-year ring lifetime, so the site outlives the 3.2-year rotor with a catalyst
+no faster than a known mimic. With a catalase it gives about 1000 years. (3)
+The catalyst must decompose the H2O2, not only dismutate the superoxide: a pure
+dismutase produces the peroxide that damages the ring. (4) The design needs a
+catalase-like rate of about 1e5 /M/s or more.
+
+Limits. The heme + H2O2 rate is measured for sperm-whale myoglobin, not for
+this pocket, and it is an upper bound: not every ferryl opens the ring. The
+superoxide-to-H2O2 conversion is taken as complete (conservative; escape only
+lowers the damage). The catalase-like rate of a Mn-porphyrin is an estimate.
+The 100-fold pocket suppression is a design goal. The catalyst is a design, not
+a synthesis.
