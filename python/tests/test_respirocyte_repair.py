@@ -111,3 +111,33 @@ def test_the_no_catalyst_scenario_matches_the_design_table():
     no_cat = rr.ring_damage_scenarios(rr.POCKET_CASES[-2][1])[0]
     row = rr.site_design(rr.POCKET_CASES[-2][1], 0.0)
     assert no_cat["ring_lifetime_years"] == pytest.approx(row["ring_lifetime_years"])
+
+
+def test_the_redox_couples_come_from_the_scan_energies():
+    c = rr.redox_couples()
+    assert c["empty_couple_ev"] == pytest.approx(0.2187 * rr.HA_TO_EV, rel=1e-3)
+    assert c["bound_gap_ev"] == pytest.approx(0.0001 * rr.HA_TO_EV, rel=1e-3)
+
+
+def test_the_model_empty_site_couple_is_a_gas_ionization_not_a_potential():
+    c = rr.redox_couples()
+    assert c["empty_couple_ev"] > 4.0
+    assert c["model_has_window"] is False
+
+
+def test_the_free_o2_electron_affinity_is_negative_in_gas():
+    # O2- is unbound in the gas phase, so the model must show a negative
+    # electron affinity for the bare O2 pair.
+    assert rr.redox_couples()["o2_ea_ev"] < 0.0
+
+
+def test_the_literature_donor_window_is_narrow_but_real():
+    win = rr.donor_reference_window_v()
+    assert win["lo_v"] < win["hi_v"]
+    assert 0.0 < win["width_v"] < 0.5
+
+
+def test_the_redox_report_gives_the_verdict():
+    text = "\n".join(rr.redox_report_lines())
+    assert "unphysical" in text
+    assert "empty-site couple" in text

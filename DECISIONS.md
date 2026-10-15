@@ -4339,3 +4339,48 @@ Limits. The phase swap is geometric. The discharge rotor's loading rate against
 the tank pressure, and the seal leak at that pressure, are not modelled here
 (M28-36, M28-41). The hull-wall housing that separates the tank side from the
 blood side is a separate module.
+
+## ADR-0145: The donor window is not computable here; gate the donor by geometry
+
+Context. M29-18. ADR-0108 leaves the donor potential "not yet computed". ADR-0142
+shows the device donor is a static proximal group, so it can meet a bound O2; a
+donor must reduce the empty site (Fe(III) + e- -> Fe(II)) and must not reduce the
+bound O2 (Fe(II)-O2 + e- -> Fe(III)-O2-), and only the potential can separate
+those two. The task: with `heme_switch_scan.py --redox Fe` geometry, compute
+E(empty Fe(III)/Fe(II)) and E(Fe(II)-O2/Fe(III)-O2-) and check for a window.
+
+Scan. PBE, gas phase plus C-PCM water, the 2026-09-28 run
+`~/.cache/nano-cad/qc/redox.jsonl` (26 calculations, 2 workers at 3 GB planned).
+The most stable spin of each species (Fe(II), 2S 2; Fe(III), 2S 1; Fe(II)-O2, 2S 2;
+Fe(III)-O2-, 2S 0; O2, 2S 2; O2-, 2S 1):
+
+| quantity | model | expected |
+|---|---|---|
+| empty-site couple E(Fe(III)) - E(Fe(II)) | +5.95 eV (gas) | near 0 V (aqueous heme) |
+| free O2 electron affinity | -0.86 eV (gas) | negative in gas (O2- unbound) |
+| bound-O2 transfer E(Fe(III)-O2-) - E(Fe(II)-O2) | +0.003 eV | small |
+
+Finding. (1) The empty-site couple is the bare gas-phase ionization energy,
+about 6 eV, not an aqueous potential. A rigid C-PCM single point pays under 1 eV
+of the several eV of solvent reorganization that take the real heme couple to
+near zero, so the absolute values are not physical. This confirms ADR-0108's
+caveat and blocks the window: the model cannot place a donor between the two
+couples. (2) In the model the empty-site couple sits far above the O2 couple, so
+every donor that reduces the site also reduces free O2; the model has no window,
+but that ordering is set by the unphysical ionization energy, so it does not
+prove the physical design has none. (3) The real window is narrow, about 0.21 V
+between the O2/O2- couple (about -0.16 V) and a heme Fe(III)/Fe(II) couple (about
++0.05 V), both literature estimates; a donor must sit inside it, and the margin
+is small.
+
+Decision. Do not design the donor around a potential window, and do not trust a
+window the model cannot compute. Separate repair from back-oxidation by geometry
+instead: put the donor on the housing as a static station on the arc where the
+site is empty (ADR-0108's original empty-arc station), not on the rotor body as
+the M29-16 build does. The site then meets the donor only when it is empty, so the
+potential constraint is removed. Given the narrow real window, keep an external
+reductant as the fallback.
+
+Limits. Absolute redox energies of this method are unphysical (ADR-0108); only the
+gas-phase trends are used. The 0.21 V window is a literature estimate, not
+computed here. The empty-arc station is a design, not a built part (M29-19).

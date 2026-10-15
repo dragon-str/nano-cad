@@ -270,6 +270,88 @@ def carrier_repair_budget(material: dict) -> dict:
     return electron_budget(sites, central_rate_per_s() / POCKET_CASES[-1][1])
 
 
+# --- The repair-donor redox window (M29-18, ADR-0145) ---------------------
+#
+# The donor must reduce the empty site (Fe(III) + e- -> Fe(II)) and must not
+# reduce the bound O2 (Fe(II)-O2 + e- -> Fe(III)-O2-). Only the donor potential
+# can separate those two, so the design needs a window between the two couples.
+# The donor here is a static proximal group (ADR-0142), unlike the empty-arc
+# donor of ADR-0108, so it does meet a bound O2; distance cannot separate them.
+#
+# `heme_switch_scan.py --redox Fe` (PBE, gas phase, the 2026-09-28 run
+# `~/.cache/nano-cad/qc/redox.jsonl`) gives the energies. Their absolute values
+# are not physical (ADR-0108): the empty-site couple comes out as the bare
+# gas-phase ionization energy, about 6 eV, because a rigid C-PCM single point
+# cannot pay the several eV of solvent reorganization that take the real
+# aqueous heme couple to near zero. This module records the numbers and the
+# verdict that this method cannot set the window.
+HA_TO_EV = 27.211386245988
+
+# The most stable spin of each species, gas phase, from `redox.jsonl`.
+REDOX_SCAN_HA: dict[str, float] = {
+    "empty_fe_ii": -2306.6324,  # Fe(II) site, 2S = 2
+    "empty_fe_iii": -2306.4137,  # Fe(III) site, 2S = 1
+    "o2": -150.0655,  # 2S = 2
+    "o2_minus": -150.0338,  # 2S = 1
+    "bound_fe_ii_o2": -2456.7286,  # complex, 2S = 2
+    "bound_fe_iii_o2_minus": -2456.7285,  # complex, 2S = 0
+}
+
+# Reference aqueous couples at pH 7 against NHE. Literature estimates, not
+# computed here; the model above cannot reproduce them (see the report note).
+O2_SUPEROXIDE_POTENTIAL_V = -0.16
+HEME_FE_III_II_POTENTIAL_V = 0.05
+
+
+def redox_couples(scan: dict[str, float] | None = None) -> dict:
+    """The model's redox quantities, in electronvolts.
+
+    ``empty_couple_ev`` is E(Fe(III)) - E(Fe(II)) for the bare site. It should
+    be a small aqueous potential near zero. It is not; it is the gas-phase
+    ionization energy. ``o2_ea_ev`` is the electron affinity of free O2.
+    ``bound_gap_ev`` is E(Fe(III)-O2-) - E(Fe(II)-O2), the model's cost to move
+    the electron onto the bound O2.
+    """
+    e = REDOX_SCAN_HA if scan is None else scan
+    empty = (e["empty_fe_iii"] - e["empty_fe_ii"]) * HA_TO_EV
+    o2_ea = (e["o2"] - e["o2_minus"]) * HA_TO_EV
+    bound_gap = (e["bound_fe_iii_o2_minus"] - e["bound_fe_ii_o2"]) * HA_TO_EV
+    return {
+        "empty_couple_ev": empty,
+        "o2_ea_ev": o2_ea,
+        "bound_gap_ev": bound_gap,
+        # The model's empty-site couple sits far above the O2 couple, so in the
+        # model every donor that reduces the site also reduces free O2.
+        "model_has_window": empty < o2_ea,
+    }
+
+
+def donor_reference_window_v() -> dict:
+    """The literature window a donor must sit in (estimate)."""
+    lo = O2_SUPEROXIDE_POTENTIAL_V
+    hi = HEME_FE_III_II_POTENTIAL_V
+    return {"lo_v": lo, "hi_v": hi, "width_v": hi - lo}
+
+
+def redox_report_lines() -> list[str]:
+    """The M29-18 window study as text."""
+    c = redox_couples()
+    win = donor_reference_window_v()
+    return [
+        "",
+        "repair-donor redox window (M29-18):",
+        f"  empty-site couple, model: {c['empty_couple_ev']:+.2f} eV "
+        "(gas-phase ionization, not an aqueous potential)",
+        f"  free O2 electron affinity, model: {c['o2_ea_ev']:+.2f} eV",
+        f"  bound-O2 electron transfer, model: {c['bound_gap_ev']:+.3f} eV",
+        f"  literature window (estimate): {win['lo_v']:+.2f} to {win['hi_v']:+.2f} V "
+        f"({win['width_v']:.2f} V wide)",
+        "  verdict: the QM absolute values are unphysical, so this method cannot",
+        "  place a donor in the window. Do not design the donor around it; gate",
+        "  the donor by geometry instead (a static station on the empty arc).",
+    ]
+
+
 def report() -> str:
     """A short text table of the design study."""
     opt = optimize()
@@ -310,6 +392,7 @@ def report() -> str:
             f"{sc['scenario']:<26}{sc['k_cat_per_s']:>12.0e}{sc['f_ring']:>12.2e}"
             f"{life_s:>14}{('yes' if sc['outlives_rotor'] else 'no'):>10}"
         )
+    lines.extend(redox_report_lines())
     lines.append("")
     lines.append("no material is consumed; the inputs are electrons and protons.")
     return "\n".join(lines)

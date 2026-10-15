@@ -255,6 +255,12 @@
             the tank side and out on the blood side, so the loaded pockets are complementary (loading 5
             of 8, discharge 3 of 8). One geometry, two cam phase pairs.
             <a href="docs/DECISIONS.html#adr-0144">ADR-0144</a></span></li>
+        <li><span class="st limit">limit</span>
+          <span>The repair-donor potential window cannot be computed here: the model's empty-site couple is
+            +5.95&nbsp;eV, the bare gas-phase ionization energy, not an aqueous potential, so no donor can be
+            placed between the couples. The real window is narrow (about 0.21&nbsp;V). Separate repair from
+            back-oxidation by geometry instead (a static empty-arc donor station).
+            <a href="docs/DECISIONS.html#adr-0145">ADR-0145</a></span></li>
         <li><span class="st pass">pass</span>
           <span>The ring mounts to the diamond wall by a rigid ethynyl link. The corrected build has no
             five-bonded carbons, and the tethered ring is stiff (tilt rms 0.56&deg; at 310 K) while the
