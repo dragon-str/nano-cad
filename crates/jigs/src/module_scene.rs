@@ -15,7 +15,10 @@
 //! loads in the blood with the arm in, crosses the seal at 90 degrees with
 //! the arm in, releases in the tank after the arm comes out at 120 degrees,
 //! and returns through the seal at 270 degrees, where the arm goes in again.
-//! The repair donor and the discharge rotor are not built.
+//! The gated repair donor is on the housing (ADR-0147): the wall builder
+//! places one hydroxyl at the midpoint of the empty arc, so a site meets it
+//! only while the site is empty. The rotor's own donor is off here. The
+//! discharge rotor is a separate part.
 
 use nanocad_meter::{relax_valence, ValenceRelaxOptions, ValenceRelaxReport};
 use nanocad_model::{Bond, BondType, Part};
@@ -55,8 +58,16 @@ pub fn module_parts() -> Result<ModuleParts, SceneError> {
 
 /// Generates the module parts with rotor parameters, unrelaxed.
 pub fn module_parts_with(parameters: &ParameterSet) -> Result<ModuleParts, SceneError> {
-    let set = HemeRotorGenerator.build(parameters)?;
-    let wall = hull_wall(&set, &HullWallSpec::default())?;
+    // The gated repair donor is a station on the housing, not on the rotor
+    // (ADR-0145, ADR-0147), so the rotor donor is off in the module.
+    let set = HemeRotorGenerator.build(&parameters.clone().with("repair_donor", 0.0))?;
+    let wall = hull_wall(
+        &set,
+        &HullWallSpec {
+            donor_station: true,
+            ..HullWallSpec::default()
+        },
+    )?;
     let housing = wall.part.clone();
     Ok(ModuleParts { set, housing, wall })
 }
@@ -477,6 +488,10 @@ mod tests {
         let loaded = parts.set.loaded.iter().filter(|&&l| l).count();
         assert_eq!(loaded, 5);
         assert_eq!(report.cross_body_bonds, loaded);
+        // The repair donor is a station on the housing, not on the rotor
+        // (ADR-0147); the rotor builds no donor of its own here.
+        assert!(parts.wall.donor_station.is_some());
+        assert!(parts.set.site_donor.iter().all(Option::is_none));
     }
 
     #[test]

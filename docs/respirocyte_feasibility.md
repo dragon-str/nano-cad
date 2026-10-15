@@ -60,6 +60,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Five-coordinate domed iron in an unloaded pocket | build audit under the 0.3 A dome | `crates/parts/src/heme_rotor.rs` | with `iron_dome_m` set, the iron sits 0.30 A out of the N4 plane, the four Fe-N bonds are 2.02 A, the loaded pockets stay in-plane, and the four meso tethers are unchanged (no fifth bond) | 0.3 A is the deoxy-myoglobin value, not computed here; the ring is rigid, so only the iron moves | 0143 |
 | Discharge rotor | cam-phase swap of the loading rotor | `crates/parts/src/heme_rotor.rs` | `build_cam` takes any cam phase pair; `DischargeRotorGenerator` (id `discharge_rotor`) swaps the loading phases, so the arm goes in on the tank side (load at tank pressure) and out on the blood side (release at the tissues). The loaded pockets are complementary: loading 5 of 8, discharge 3 of 8, every pocket flipping. The disc body and pocket azimuths are identical | geometric only; the discharge loading rate against the tank pressure and the seal leak at that pressure are unmodelled | 0144 |
 | 62 | Repair-donor redox window | QM couples from the redox scan, against a literature window | `scripts/heme_switch_scan.py --redox Fe`, `respirocyte_repair.py` | the model's empty-site couple E(Fe(III))-E(Fe(II)) is +5.95 eV (gas phase), the bare ionization energy, not an aqueous potential; a rigid C-PCM point cannot pay the solvent reorganization that takes the real heme couple to near zero, so the method cannot place a donor between the empty-site and bound-O2 couples. The real window is narrow, about 0.21 V (O2/O2- about -0.16 V to a heme couple about +0.05 V, literature estimates) | the absolute QM energies are unphysical; the 0.21 V window is literature, not computed; the empty-arc donor station is a design (M29-19) | 0145, 0108 |
+| 63 | Gated repair donor on the housing | build audit of the empty-arc station, with the tunnelling rate | `crates/parts/src/heme_rotor.rs`, `respirocyte_repair.py` | `HullWallSpec.donor_station` places one hydroxyl on the top end plate at the midpoint of the arm-out arc (150 deg for the loading rotor), 14.98 A from the iron; Moser-Dutton tunnelling there is 1.6e3 /s, a 2.6e8 margin over the autoxidation. The site meets the station only while it is empty, so the bound O2 never sees the donor. The module builds the rotor donor off and the station on | the tunnelling driving force is assumed (ADR-0108); the station is one group at one azimuth, so the repair window is not the whole empty arc | 0147 |
 
 ## What passes, what fails, what is open
 
@@ -80,10 +81,10 @@ Not modelled:
 - Relaxed geometries. Every quantum-chemistry number uses a rigid geometry.
 - Irreversible damage of the porphyrin ring by superoxide and peroxide.
   This sets the device lifetime.
-- The donor chemistry of the repair station. The donor and the catalyst are
-  built into every pocket (ADR-0141) and the donor distance is not a limit
-  (ADR-0142), but the donor potential window is not computable with the current
-  QM, so the donor must be gated by geometry instead (ADR-0145).
+- The donor chemistry of the repair station. The donor potential window is
+  not computable with the current QM (ADR-0145), so the donor is gated by
+  geometry: a station on the housing on the empty arc (ADR-0147). The
+  tunnelling driving force is assumed.
 - Nitrogen build-up in the tank (a small vent is proposed, not tested).
 - Fouling, immune response, manufacturing.
 
@@ -92,8 +93,8 @@ Not modelled:
 `respirocyte_module` in the viewer (Machines): the rotor with 12 heme
 pockets, 12 [111] ligand arms and the housing, relaxed with the valence
 field and audited (ADR-0111). Hide the housing and set the clip to 0.5 to
-see the pockets in section. The attachment is four covalent tethers per site; the cam, repair donor
-and tank are not in the model.
+see the pockets in section. The attachment is four covalent tethers per site; the repair donor
+is a station on the housing (ADR-0147) and the tank is a separate part.
 
 ## How far to trust this
 

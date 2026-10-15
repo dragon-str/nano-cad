@@ -4413,3 +4413,36 @@ the flow-through duty leave no case for it. The bore is dropped with the drain
 Limits. The corrected carry is one seed per pocket with wide scatter, and the
 pessimistic-chemistry cascade does not reach 1000 atm. Both are the cascade's
 margin, and neither changes the near-ambient duty.
+
+## ADR-0147: The gated repair donor is a station on the housing
+
+Context. M29-19. ADR-0145 decided the donor must be separated from back-oxidation
+by geometry, not by a potential window the model cannot compute, and named the
+design: ADR-0108's static station on the empty arc. The M29-16 donor is on the
+rotor body, so it is always near its own site and can meet a bound O2.
+
+Decision. `crates/parts/src/heme_rotor.rs`. `HullWallSpec.donor_station` (default
+false) makes `hull_wall` place one hydroxyl on the top end plate at the midpoint
+of the empty arc, at the iron radius, with the oxygen pointing at the nominal
+iron. The empty arc is the arm-out arc: from `cam_outlet_rad` to `cam_inlet_rad`
+the way the outlet leads, so it follows the cam and works for the loading and the
+discharge rotor. `HullWall` exposes `donor_station` and `empty_arc_rad`.
+
+Results. On the loading rotor the empty arc is 150 deg (0.417 of a turn) and the
+station sits mid-arc at 195 deg. The station oxygen is 14.98 A from the iron
+(14.65 A of it along z, on the plate inner face). Moser-Dutton tunnelling
+(ADR-0142, beta 1.38 /A) at that distance is 1.6e3 /s, a margin of 2.6e8 over the
+central autoxidation (5.68e-6 /s), and 1.6e4x the 22 A reference of 0.1 /s. The
+nearest plate cap is picked, so the station is at the closest housing point.
+
+Gate. The site meets the station only while the site passes 195 deg, which is on
+the arm-out arc, so the site is empty and carries no bound O2. The gate is
+azimuthal: the distance cannot gate it (the plate is about 1.5 nm away in z for
+every azimuth). The module scene now builds the rotor with `repair_donor` off and
+the wall with the station on, so the device has the gated donor and not the
+ungated one.
+
+Limits. The station is one group at one azimuth, so the repair opportunity is the
+part of the turn the site is near it, not the whole empty arc. The tunnelling
+driving force is assumed (ADR-0108). The station distance is static; the 0.3 A
+iron dome (M28-34) is ignored. One build, no measurement. Simulated estimate.

@@ -76,13 +76,19 @@ def test_the_donor_rate_falls_with_the_donor_distance():
     assert rr.donor_repair_rate(22.0e-10) < rr.donor_repair_rate(18.0e-10)
 
 
-def test_both_cad_donors_repair_far_faster_than_the_22a_reference():
+def test_every_cad_donor_repairs_far_faster_than_the_22a_reference():
     k_autox = rr.central_rate_per_s()
     rows = rr.donor_table(k_autox)
     assert [r["site"] for r in rows] == [s for s, _ in rr.DONOR_CAD_DISTANCES]
     for row in rows:
-        assert row["k_repair_per_s"] > 1.0e6
-        assert row["margin"] > 1.0e10
+        assert row["k_repair_per_s"] > 1.0e3, row["site"]
+        assert row["margin"] > 1.0e7, row["site"]
+    # The housing station is the furthest, so the slowest, but still fast.
+    assert rows[-1]["donor_distance_m"] == max(d for _, d in rr.DONOR_CAD_DISTANCES)
+
+
+def test_the_housing_station_is_on_the_empty_arc():
+    assert 0.0 < rr.EMPTY_ARC_FRACTION < 0.5
 
 
 def test_the_donor_table_ranks_the_free_site_ahead_of_the_rotor():

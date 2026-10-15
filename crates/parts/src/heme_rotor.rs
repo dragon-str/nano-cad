@@ -1935,6 +1935,11 @@ pub struct HullWallSpec {
     /// the default: every OH-lined bore tested was plugged by its own
     /// turning hydrogens, while H-capped bores carry water, ADR-0120).
     pub drain_hydroxyl_every: usize,
+    /// Whether to build a repair-donor station on the housing (M29-19). The
+    /// station is one hydroxyl on an end plate at the midpoint of the arc
+    /// where the arm is out, so the site meets it only when the site is empty
+    /// (ADR-0108's empty-arc donor, restored in ADR-0145).
+    pub donor_station: bool,
 }
 
 impl Default for HullWallSpec {
@@ -1953,6 +1958,7 @@ impl Default for HullWallSpec {
             drain_narrow_length_m: 1.0e-9,
             drain_counterbore_radius_m: 7.0e-10,
             drain_hydroxyl_every: 0,
+            donor_station: false,
         }
     }
 }
@@ -1974,6 +1980,11 @@ pub struct HullWall {
     pub drain_lining: usize,
     /// The inner radius of the face seal ring, in metres.
     pub face_seal_inner_radius_m: f64,
+    /// The repair-donor station on the housing, when built (M29-19).
+    pub donor_station: Option<DonorSite>,
+    /// The empty (arm-out) arc of each site as (start, length) in radians,
+    /// where the donor station sits (M29-19).
+    pub empty_arc_rad: (f64, f64),
 }
 
 /// Builds the hull-wall section around `set` (ADR-0117).
@@ -2126,6 +2137,26 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
     };
     let mut topology = capped_lattice(fill_solid(&solid))?;
 
+    // The empty arc: the arm is out (the site is empty) from the outlet
+    // azimuth to the inlet azimuth, going the way the outlet leads. The donor
+    // station (M29-19) sits at its midpoint, so a site meets the donor only
+    // while the site is empty.
+    let empty_arc_rad = (
+        set.cam_outlet_rad,
+        (set.cam_inlet_rad - set.cam_outlet_rad).rem_euclid(2.0 * PI),
+    );
+    let station_az = empty_arc_rad.0 + 0.5 * empty_arc_rad.1;
+    let donor_station = if spec.donor_station && !set.sites.is_empty() {
+        let fe_nom = [
+            set.iron_radius_m * station_az.cos(),
+            set.iron_radius_m * station_az.sin(),
+            0.0,
+        ];
+        add_wall_donor_station(&mut topology, fe_nom, chamber_half + 1.0e-9)?
+    } else {
+        None
+    };
+
     // Line the drain: each cap inside the bore becomes a hydroxyl group.
     let in_bore = |p: [f64; 3]| {
         let r = (p[1] - drain_y).hypot(p[2]);
@@ -2171,6 +2202,8 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
         drain_y_m: drain_y,
         drain_lining: lined,
         face_seal_inner_radius_m: seal_inner_r,
+        donor_station,
+        empty_arc_rad,
     })
 }
 
@@ -2573,6 +2606,50 @@ fn add_rotor_donor(
         oxygen: o,
         hydrogen: hi,
         fe_distance_m: dist(op, fe),
+    }))
+}
+
+/// Adds the housing repair-donor station (M29-19): one hydroxyl on an end
+/// plate near the iron radius, at the azimuth of the empty arc, pointing at
+/// the nominal iron. The station is fixed on the housing, so a site meets it
+/// only while the site passes that azimuth, which is when the site is empty.
+fn add_wall_donor_station(
+    top: &mut Topology,
+    fe_nom: [f64; 3],
+    max_reach_m: f64,
+) -> Result<Option<DonorSite>, PartError> {
+    let mut best: Option<(f64, usize, usize)> = None;
+    for b in top.bonds() {
+        let (a, c) = (b.u as usize, b.v as usize);
+        let (c_i, h_i) = match (top.element(a), top.element(c)) {
+            (Some(Element::CARBON), Some(Element::HYDROGEN)) => (a, c),
+            (Some(Element::HYDROGEN), Some(Element::CARBON)) => (c, a),
+            _ => continue,
+        };
+        let Some(cp) = top.position_m(c_i) else {
+            continue;
+        };
+        // The top plate only, so the station is above the disc plane.
+        if cp[2] <= 0.0 {
+            continue;
+        }
+        let d = dist(cp, fe_nom);
+        if d > max_reach_m {
+            continue;
+        }
+        if best.is_none_or(|(bs, _, _)| d < bs) {
+            best = Some((d, c_i, h_i));
+        }
+    }
+    let Some((_, c_i, h_i)) = best else {
+        return Ok(None);
+    };
+    let (o, hi) = place_ligand_oh(top, c_i, h_i, fe_nom)?;
+    let op = top.position_m(o).unwrap_or([0.0; 3]);
+    Ok(Some(DonorSite {
+        oxygen: o,
+        hydrogen: hi,
+        fe_distance_m: dist(op, fe_nom),
     }))
 }
 
@@ -3215,6 +3292,55 @@ mod tests {
             assert_eq!(s.loaded[k], f == 1.0);
         }
         assert_eq!(s.loaded.iter().filter(|&&l| l).count(), 5);
+    }
+
+    /// The housing donor station (M29-19, ADR-0145): one hydroxyl on the top
+    /// end plate at the midpoint of the empty arc, near the iron radius. The
+    /// station is fixed on the housing, so a site meets it only while the site
+    /// passes that azimuth, which is when the arm is out and the site is empty.
+    #[test]
+    fn the_housing_donor_station_sits_on_the_empty_arc() {
+        assert!(!HullWallSpec::default().donor_station);
+        let s = set();
+        let wall = hull_wall(
+            &s,
+            &HullWallSpec {
+                donor_station: true,
+                ..HullWallSpec::default()
+            },
+        )
+        .expect("wall");
+        let (start, len) = wall.empty_arc_rad;
+        assert!(
+            (len.to_degrees() - 150.0).abs() < 1e-6,
+            "{}",
+            len.to_degrees()
+        );
+        let mid = start + 0.5 * len;
+        let station = wall.donor_station.expect("station");
+        let o = wall.part.topology.position_m(station.oxygen).expect("o");
+        // Near the iron radius, above the disc plane, at the empty-arc mid.
+        assert!((o[0].hypot(o[1]) - s.iron_radius_m).abs() < 0.6e-9, "{o:?}");
+        assert!(o[2] > 0.5e-9, "{o:?}");
+        let az = o[1].atan2(o[0]);
+        let off = ((az - mid + PI).rem_euclid(2.0 * PI) - PI).abs();
+        assert!(
+            off.to_degrees() < 12.0,
+            "station az off by {}",
+            off.to_degrees()
+        );
+        // Close enough for fast tunnelling (ADR-0108: 0.1 /s at 22 A).
+        assert!(
+            station.fe_distance_m < 2.0e-9,
+            "{:e}",
+            station.fe_distance_m
+        );
+        eprintln!(
+            "housing donor station: d(Fe-O) {:.2} A, z {:.2} A, empty arc {:.0} deg",
+            station.fe_distance_m * 1e10,
+            o[2] * 1e10,
+            len.to_degrees()
+        );
     }
 
     /// The water-return plunger rotor (ADR-0122): flush plungers on the

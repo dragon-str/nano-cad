@@ -106,11 +106,17 @@ IRON_REPAIR_PER_S = 0.1
 MOSER_DUTTON_BETA_PER_M = 1.38e10
 DONOR_REFERENCE_M = 22.0e-10
 
-# The donor-iron distance in each CAD build (ADR-0139, ADR-0141).
+# The donor-iron distance in each CAD build (ADR-0139, ADR-0141, ADR-0147).
 DONOR_CAD_DISTANCES: tuple[tuple[str, float], ...] = (
     ("free carrier site (ADR-0139)", 3.61e-10),
     ("device oxygen rotor (ADR-0141)", 7.4e-10),
+    ("housing donor station (ADR-0147)", 14.98e-10),
 )
+
+# The empty (arm-out) arc of a loading-rotor site (M29-19, ADR-0147): the
+# housing station sits at its midpoint, so a site is near the donor for at most
+# this fraction of a turn. The station is gated by azimuth, not by potential.
+EMPTY_ARC_FRACTION = 150.0 / 360.0
 
 # Rotor fatigue, for the comparison (ADR-0136). A diamond MEMS rotor at the
 # design speed. The passive carrier has no rotor.
