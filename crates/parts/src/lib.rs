@@ -65,8 +65,9 @@ pub use guest::{
 };
 pub use heme_rotor::{
     hull_wall, water_rotor, ArmCamTrack, CarrierSite, CarrierSiteGenerator, CarrierSiteSpec,
-    HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec, Tether, WaterRotorSpec,
-    CAM_CONTACT_M, CAM_INLET_RAD, CAM_OUTLET_RAD, CAM_RAMP_HALF_RAD, LIGAND_IN_M, LIGAND_OUT_M,
+    DischargeRotorGenerator, HemeRotorGenerator, HemeRotorSet, HullWall, HullWallSpec, Tether,
+    WaterRotorSpec, CAM_CONTACT_M, CAM_INLET_RAD, CAM_OUTLET_RAD, CAM_RAMP_HALF_RAD, LIGAND_IN_M,
+    LIGAND_OUT_M,
 };
 pub use housing::RotorHousingGenerator;
 pub use lattice::{DiamondGenerator, GraphiteGenerator};

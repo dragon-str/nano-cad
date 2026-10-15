@@ -329,6 +329,20 @@ impl HemeRotorSet {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HemeRotorGenerator;
 
+/// Builds the oxygen-discharge rotor (M28-33): the loading rotor geometry with
+/// the cam phases swapped, so the arm goes in on the tank side (load at tank
+/// pressure) and out on the blood side (release at the tissues). The loading
+/// rotor puts the arm in on the blood side and out in the tank (ADR-0117).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DischargeRotorGenerator;
+
+impl DischargeRotorGenerator {
+    /// Resolves the inputs and builds every body with the swapped cam phases.
+    pub fn build(&self, parameters: &ParameterSet) -> Result<HemeRotorSet, PartError> {
+        HemeRotorGenerator.build_cam(parameters, CAM_OUTLET_RAD, CAM_INLET_RAD)
+    }
+}
+
 /// The idealized porphine (Fe-N 2.00 A) in the ring plane, (a, b) in metres.
 fn porphine_plane() -> Vec<(Element, [f64; 2])> {
     let quarter: [(Element, [f64; 2]); 9] = [
@@ -402,6 +416,19 @@ fn bond_by_distance(topology: &mut Topology) -> Result<(), PartError> {
 impl HemeRotorGenerator {
     /// Resolves the inputs and builds every body.
     pub fn build(&self, parameters: &ParameterSet) -> Result<HemeRotorSet, PartError> {
+        self.build_cam(parameters, CAM_INLET_RAD, CAM_OUTLET_RAD)
+    }
+
+    /// Builds the rotor with a chosen cam phase pair (M28-33). The loading rotor
+    /// ([`CAM_INLET_RAD`] / [`CAM_OUTLET_RAD`]) puts the arm in on the blood side
+    /// and out in the tank. The discharge rotor swaps the two, so the arm goes in
+    /// on the tank side and out at the tissues (ADR-0117).
+    pub fn build_cam(
+        &self,
+        parameters: &ParameterSet,
+        cam_inlet_rad: f64,
+        cam_outlet_rad: f64,
+    ) -> Result<HemeRotorSet, PartError> {
         let r = self.resolve(parameters)?;
         let disc_m = r.require("disc_radius_m")?;
         let thick_m = r.require("thickness_m")?;
@@ -696,7 +723,7 @@ impl HemeRotorGenerator {
             let u = [c, s, 0.0];
             let t = [-s, c, 0.0];
             let fe = [iron_r_m * c, iron_r_m * s, 0.0];
-            let is_loaded = ArmCamTrack::loaded_fraction(az) >= 0.5;
+            let is_loaded = ArmCamTrack::fraction_between(az, cam_inlet_rad, cam_outlet_rad) >= 0.5;
             loaded.push(is_loaded);
             // The self-sustaining groups (ADR-0141) are built on the rotor
             // before the site, so the tether search cannot claim their carbons.
@@ -814,8 +841,8 @@ impl HemeRotorGenerator {
             pin_top_m: arm_pin_top_m,
             pin_inner_m,
             pin_outer_m,
-            cam_inlet_rad: CAM_INLET_RAD,
-            cam_outlet_rad: CAM_OUTLET_RAD,
+            cam_inlet_rad,
+            cam_outlet_rad,
             cam_ramp_half_rad: CAM_RAMP_HALF_RAD,
         })
     }
@@ -2854,6 +2881,24 @@ impl PartGenerator for HemeRotorGenerator {
     }
 }
 
+impl PartGenerator for DischargeRotorGenerator {
+    fn id(&self) -> &'static str {
+        "discharge_rotor"
+    }
+
+    fn name(&self) -> &'static str {
+        "Heme-site oxygen discharge rotor"
+    }
+
+    fn parameters(&self) -> &'static [ParameterSpec] {
+        HEME_ROTOR_PARAMETERS
+    }
+
+    fn generate(&self, parameters: &ParameterSet) -> Result<Part, PartError> {
+        Ok(self.build(parameters)?.rotor)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2884,6 +2929,30 @@ mod tests {
             };
             assert!((dist(n, fe) - want).abs() < 1e-12, "{}", dist(n, fe));
         }
+    }
+
+    #[test]
+    fn the_discharge_rotor_reverses_the_loading_rotor_cam_phases() {
+        let load = HemeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        let dis = DischargeRotorGenerator
+            .build(&ParameterSet::new())
+            .expect("builds");
+        // The cam phases are swapped: the arm goes in on the tank side.
+        assert_eq!(load.cam_inlet_rad, CAM_INLET_RAD);
+        assert_eq!(load.cam_outlet_rad, CAM_OUTLET_RAD);
+        assert_eq!(dis.cam_inlet_rad, CAM_OUTLET_RAD);
+        assert_eq!(dis.cam_outlet_rad, CAM_INLET_RAD);
+        // Every pocket flips its loaded state, so the two modules together load
+        // on the blood side and discharge on the tank side.
+        assert_eq!(load.loaded.len(), dis.loaded.len());
+        for k in 0..load.loaded.len() {
+            assert_ne!(load.loaded[k], dis.loaded[k], "pocket {k}");
+        }
+        // The rotor body (the disc) is unchanged; only the arms and sites swap.
+        assert_eq!(load.rotor.atom_count(), dis.rotor.atom_count());
+        assert_eq!(load.azimuth_rad, dis.azimuth_rad);
     }
 
     #[test]

@@ -21,7 +21,7 @@ use crate::error::PartError;
 use crate::gear_profile::GearProfileGenerator;
 use crate::gear_pump::GearPumpGenerator;
 use crate::generator::PartGenerator;
-use crate::heme_rotor::CarrierSiteGenerator;
+use crate::heme_rotor::{CarrierSiteGenerator, DischargeRotorGenerator, HemeRotorGenerator};
 use crate::housing::RotorHousingGenerator;
 use crate::lattice::{DiamondGenerator, GraphiteGenerator};
 use crate::leaf_spring::LeafSpringGenerator;
@@ -68,6 +68,8 @@ static DRIVE_SHAFT: DriveShaftGenerator = DriveShaftGenerator;
 static FOLLOWER_PIN: FollowerPinGenerator = FollowerPinGenerator;
 static LEAF_SPRING: LeafSpringGenerator = LeafSpringGenerator;
 static CARRIER_SITE: CarrierSiteGenerator = CarrierSiteGenerator;
+static HEME_ROTOR: HemeRotorGenerator = HemeRotorGenerator;
+static DISCHARGE_ROTOR: DischargeRotorGenerator = DischargeRotorGenerator;
 
 /// A generator plus its library category.
 struct RegisteredGenerator {
@@ -194,6 +196,14 @@ static GENERATORS: &[RegisteredGenerator] = &[
     },
     RegisteredGenerator {
         generator: &CARRIER_SITE,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &HEME_ROTOR,
+        category: "device",
+    },
+    RegisteredGenerator {
+        generator: &DISCHARGE_ROTOR,
         category: "device",
     },
 ];

@@ -4303,3 +4303,39 @@ Limits. The 0.3 A is the deoxy-myoglobin value, not a value computed for this
 site. The ring is rigid: the build moves only the iron, while a real heme domes
 the porphyrin slightly and stretches the Fe-N bonds. The dome direction (toward
 the axial nitrogen) and the in-plane ring are model assumptions.
+
+## ADR-0144: The discharge module is the loading rotor with the cam phases swapped
+
+Context. M28-33. The device loads O2 at the lungs and discharges it at the
+tissues. ADR-0117 gives the loading rotor: the arm goes in on the blood side
+(load) and out in the tank (release against the tank pressure). Discharge needs
+the opposite: the arm in on the tank side (load from the tank at up to 1000 atm)
+and out on the blood side (release at the tissue pO2).
+
+Decision. `crates/parts/src/heme_rotor.rs`. `HemeRotorGenerator::build_cam`
+builds the rotor with any cam phase pair; `build` keeps the loading phases
+(`CAM_INLET_RAD` 270 deg, `CAM_OUTLET_RAD` 120 deg). `DischargeRotorGenerator`
+(id `discharge_rotor`) builds the same geometry with the phases swapped (inlet
+120 deg, outlet 270 deg). Both are registered in the parts registry under the
+`device` category.
+
+Results. Swapping the phases moves the loaded arc to the tank side. The loaded
+pockets are complementary between the two modules.
+
+| rotor | arm-in (loaded) arc | arm-out arc | loaded pockets |
+|---|---|---|---|
+| loading | 270 -> 0 -> 120 deg (blood) | 120 -> 270 deg (tank) | 5 of 8 |
+| discharge | 120 -> 180 -> 270 deg (tank) | 270 -> 120 deg (blood) | 3 of 8 |
+
+Every pocket flips its loaded state between the two rotors. The disc body and
+the pocket azimuths are identical; only the arm positions and the sites swap.
+
+Findings. (1) The two modules are one geometry with two cam phase pairs, so one
+parametric generator serves both and no second part geometry is needed. (2) The
+loading rotor holds 5 pockets in during its blood arc and the discharge rotor 3
+during its tank arc; the difference is the arc each covers.
+
+Limits. The phase swap is geometric. The discharge rotor's loading rate against
+the tank pressure, and the seal leak at that pressure, are not modelled here
+(M28-36, M28-41). The hull-wall housing that separates the tank side from the
+blood side is a separate module.
