@@ -4266,3 +4266,40 @@ reorganization energy are not modelled, and the driving force is assumed. The
 real open question is the donor potential window: the donor must reduce the
 empty Fe(III) but not the O2-bound Fe(II). ADR-0108 leaves this "not yet
 computed". The back-oxidation path is not modelled (M29-18).
+
+## ADR-0143: An unloaded pocket can show the five-coordinate, domed iron
+
+Context. M28-34. Between the ligand arm going in and the O2 arriving, the site
+is five-coordinate: four porphyrin nitrogens and the axial amine. A high-spin
+five-coordinate ferrous heme domes, with the iron about 0.3 A out of the N4
+plane, toward the axial ligand (deoxy-myoglobin). The CAD built the iron in the
+ring plane, a six-coordinate approximation, so the armed-empty state was not
+representable.
+
+Decision. `crates/parts/src/heme_rotor.rs`. `IRON_DOME_M` = 0.3 A. `build_heme_site`
+takes an `iron_dome_m` and offsets the iron along the pocket axis toward the arm
+(the -u side); the porphine template stays put, so the four Fe-N bonds lengthen
+to sqrt(2.00^2 + dome^2). The rotor parameter `iron_dome_m` (default 0) sets it
+and applies to an unloaded pocket only. `HemeRotorSet::site_dome_m` records the
+value per pocket.
+
+Results. With `iron_dome_m` = `IRON_DOME_M`, every unloaded pocket shows the
+domed iron, and the loaded pockets stay in-plane.
+
+| quantity | loaded (6-coordinate) | unloaded, domed (5-coordinate) |
+|---|---|---|
+| iron out of the N4 plane | 0 A | 0.30 A |
+| Fe-N bond | 2.00 A | 2.02 A |
+| meso tether carbons | unmoved | unmoved |
+
+Findings. (1) The 0.3 A dome costs only 0.02 A on each Fe-N bond, inside the
+ring's documented flexibility. (2) The four tethers attach at the meso carbons,
+which the dome does not move, so the ring strain is unchanged: the build keeps
+four tethers per site and no carbon gains a fifth bond. The tethers take the
+dome. (3) The dome is opt-in, because the five-coordinate armed-empty state is a
+transient of the loading cycle, not part of the 5-loaded / 3-releasing snapshot.
+
+Limits. The 0.3 A is the deoxy-myoglobin value, not a value computed for this
+site. The ring is rigid: the build moves only the iron, while a real heme domes
+the porphyrin slightly and stretches the Fe-N bonds. The dome direction (toward
+the axial nitrogen) and the in-plane ring are model assumptions.

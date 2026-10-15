@@ -97,6 +97,7 @@ static HEME_ROTOR_PARAMETERS: &[ParameterSpec] = &[
     ParameterSpec::new("cam_release_margin_m", Some(Unit::Metre), 2.0e-10, 0.0, 1.0e-9, false, "extra withdrawal of the release track beyond the 4.0 A design, taken up by the lattice steps of the groove wall"),
     ParameterSpec::new("repair_donor", None, 1.0, 0.0, 1.0, true, "1 builds the iron-repair donor on the collar wall of each pocket (ADR-0108, ADR-0141)"),
     ParameterSpec::new("catalyst", None, 1.0, 0.0, 1.0, true, "1 builds the dismutase/catalase manganese centre on each pocket wall (ADR-0139, ADR-0141)"),
+    ParameterSpec::new("iron_dome_m", Some(Unit::Metre), 0.0, 0.0, 1.0e-9, false, "out-of-plane displacement of the iron in an unloaded pocket (five-coordinate dome), in metres (M28-34)"),
 ];
 
 /// The longest iron-to-donor distance the rotor accepts, in metres. The arm
@@ -226,6 +227,10 @@ impl Solid for ArmCamTrack {
 pub const LIGAND_IN_M: f64 = 2.1e-10;
 /// The ligand tip distance from the iron in the release state, in metres.
 pub const LIGAND_OUT_M: f64 = 4.0e-10;
+/// The out-of-plane displacement of the iron in an unloaded pocket. The armed
+/// empty site is five-coordinate, so the high-spin iron domes toward the axial
+/// nitrogen (M28-34). The six-coordinate loaded site stays in the ring plane.
+pub const IRON_DOME_M: f64 = 0.3e-10;
 const FE_O_M: f64 = 1.85e-10;
 const O_O_M: f64 = 1.23e-10;
 const N_C_M: f64 = 1.47e-10;
@@ -259,6 +264,9 @@ pub struct HemeRotorSet {
     pub azimuth_rad: Vec<f64>,
     /// Whether each pocket shows the loaded state.
     pub loaded: Vec<bool>,
+    /// The out-of-plane iron displacement shown in each pocket, in metres: the
+    /// five-coordinate dome (M28-34) in an empty pocket, zero when loaded.
+    pub site_dome_m: Vec<f64>,
     /// The radius of the iron atoms, in metres.
     pub iron_radius_m: f64,
     /// The disc rim radius and half-thickness, in metres.
@@ -409,6 +417,7 @@ impl HemeRotorGenerator {
         let release_margin_m = r.require("cam_release_margin_m")?;
         let build_donor = r.require("repair_donor")?.round() >= 0.5;
         let build_catalyst = r.require("catalyst")?.round() >= 0.5;
+        let iron_dome_m = r.require("iron_dome_m")?;
         let pin_offset_m = r.require("cam_pin_offset_m")?;
         let pin_top_m = r.require("cam_pin_top_m")?;
         let half_m = 0.5 * thick_m;
@@ -680,6 +689,7 @@ impl HemeRotorGenerator {
         let mut site_catalyst: Vec<Option<CatalystSite>> = Vec::with_capacity(count);
         let mut catalyst_hydrogens: Vec<usize> = Vec::new();
         let mut loaded = Vec::with_capacity(count);
+        let mut site_dome_m = Vec::with_capacity(count);
         let mut pin_side = Vec::with_capacity(count);
         for (k, &az) in azimuths.iter().enumerate() {
             let (s, c) = az.sin_cos();
@@ -714,7 +724,10 @@ impl HemeRotorGenerator {
             };
             site_donor.push(donor);
             site_catalyst.push(catalyst);
-            let (site, fe_i, tethers) = build_heme_site(fe, u, t, &rotor, is_loaded)?;
+            // An empty pocket shows the five-coordinate, domed iron (M28-34).
+            let dome = if is_loaded { 0.0 } else { iron_dome_m };
+            site_dome_m.push(dome);
+            let (site, fe_i, tethers) = build_heme_site(fe, u, t, &rotor, is_loaded, dome)?;
             site_anchor.push(tethers.iter().map(|x| (x.site_atom, x.wall_atom)).collect());
             site_tethers.push(tethers);
             site_iron.push(fe_i);
@@ -789,6 +802,7 @@ impl HemeRotorGenerator {
             arm_tip: vec![cap; count],
             azimuth_rad: azimuths,
             loaded,
+            site_dome_m,
             iron_radius_m: iron_r_m,
             disc_radius_m: disc_m,
             half_thickness_m: half_m,
@@ -1009,11 +1023,20 @@ fn build_heme_site(
     t: [f64; 3],
     wall: &Topology,
     loaded: bool,
+    iron_dome_m: f64,
 ) -> Result<HemeSite, PartError> {
     let w = cross(u, t);
     let ring = porphine_plane();
     let mut site = Topology::new();
-    let fe_i = site.add_atom(Atom::new(Element::IRON, fe, 0.0, "Fe"));
+    // The armed empty site is five-coordinate, so the high-spin iron domes
+    // toward the axial nitrogen, out of the ring plane (M28-34). The loaded
+    // site is six-coordinate and stays in-plane.
+    let fe_center = [
+        fe[0] - iron_dome_m * u[0],
+        fe[1] - iron_dome_m * u[1],
+        fe[2] - iron_dome_m * u[2],
+    ];
+    let fe_i = site.add_atom(Atom::new(Element::IRON, fe_center, 0.0, "Fe"));
     // The porphine, less its four meso hydrogens: each meso carbon takes a
     // two-carbon tether to the wall instead.
     let mut meso_c: Vec<usize> = Vec::new();
@@ -1033,9 +1056,9 @@ fn build_heme_site(
     }
     if loaded {
         let o1 = [
-            fe[0] + FE_O_M * u[0],
-            fe[1] + FE_O_M * u[1],
-            fe[2] + FE_O_M * u[2],
+            fe_center[0] + FE_O_M * u[0],
+            fe_center[1] + FE_O_M * u[1],
+            fe_center[2] + FE_O_M * u[2],
         ];
         let (sn, cs) = 60.0_f64.to_radians().sin_cos();
         let o2 = [
@@ -1817,6 +1840,7 @@ pub fn water_rotor(spec: &WaterRotorSpec) -> Result<HemeRotorSet, PartError> {
         site_catalyst: Vec::new(),
         azimuth_rad: azimuths,
         loaded: flush,
+        site_dome_m: Vec::new(),
         iron_radius_m: tip_in_m,
         disc_radius_m: disc_m,
         half_thickness_m: half_m,
@@ -2672,7 +2696,7 @@ impl CarrierSiteGenerator {
         let u = [0.0, 0.0, 1.0];
         let t = [1.0, 0.0, 0.0];
         let (site, fe_i, mut tethers) =
-            build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded)?;
+            build_heme_site([0.0, 0.0, 0.0], u, t, &scaffold, spec.loaded, 0.0)?;
         // Each tether replaced a scaffold hydrogen, and the catalyst lost one:
         // remove those, and renumber the anchors, the guard, and the catalyst.
         let mut gone: Vec<usize> = tethers.iter().map(|x| x.wall_hydrogen).collect();
@@ -2860,6 +2884,43 @@ mod tests {
             };
             assert!((dist(n, fe) - want).abs() < 1e-12, "{}", dist(n, fe));
         }
+    }
+
+    #[test]
+    fn an_empty_pocket_can_show_the_domed_five_coordinate_iron() {
+        let s = HemeRotorGenerator
+            .build(&ParameterSet::new().with("iron_dome_m", IRON_DOME_M))
+            .expect("builds");
+        // The dome lifts the iron out of the ring plane by IRON_DOME_M, so the
+        // four iron-nitrogen bonds lengthen from 2.00 A to sqrt(2.00^2 + dome^2)
+        // (M28-34). The loaded pockets stay in-plane.
+        for (k, site) in s.sites.iter().enumerate() {
+            let want = (2.00e-10_f64.powi(2) + s.site_dome_m[k].powi(2)).sqrt();
+            let fe = site.topology.position_m(s.site_iron[k]).expect("fe");
+            let ns: Vec<[f64; 3]> = (0..site.atom_count())
+                .filter(|&i| site.topology.element(i) == Some(Element::NITROGEN))
+                .filter_map(|i| site.topology.position_m(i))
+                .collect();
+            assert_eq!(ns.len(), 4, "the four porphine nitrogens");
+            let center = [
+                ns.iter().map(|p| p[0]).sum::<f64>() / 4.0,
+                ns.iter().map(|p| p[1]).sum::<f64>() / 4.0,
+                ns.iter().map(|p| p[2]).sum::<f64>() / 4.0,
+            ];
+            assert!((dist(fe, center) - s.site_dome_m[k]).abs() < 1e-12);
+            for n in &ns {
+                assert!((dist(*n, fe) - want).abs() < 1e-12, "{}", dist(*n, fe));
+            }
+            // The four tether meso carbons are unchanged, so the tethers take
+            // the dome without a rebuild.
+            assert_eq!(s.site_tethers[k].len(), 4);
+        }
+        assert!(s.site_dome_m.contains(&IRON_DOME_M));
+        assert!(s
+            .loaded
+            .iter()
+            .enumerate()
+            .all(|(k, &l)| !l || s.site_dome_m[k] == 0.0));
     }
 
     #[test]
