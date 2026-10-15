@@ -4446,3 +4446,38 @@ Limits. The station is one group at one azimuth, so the repair opportunity is th
 part of the turn the site is near it, not the whole empty arc. The tunnelling
 driving force is assumed (ADR-0108). The station distance is static; the 0.3 A
 iron dome (M28-34) is ignored. One build, no measurement. Simulated estimate.
+
+## ADR-0148: The O2 seal holds; the water seal is the soft one
+
+Context. The seal audit is static. ADR-0118 and ADR-0121 give the *barriers* of
+the blood-to-tank paths; a barrier is not a rate. M28-36 asks for the leak
+rates. The audit cannot give them (a rigid probe and a frozen LJ field have no
+dynamics), so the question is what to do instead.
+
+Decision. Turn each barrier into a rate with the Hertz-Knudsen permeation
+expression, J = (1/4) n <v> A exp(-dG/RT), at 310 K, and report it against a
+unit leak area of 1 nm^2. This is an estimate, not the MD the task named; it is
+the fastest way to separate a leak that matters from one that does not, and it
+names the PMF as the upgrade.
+
+Results (barriers from ADR-0121, ADR-0122; density from the O2 EOS, ADR-0123).
+
+| rotor | molecule | barrier | kT | leak /s per nm^2 |
+|---|---|---|---|---|
+| O2 rotor | O2 | 146 kJ/mol | 57 | 4.0e-13 |
+| O2 rotor | water | 57 kJ/mol | 22 | 1.3e3 |
+| water rotor | O2 | 200 kJ/mol | 78 | 3.2e-22 |
+| water rotor | water | 149 kJ/mol | 58 | 4.0e-13 |
+
+Two findings. The O2 barrier (57 kT) holds: at 4e-13 /s per nm^2 the product
+does not leak, and the O2 rotor is about 3e15 times tighter to O2 than to
+water. The water barrier (22 kT) is the soft one: water permeates at about
+1.3e3 /s per nm^2, which the water-return rotor (ADR-0122, about 6 waters per
+pocket pass) must match.
+
+Limits. The barrier is a static Lennard-Jones value with no entropy term, so a
+free-energy profile from a PMF would replace it. The bulk impingement rate
+over-states the flux into a channel only a few angstroms wide, so every rate
+here is an upper bound. The rate is exponential in the barrier, so a 10 kJ/mol
+error moves it by about 50x; read a rate as an order of magnitude. The water
+leak balance against the return rotor is not closed here. Simulated estimates.
