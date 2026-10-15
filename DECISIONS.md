@@ -4384,3 +4384,32 @@ reductant as the fallback.
 Limits. Absolute redox energies of this method are unphysical (ADR-0108); only the
 gas-phase trends are used. The 0.21 V window is a literature estimate, not
 computed here. The empty-arc station is a design, not a built part (M29-19).
+
+## ADR-0146: The pump balance is closed; keep the cascade as margin, no bore plug
+
+Context. M28-41. Can the O2 rotor raise O2 to 1000 atm? ADR-0123 (single 0.6 ns
+released-pocket runs) said the top stage stalls near 550 atm and offered three
+options: a cascade, storage at about 500 atm, or a cam-driven bore plug. That
+number is superseded.
+
+State. ADR-0138 corrected the released carry to s_back 0.076 (about 1.06 O2 at
+1000 atm; ADR-0123's runs left the bound O2 in the pocket). A single stage from
+blood then stalls near 920 atm, not 550. The top stage (600 to 1000 atm) still
+pumps on average, net 1 + 0.63 - 1.06 = 0.57 per pass, but the margin is thin and
+pocket-dependent: seven pockets pump and one has a negative net. ADR-0124's
+real-size model shows a 3-stage cascade reaches 1000 atm in 111 s with the central
+chemistry, while the pessimistic chemistry stalls near 440 atm at any stage count.
+ADR-0132 shows the 1000 atm figure is the store size, not the operating point: in
+the real circulation the 0.75 s lung transit charges the tank to 3.7 atm and the
+discharge empties it each loop, so the device is a flow-through pump near ambient.
+
+Decision. Close M28-41. (1) Keep a 3-stage cascade as design margin (ADR-0138),
+not as a requirement; do not count on every pocket. (2) The design pressure is the
+10-40 atm cushion (ADR-0125), not 1000 atm, so storage at 500 atm is not needed.
+(3) Do not build a cam-driven bore plug: the single-stage stall near 920 atm and
+the flow-through duty leave no case for it. The bore is dropped with the drain
+(ADR-0120).
+
+Limits. The corrected carry is one seed per pocket with wide scatter, and the
+pessimistic-chemistry cascade does not reach 1000 atm. Both are the cascade's
+margin, and neither changes the near-ambient duty.

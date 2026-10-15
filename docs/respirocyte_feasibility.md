@@ -80,7 +80,10 @@ Not modelled:
 - Relaxed geometries. Every quantum-chemistry number uses a rigid geometry.
 - Irreversible damage of the porphyrin ring by superoxide and peroxide.
   This sets the device lifetime.
-- The donor chemistry of the repair station and its potential.
+- The donor chemistry of the repair station. The donor and the catalyst are
+  built into every pocket (ADR-0141) and the donor distance is not a limit
+  (ADR-0142), but the donor potential window is not computable with the current
+  QM, so the donor must be gated by geometry instead (ADR-0145).
 - Nitrogen build-up in the tank (a small vent is proposed, not tested).
 - Fouling, immune response, manufacturing.
 
