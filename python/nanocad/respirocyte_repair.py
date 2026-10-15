@@ -98,9 +98,48 @@ RING_ATTACK_REFERENCES: tuple[tuple[str, float, str], ...] = (
 # tunnelling gives 0.1/s at 22 A and 25/s at 18 A. Use the conservative end.
 IRON_REPAIR_PER_S = 0.1
 
+# The repair rate falls with the donor-iron distance (Moser-Dutton tunnelling).
+# ADR-0108 fixes the slope with two points: 22 A repairs 0.1/s and 18 A repairs
+# 25/s, so beta = ln(250)/4 A = 1.38 /A. IRON_REPAIR_PER_S keeps the far 22 A
+# value as the model's worst case. The CAD donor is much closer (ADR-0142), so
+# the modelled margin is a floor, not the design value.
+MOSER_DUTTON_BETA_PER_M = 1.38e10
+DONOR_REFERENCE_M = 22.0e-10
+
+# The donor-iron distance in each CAD build (ADR-0139, ADR-0141).
+DONOR_CAD_DISTANCES: tuple[tuple[str, float], ...] = (
+    ("free carrier site (ADR-0139)", 3.61e-10),
+    ("device oxygen rotor (ADR-0141)", 7.4e-10),
+)
+
 # Rotor fatigue, for the comparison (ADR-0136). A diamond MEMS rotor at the
 # design speed. The passive carrier has no rotor.
 ROTOR_REV_PER_S = 1000.0
+
+
+def donor_repair_rate(
+    distance_m: float, reference_rate_per_s: float = IRON_REPAIR_PER_S
+) -> float:
+    """Moser-Dutton repair rate at a donor-iron distance (per second)."""
+    return reference_rate_per_s * math.exp(
+        MOSER_DUTTON_BETA_PER_M * (DONOR_REFERENCE_M - distance_m)
+    )
+
+
+def donor_table(k_autox_per_s: float) -> list[dict]:
+    """Repair rate and margin at each CAD donor distance, against one rate."""
+    out = []
+    for label, distance in DONOR_CAD_DISTANCES:
+        rate = donor_repair_rate(distance)
+        out.append(
+            {
+                "site": label,
+                "donor_distance_m": distance,
+                "k_repair_per_s": rate,
+                "margin": rate / k_autox_per_s if k_autox_per_s > 0 else float("inf"),
+            }
+        )
+    return out
 
 
 def h2o2_fates(k_cat_per_s: float) -> dict:
@@ -241,6 +280,17 @@ def report() -> str:
     )
     lines.append(f"central autoxidation: {math.log(2.0) / central_rate_per_s() / HOUR_S:.1f} h half-life")
     lines.append(f"heme + H2O2 -> ferryl: {HEME_H2O2_PER_M_S:.1e} /M/s (measured, Yusa & Shikama 1987)")
+    lines.append("")
+    lines.append("iron repair rate against the donor-iron distance (Moser-Dutton, beta 1.38 /A):")
+    lines.append(f"{'site':<32}{'d(Fe-donor)':>13}{'k_repair /s':>14}{'margin':>12}")
+    for row in donor_table(central_rate_per_s()):
+        lines.append(
+            f"{row['site']:<32}{row['donor_distance_m'] * 1e10:>10.2f} A"
+            f"{row['k_repair_per_s']:>14.1e}{row['margin']:>12.1e}"
+        )
+    lines.append(
+        f"the model keeps the far 22 A reference ({IRON_REPAIR_PER_S:.1f} /s) as its worst case"
+    )
     lines.append("")
     lines.append(f"{'pocket':<26}{'catalyst':<24}{'ring life':>14}{'outlives rotor':>16}")
     for row in design_table():

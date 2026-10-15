@@ -64,6 +64,32 @@ def test_the_optimize_summary_reports_a_target_met():
     assert opt["pocket_only"]["ring_lifetime_s"] < opt["both"]["ring_lifetime_s"]
 
 
+def test_the_donor_rate_reproduces_the_adr_0108_reference_points():
+    assert rr.donor_repair_rate(rr.DONOR_REFERENCE_M) == pytest.approx(rr.IRON_REPAIR_PER_S)
+    assert rr.donor_repair_rate(18.0e-10) == pytest.approx(25.0, rel=0.02)
+
+
+def test_the_donor_rate_falls_with_the_donor_distance():
+    near = rr.donor_repair_rate(3.61e-10)
+    far = rr.donor_repair_rate(7.4e-10)
+    assert far < near
+    assert rr.donor_repair_rate(22.0e-10) < rr.donor_repair_rate(18.0e-10)
+
+
+def test_both_cad_donors_repair_far_faster_than_the_22a_reference():
+    k_autox = rr.central_rate_per_s()
+    rows = rr.donor_table(k_autox)
+    assert [r["site"] for r in rows] == [s for s, _ in rr.DONOR_CAD_DISTANCES]
+    for row in rows:
+        assert row["k_repair_per_s"] > 1.0e6
+        assert row["margin"] > 1.0e10
+
+
+def test_the_donor_table_ranks_the_free_site_ahead_of_the_rotor():
+    rows = rr.donor_table(rr.central_rate_per_s())
+    assert rows[0]["k_repair_per_s"] > rows[1]["k_repair_per_s"]
+
+
 def test_the_ring_attack_references_are_well_formed():
     names = [name for name, _, _ in rr.RING_ATTACK_REFERENCES]
     assert len(names) == len(set(names))

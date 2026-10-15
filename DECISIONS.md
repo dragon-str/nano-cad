@@ -4219,13 +4219,50 @@ match the free carrier site. (2) The donor cannot reach the free-site distance.
 The arm collar (radius `arm_radius_m + arm_collar_gap_m` = 7.2 A) occupies the
 proximal axis, so the nearest proximal scaffold carbon sits on the collar wall.
 The donor oxygen then lands 7.1 to 7.6 A from the iron, about twice the free
-site. (3) The M29-14 repair model assumes a fixed repair rate (0.1 /s),
-independent of the donor distance. A donor at 7.4 A transfers an electron far
-slower than one at 3.6 A, so the rotor's repair margin is weaker than the model
-states.
+site. (3) The donor distance was at first read as a limit, against the model's
+fixed 0.1 /s repair rate. ADR-0142 corrects this: that rate is the value at a
+22 A donor, and both CAD donors (3.6 A and 7.4 A) are far inside it, so both
+repair far faster than the model's worst case. The distance is not the limit;
+the donor potential is the open point.
 
 Limits. The donor distance is a geometry result, not an electron-transfer
-calculation. The manganese centre is placed by a build rule, not by energy. The
-catalyst is a design, not a synthesis. The donor conflict with the arm collar is
-an open design issue: the options are a donor mounted on the arm, a narrower
-collar, or an external reductant (blood glutathione or ascorbate).
+calculation; ADR-0142 supplies the rate. The manganese centre is placed by a
+build rule, not by energy. The catalyst is a design, not a synthesis. The donor
+is a static proximal group, so it lacks the empty-arc gating of ADR-0108; the
+donor potential window is the open question (M29-18).
+
+## ADR-0142: The rotor donor's distance is not a limit; the donor potential is the open point
+
+Context. M29-16 (ADR-0141) recorded the rotor donor at Fe-O 7.14 to 7.63 A as a
+limit, compared with the free carrier site at 3.61 A. It compared the wrong
+reference. The M29-14 repair model uses a fixed 0.1 /s, and ADR-0108 calibrates
+that 0.1 /s at a donor-iron distance of 22 A. Both CAD donors are far inside
+that reference, so both repair far faster than the model's worst case.
+
+Scan. `python/nanocad/respirocyte_repair.py`. `donor_repair_rate` applies
+Moser-Dutton tunnelling with beta = 1.38 /A, fixed by the two ADR-0108 points
+(22 A repairs 0.1 /s, 18 A repairs 25 /s). The model keeps the 22 A value
+(`IRON_REPAIR_PER_S`) as its conservative worst case.
+
+| donor | d(Fe-donor) | k_repair | margin over the central autoxidation (5.68e-6 /s) |
+|---|---|---|---|
+| free carrier site (ADR-0139) | 3.61 A | 1.1e10 /s | 1.7e15 |
+| device oxygen rotor (ADR-0141) | 7.4 A | 5.6e7 /s | 9.0e12 |
+| ADR-0108 reference | 22 A | 0.1 /s | 1.8e4 |
+
+Decision. Close M29-17: the rotor donor distance is not a limit. The model keeps
+its 22 A worst case, which the CAD beats by more than eight orders of magnitude.
+
+Findings. (1) The rotor donor at 7.4 A is about 190x slower than the free site
+at 3.61 A, but about 5.6e8x faster than the 22 A reference, with a margin of
+9e12 over autoxidation. The distance is not a design limit. (2) The donor is a
+static proximal group. ADR-0108 gated its donor to the empty arc so it "never
+meets a bound O2"; a donor near the bound O2 can itself drive autoxidation. The
+same distance scaling governs that path, so distance cannot separate repair from
+back-oxidation. The separation has to be the donor potential.
+
+Limits. The rate is Moser-Dutton (distance only); through-bond paths and the
+reorganization energy are not modelled, and the driving force is assumed. The
+real open question is the donor potential window: the donor must reduce the
+empty Fe(III) but not the O2-bound Fe(II). ADR-0108 leaves this "not yet
+computed". The back-oxidation path is not modelled (M29-18).
