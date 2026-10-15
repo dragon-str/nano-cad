@@ -390,11 +390,13 @@
       typeof scene.frame === "string" &&
       scene.frame.indexOf("respirocyte") === 0;
     motion.kind =
-      design.module_m > 0
-        ? "gears"
-        : couplings.length > 0 || respirocyte
-          ? "joints"
-          : "rotor";
+      scene.frame === "part"
+        ? "part"
+        : design.module_m > 0
+          ? "gears"
+          : couplings.length > 0 || respirocyte
+            ? "joints"
+            : "rotor";
     if (motion.kind === "joints") {
       motion.w_sun = ROTOR_DISPLAY_RATE_RAD_PER_S;
       motion.revolute = revoluteMotions(scene.device, motion.w_sun);
@@ -1689,7 +1691,17 @@
     var d = scene.design;
     var lines;
     var respirocyte = /^respirocyte/.test(scene.frame || "");
-    if (motion.kind === "joints" && scene.frame === "respirocyte_water_rotor") {
+    if (scene.frame === "part") {
+      var part = (scene.device && scene.device.bodies && scene.device.bodies[0]) || {};
+      lines = [
+        "schema: " + scene.schema + " v" + scene.version,
+        "part: " + (part.name || scene.frame),
+        "bodies: " + scene.device.body_count + " (one fixed body, shown as built)",
+        "atoms: " + scene.atomistic.atom_count,
+        "no joints, no motion: this is a single generated part",
+        "set its parameters to rebuild it",
+      ];
+    } else if (motion.kind === "joints" && scene.frame === "respirocyte_water_rotor") {
       lines = [
         "schema: " + scene.schema + " v" + scene.version,
         "mechanism: respirocyte water-return plunger rotor in a hull-wall section (relaxed, simulated)",
