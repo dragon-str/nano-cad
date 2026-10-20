@@ -4481,3 +4481,35 @@ over-states the flux into a channel only a few angstroms wide, so every rate
 here is an upper bound. The rate is exponential in the barrier, so a 10 kJ/mol
 error moves it by about 50x; read a rate as an order of magnitude. The water
 leak balance against the return rotor is not closed here. Simulated estimates.
+
+## ADR-0149: The corrected carry propagates through the whole-device model
+
+Context. ADR-0138 replaced the top-stage carry with the measured values
+(s_back 0.076, s_fwd 0.064). The lumped system model in
+`python/nanocad/respirocyte_system.py` still held the old carry, so its fill
+time (111 s), energy per delivered O2 (5.5e-19 J) and pessimistic stall (about
+440 atm) were stale. This supersedes the numbers in ADR-0146; ADR-0146's
+decision (keep the cascade as margin, store 10-40 atm, no bore plug) stands.
+
+Decision. Set `s_back_nm3` to 0.076 (range 0.067-0.085) and `s_fwd_nm3` to
+0.064 (range 0.050-0.078), both sourced to ADR-0138, and re-run the model.
+Keep the central, pessimistic and optimistic cases as parameter sets; they are
+not re-fit.
+
+Results, central case, 3 stages.
+
+| quantity | before | after |
+|---|---|---|
+| stage stall | 920 atm (all stages) | 829, 1912, 2824 atm |
+| fill to 1000 atm | 111 s | 97.0 s |
+| energy per delivered O2 | 5.5e-19 J | 4.91e-19 J |
+| power at design speed | duty 0.5 | duty 0.73 at 7.3e-12 W |
+
+The pessimistic case stalls at 1439 atm at three stages, not at about 440 atm.
+Its bottleneck is the binding rate (500 /s, so occupancy 0.50), not the carry.
+The optimistic case stalls at 1082, 2759, 4712 atm and fills in 68.8 s.
+
+Limits. The model is lumped: one chamber per stage, one pocket occupancy per
+stage, no space or time dependence. The carry values come from one seed set at
+600-1000 atm (ADR-0138). The fill time is not a lung transit time; a 0.75 s
+transit charges the tank to a few atm only (ADR-0132). Simulated estimates.

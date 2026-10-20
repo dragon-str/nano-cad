@@ -2152,7 +2152,7 @@ pub fn hull_wall(set: &HemeRotorSet, spec: &HullWallSpec) -> Result<HullWall, Pa
             set.iron_radius_m * station_az.sin(),
             0.0,
         ];
-        add_wall_donor_station(&mut topology, fe_nom, chamber_half + 1.0e-9)?
+        add_wall_donor_station(&mut topology, fe_nom, chamber_half + 1.0e-9, chamber_half)?
     } else {
         None
     };
@@ -2613,10 +2613,17 @@ fn add_rotor_donor(
 /// plate near the iron radius, at the azimuth of the empty arc, pointing at
 /// the nominal iron. The station is fixed on the housing, so a site meets it
 /// only while the site passes that azimuth, which is when the site is empty.
+///
+/// `chamber_half_m` is half the height of the rotor chamber. The station must
+/// sit inside that band, so it lands on a surface that faces the rotor: the
+/// chamber-facing face of the top plate. That excludes the bottom plate and
+/// the outer surface of the housing. The reach bound then makes the nearest
+/// carbon the one above the iron.
 fn add_wall_donor_station(
     top: &mut Topology,
     fe_nom: [f64; 3],
     max_reach_m: f64,
+    chamber_half_m: f64,
 ) -> Result<Option<DonorSite>, PartError> {
     let mut best: Option<(f64, usize, usize)> = None;
     for b in top.bonds() {
@@ -2629,8 +2636,9 @@ fn add_wall_donor_station(
         let Some(cp) = top.position_m(c_i) else {
             continue;
         };
-        // The top plate only, so the station is above the disc plane.
-        if cp[2] <= 0.0 {
+        // Above the disc plane, and inside the rotor chamber, so the carbon
+        // is on the chamber-facing face of the top plate.
+        if cp[2] <= 0.0 || cp[2] > chamber_half_m {
             continue;
         }
         let d = dist(cp, fe_nom);
@@ -3321,7 +3329,9 @@ mod tests {
         let o = wall.part.topology.position_m(station.oxygen).expect("o");
         // Near the iron radius, above the disc plane, at the empty-arc mid.
         assert!((o[0].hypot(o[1]) - s.iron_radius_m).abs() < 0.6e-9, "{o:?}");
-        assert!(o[2] > 0.5e-9, "{o:?}");
+        // On the chamber-facing face of the top plate, above the iron: not on
+        // the bottom plate, not on the outer hull surface, not on a rim cap.
+        assert!(o[2] > 1.4e-9 && o[2] < 1.9e-9, "{o:?}");
         let az = o[1].atan2(o[0]);
         let off = ((az - mid + PI).rem_euclid(2.0 * PI) - PI).abs();
         assert!(

@@ -12,12 +12,19 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 3. At the outlet a cam withdraws the axial ligand about 2 A from the iron.
    The O2 bond weakens by 42-63 kJ/mol, and the oxygen leaves into the
    tank. Forcing the iron to dome was tested and fails (ADR-0104, 0105).
-4. Each pocket also carries about four water molecules. The tank wall has
-   single-file drain channels lined with hydroxyl groups. The tank pressure
-   pushes the water out through them; the oxygen stays in.
-5. The tank is built gas-filled and never falls below a 10 atm cushion.
+4. Each pocket also carries about four water molecules. A water-return
+   rotor takes the water back to the blood; every pocket returns more water
+   than it brings, so the chamber stays dry (M28-31). The drain channel was
+   tested and failed (ADR-0119, 0120); the tank water path is not modelled.
+5. The tank is built gas-filled. The 10 atm cushion is the initial state,
+   not a margin the circulation keeps (ADR-0132).
 6. A one-electron donor on the housing, on the arc where each site is empty,
    reduces any oxidized Fe(III) back to Fe(II) as the site passes.
+
+The carrier is the baseline. It binds oxygen and releases it by the p50;
+it has no tank, no engine and no 1000 atm state. The pump columns in this
+table are the storage branch of the study, and every tank or fill number
+applies to that branch only (ADR-0126, 0132).
 
 ## Results
 
@@ -46,7 +53,7 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Energy and power | budget against Freitas | arithmetic | cam work 50-57 kJ/mol (minimum 23); peak power 2x Freitas at a 10 s fill; mean power inside his figures | Freitas's own engine figure is below the compression minimum | 0100, 0101 |
 | Hull wall and seals | relaxed CAD section; rigid-probe flood fill of the free space | valence relax; `scripts/seal_audit.py` | rotor in a hull-wall slab, seals at H-H contact; O2 probe (1.73 A) finds no path blood to tank, also at 0.9x radii; water (1.40 A) passes the rim seal, closed at 1.50 A | static rigid-sphere test; leak rates by a barrier model (ADR-0148), MD/PMF open; the as-built drain bore does not pass a rigid water probe | 0117, 0118 |
 | Drain as built in the hull wall | MD water transit, frozen and mobile hydroxyl lining | OpenMM SPC/E, constant force | no net water at 100-200 MPa in 2 ns: frozen lining traps fixed waters, mobile lining fills the bore; the drain is unproven | the tested 3.8 A channel conducts only with a frozen lining; design scan open (M28-38) | 0119 |
-| Whole device, real size | lumped system model from the atomistic parameters | `respirocyte_system.py`, backward Euler | central: 3 stages fill 1000 atm in 111 s, power-limited (duty 0.5 at 7.3e-12 W), 5.5e-19 J per delivered O2, 48 % of the hull; pessimistic chemistry stalls near 440 atm at any stage count | pocket-to-pocket scatter of the free-gas carry; many assumed values (gas binding, chamber volume, plunger work) | 0124 |
+| Whole device, real size | lumped system model from the atomistic parameters | `respirocyte_system.py`, backward Euler | central: 3 stages fill 1000 atm in 97 s, power-limited (duty 0.73 at 7.3e-12 W), 4.9e-19 J per delivered O2, 48.1 % of the hull area and 3.2 % of the free interior; stage stalls 829, 1912, 2824 atm; pessimistic chemistry stalls at 1439 atm at three stages, limited by the binding rate (500 /s), not by carry | pocket-to-pocket scatter of the free-gas carry; many assumed values (gas binding, chamber volume, plunger work); no tank-water bookkeeping unless a seal leak is set | 0124, 0149 |
 | Whole device, sized by the circulation | loop time, capillary windows, red-cell target, diameter-pressure sweep | `respirocyte_circulation.py` | optimum pressure is the 10-40 atm cushion (not 1000 atm), single stage, rotor speed about 1000 rev/s at every size; nanocrit 0.4-14 % at peak exercise, far below the 45 % hematocrit; the limit is energy, 650 W chemical at exercise with the cam (342 W reversible, about 75 W with a passive release) | the power density, the cam work and the device count at small diameters are assumed or unbounded | 0125 |
 | Whole device in the real circulation | lung/tissue cycle, tank over repeated loops | `cycle_steady_state`, backward Euler | the 0.75 s lung transit charges the tank to only 3.7 atm, not 1000, and the discharge empties it each loop, so it never accumulates; the device is a flow-through pump near ambient; 1.28e7 O2 per loop; the 1 um device needs 5.5 % nanocrit at rest, 16 % at exercise; the tank drains below the 10 atm cushion; the fill is power-limited by the cascade banks | no tissue-demand feedback; design rotor speeds | 0132 |
 | Top-stage carry, every pocket | released and loaded pocket MD at 600-1000 atm, 400 ps, bound O2 removed, tall box, empty and prefilled starts | `scripts/top_stage_sweep.py`, `pocket_carry_md.py` | the corrected released carry is s_back 0.076 +- 0.009, about 1.06 O2 at 1000 atm, so a single stage from blood stalls near 920 atm; the top stage still pumps, net 0.57 per pass (forward 0.63, back 1.06), but the margin is thin and one pocket of eight has a negative net | the earlier ADR-0134 carry (0.30) measured a pocket that still held its bound O2; wide per-pocket scatter, one seed | 0138, 0134 |
@@ -60,17 +67,22 @@ The decision records (ADR) in `DECISIONS.md` hold the details.
 | Five-coordinate domed iron in an unloaded pocket | build audit under the 0.3 A dome | `crates/parts/src/heme_rotor.rs` | with `iron_dome_m` set, the iron sits 0.30 A out of the N4 plane, the four Fe-N bonds are 2.02 A, the loaded pockets stay in-plane, and the four meso tethers are unchanged (no fifth bond) | 0.3 A is the deoxy-myoglobin value, not computed here; the ring is rigid, so only the iron moves | 0143 |
 | Discharge rotor | cam-phase swap of the loading rotor | `crates/parts/src/heme_rotor.rs` | `build_cam` takes any cam phase pair; `DischargeRotorGenerator` (id `discharge_rotor`) swaps the loading phases, so the arm goes in on the tank side (load at tank pressure) and out on the blood side (release at the tissues). The loaded pockets are complementary: loading 5 of 8, discharge 3 of 8, every pocket flipping. The disc body and pocket azimuths are identical | geometric only; the discharge loading rate against the tank pressure and the seal leak at that pressure are unmodelled | 0144 |
 | 62. Repair-donor redox window | QM couples from the redox scan, against a literature window | `scripts/heme_switch_scan.py --redox Fe`, `respirocyte_repair.py` | the model's empty-site couple E(Fe(III))-E(Fe(II)) is +5.95 eV (gas phase), the bare ionization energy, not an aqueous potential; a rigid C-PCM point cannot pay the solvent reorganization that takes the real heme couple to near zero, so the method cannot place a donor between the empty-site and bound-O2 couples. The real window is narrow, about 0.21 V (O2/O2- about -0.16 V to a heme couple about +0.05 V, literature estimates) | the absolute QM energies are unphysical; the 0.21 V window is literature, not computed; the empty-arc donor station is a design (M29-19) | 0145, 0108 |
-| 63. Gated repair donor on the housing | build audit of the empty-arc station, with the tunnelling rate | `crates/parts/src/heme_rotor.rs`, `respirocyte_repair.py` | `HullWallSpec.donor_station` places one hydroxyl on the top end plate at the midpoint of the arm-out arc (150 deg for the loading rotor), 14.98 A from the iron; Moser-Dutton tunnelling there is 1.6e3 /s, a 2.6e8 margin over the autoxidation. The site meets the station only while it is empty, so the bound O2 never sees the donor. The module builds the rotor donor off and the station on | the tunnelling driving force is assumed (ADR-0108); the station is one group at one azimuth, so the repair window is not the whole empty arc | 0147 |
+| 63. Gated repair donor on the housing | build audit of the empty-arc station, with the tunnelling rate | `crates/parts/src/heme_rotor.rs`, `respirocyte_repair.py` | `HullWallSpec.donor_station` places one hydroxyl on the top end plate at the midpoint of the arm-out arc (150 deg for the loading rotor), 14.98 A from the iron; Moser-Dutton tunnelling there is 1.6e3 /s, a 2.6e8 margin over the autoxidation. The site meets the station only while it is empty, so the bound O2 never sees the donor. The module builds the rotor donor off and the station on | the tunnelling driving force is assumed (ADR-0108); the station is one group at one azimuth, so the repair window is not the whole empty arc; the Moser-Dutton beta 1.38 /A is a protein value, not a diamond or vacuum value | 0147 |
 | 64. Seal leak rates | Hertz-Knudsen permeation from the static seal barriers, at 310 K | `python/nanocad/respirocyte_leak.py` | the O2 rotor O2 barrier (146 kJ/mol, 57 kT) gives 4e-13 /s per nm^2, so the product does not leak; the O2 rotor water barrier (57 kJ/mol, 22 kT) gives 1.3e3 /s, about 3e15x the O2 leak; the water rotor is tighter (O2 78 kT, water 58 kT). The water leak is the soft one and the water-return rotor must match it | the barrier is static (no entropy term) and bulk impingement over-states a narrow channel, so these are upper bounds; a PMF is the upgrade and the balance against the water rotor is open | 0148 |
 
 ## What passes, what fails, what is open
 
 Passes as simulated estimates: selective loading, release by a strain
-switch, water removal by a drain, idle leak, tank start-up, mean power.
+switch, water return by the plunger rotor, idle leak, mean power.
 
-Fails or exceeds: peak power at a 10 s fill is 1.7-2.4x the Freitas maximum.
-A 20-25 s fill brings it inside.
-A 20 s fill, or a cam that returns more of its energy, would close it.
+The baseline is the passive carrier (ADR-0126): it meets the flux at 1-3 %
+by volume with no engine. The active pump is the storage branch of the
+study. Its peak power at a 10 s fill is 1.7-2.4x the Freitas maximum, and a
+cam that returns more of its energy would close that gap (ADR-0100, 0106).
+
+The fill time cannot be shortened to fix a power gap. A lung transit lasts
+about 0.75 s, so the tank reaches only a few atm per pass (ADR-0132); 97 s
+is the time to 1000 atm in the lumped model, not a transit time.
 
 Fails: a cam cannot force the iron to dome, by pulling its axial ligand
 (ADR-0104) or by squeezing the ring (ADR-0105). Withdrawing the axial
@@ -91,8 +103,8 @@ Not modelled:
 
 ## CAD model
 
-`respirocyte_module` in the viewer (Machines): the rotor with 12 heme
-pockets, 12 [111] ligand arms and the housing, relaxed with the valence
+`respirocyte_module` in the viewer (Machines): the rotor with 8 heme
+pockets, 8 [111] ligand arms and the housing, relaxed with the valence
 field and audited (ADR-0111). Hide the housing and set the clip to 0.5 to
 see the pockets in section. The attachment is four covalent tethers per site; the repair donor
 is a station on the housing (ADR-0147) and the tank is a separate part.

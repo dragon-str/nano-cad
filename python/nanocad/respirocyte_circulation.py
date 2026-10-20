@@ -172,9 +172,9 @@ def _window(device: dict, y: list[float], phase: str, t_max_s: float, samples: i
     """Integrate the compartment O2 for exactly ``t_max_s`` seconds in one
     phase (``fill`` or ``discharge``).
 
-    State ``y`` is ``[n_1..n_ns, water, energy, delivered]``; it is mutated in
-    place and returned. Backward Euler, fixed step, so the stiff small
-    chambers stay stable without numpy. Returns ``(y, last_power_w,
+    State ``y`` is ``[n_1..n_ns, water, energy, delivered, tank_water]``; it
+    is mutated in place and returned. Backward Euler, fixed step, so the stiff
+    small chambers stay stable without numpy. Returns ``(y, last_power_w,
     energy_j_added)``.
     """
     ns = device["n_stages"]
@@ -185,13 +185,14 @@ def _window(device: dict, y: list[float], phase: str, t_max_s: float, samples: i
 
     def evaluate(yy):
         nn, w = full_state(yy)
-        _, _, demand, _ = _rates(device, nn, w, phase, 1.0)
+        tw = max(yy[ns + 3], 0.0)
+        _, _, _, demand, _ = _rates(device, nn, w, tw, phase, 1.0)
         scale = min(1.0, peak_w / demand) if demand > 0 else 1.0
-        return _rates(device, nn, w, phase, scale)
+        return _rates(device, nn, w, tw, phase, scale)
 
     def f(_t, yy):
-        dn, dw, pw, _ = evaluate(yy)
-        return dn[1:] + [dw, pw, (-dn[ns] if phase == "discharge" else 0.0)]
+        dn, dw, dwt, pw, _ = evaluate(yy)
+        return dn[1:] + [dw, pw, (-dn[ns] if phase == "discharge" else 0.0), dwt]
 
     e0 = y[ns + 1]
     dt = t_max_s / samples
@@ -200,7 +201,7 @@ def _window(device: dict, y: list[float], phase: str, t_max_s: float, samples: i
         step = min(dt, t_max_s - t)
         y = _implicit_step(f, t, y, step)
         t += step
-    _, _, pw, _ = evaluate(y)
+    _, _, _, pw, _ = evaluate(y)
     return y, pw, y[ns + 1] - e0
 
 
@@ -224,7 +225,7 @@ def cycle_steady_state(
     ns = d["n_stages"]
     vols = [0.0] + [d["tank"]["chamber_volume_m3"].value] * (ns - 1) + [d["tank"]["volume_m3"].value]
     cushion = d["tank"]["cushion_atm"].value
-    y = [rho_of_p(cushion) * vols[k] / NM3 for k in range(1, ns + 1)] + [0.0, 0.0, 0.0]
+    y = [rho_of_p(cushion) * vols[k] / NM3 for k in range(1, ns + 1)] + [0.0, 0.0, 0.0, 0.0]
     t_lung = phys["t_lung_rest_s"].value
     t_tissue = phys["t_tissue_rest_s"].value
     loop_time = phys["blood_volume_m3"].value / phys["cardiac_output_rest_m3_s"].value

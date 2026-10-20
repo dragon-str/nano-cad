@@ -145,12 +145,12 @@ def o2_rotor_parameters() -> dict[str, Param]:
                                 "k_on c per site in blood; sets loading occupancy"),
         "blood_arc_fraction": P(0.41, 0.35, 0.45, "", "measured", "ADR-0118, ADR-0121",
                                 "fraction of a turn a pocket spends open to blood (seal arcs excluded)"),
-        "s_back_nm3": P(0.109, 0.076, 0.142, "nm^3", "estimated", "ADR-0123, ADR-0124",
-                        "free O2 carried back by a released pocket per unit gas density; fit of 16 runs, "
-                        "range +-1 sd of the per-run ratio (pocket-to-pocket scatter)"),
-        "s_fwd_nm3": P(0.081, 0.033, 0.141, "nm^3", "estimated", "ADR-0123, ADR-0124",
-                       "free O2 carried forward by a loaded pocket per unit gas density; fit of 11 runs, "
-                       "range +-1 sd"),
+        "s_back_nm3": P(0.076, 0.067, 0.085, "nm^3", "estimated", "ADR-0138",
+                        "free O2 carried back by a released pocket per unit gas density; corrected fit of "
+                        "32 runs (bound O2 removed), +-1 sd"),
+        "s_fwd_nm3": P(0.064, 0.050, 0.078, "nm^3", "estimated", "ADR-0138",
+                       "free O2 carried forward by a loaded pocket per unit gas density; corrected fit of "
+                       "8 runs, +-1 sd"),
         "gas_occupancy": P(1.0, 0.9, 1.0, "", "assumed", "",
                            "largest fraction of pockets that bind from gas; not computed"),
         "gas_binding_per_s_per_rho": P(1.0e5, 1.0e4, 1.0e6, "nm^3/s", "assumed", "",
@@ -161,7 +161,7 @@ def o2_rotor_parameters() -> dict[str, Param]:
         "energy_per_pass_kj_mol": P(50.0, 23.0, 63.0, "kJ/mol", "estimated", "ADR-0100, ADR-0106, ADR-0107",
                                     "cam work of one arm withdrawal; 23 is the reversible minimum"),
         "max_rev_per_s": P(1.0e4, 1.0e3, 1.0e5, "1/s", "assumed", "",
-                           "mechanical limit; rim speed 0.25 m/s at 1e4 rev/s"),
+                           "mechanical limit; rim speed 0.25 mm/s at 1e4 rev/s (2 pi r n, r 4 nm)"),
     }
 
 
@@ -190,7 +190,9 @@ def default_device(n_stages: int = 3) -> dict:
     (assumed), sized so the hull holds them."""
     hull = {
         "diameter_m": P(1.0e-6, unit="m", tag="reference", source="Freitas 1998, Respirocytes"),
-        "wall_thickness_m": P(2.4e-9, unit="m", tag="measured", source="ADR-0118"),
+        "wall_thickness_m": P(2.4e-9, unit="m", tag="measured", source="ADR-0118",
+                              note="the sealed x-slab alone; a rotor section reaches further "
+                                   "(section depth 10.5 nm, plates on both faces)"),
         "hull_fill_max": P(0.5, 0.2, 0.8, "", "assumed", "",
                            "largest fraction of the hull area rotor sections may take"),
     }
@@ -201,6 +203,9 @@ def default_device(n_stages: int = 3) -> dict:
                          "never drained below this, so the gas phase never has to nucleate"),
         "chamber_volume_m3": P(2.0e-21, 5.0e-22, 1.0e-20, "m^3", "assumed", "",
                                "each intermediate cascade chamber"),
+        "seal_leak_water_per_s": P(0.0, 0.0, 1.0e6, "1/s", "assumed", "ADR-0148",
+                                   "water the rim and face seals leak into the tank; zero unless "
+                                   "set (ADR-0148 gives about 1e3 /s per nm^2)"),
     }
     power = {
         "peak_w": P(7.3e-12, 3.0e-13, 2.0e-11, "W", "reference", "Freitas 1998 (ADR-0100)",
@@ -255,6 +260,11 @@ def section_area_m2(device: dict) -> float:
     return s["footprint_y_m"].value * s["footprint_z_m"].value
 
 
+def section_volume_m3(device: dict) -> float:
+    """The volume one rotor section needs: footprint times depth."""
+    return section_area_m2(device) * device["section"]["depth_m"].value
+
+
 def load_occupancy(params: dict[str, Param], rev_per_s: float) -> float:
     dwell = params["blood_arc_fraction"].value / max(rev_per_s, 1e-12)
     return 1.0 - math.exp(-params["binding_rate_per_s"].value * dwell)
@@ -283,7 +293,16 @@ def static_budget(device: dict) -> dict:
     hull_a = hull_area_m2(device)
     sec_a = section_area_m2(device)
     hull_banks = [b for b in device["banks"] if b.placement == "hull"]
-    used = sum(b.count for b in hull_banks) * sec_a
+    hull_sections = sum(b.count for b in hull_banks)
+    internal_sections = sum(b.count for b in device["banks"] if b.placement != "hull")
+    used = hull_sections * sec_a
+    sec_v = section_volume_m3(device)
+    ns = device["n_stages"]
+    depth = device["section"]["depth_m"].value
+    shell_v = hull_a * depth
+    device_v = (math.pi / 6.0) * device["hull"]["diameter_m"].value ** 3
+    interior_v = device_v - shell_v - device["tank"]["volume_m3"].value
+    interior_v -= (ns - 1) * device["tank"]["chamber_volume_m3"].value
     tank_v = device["tank"]["volume_m3"].value
     target = device["tank"]["target_atm"].value
     capacity = rho_of_p(target) * tank_v / NM3
@@ -295,6 +314,17 @@ def static_budget(device: dict) -> dict:
         "hull_fraction_used": used / hull_a,
         "hull_fraction_allowed": device["hull"]["hull_fill_max"].value,
         "hull_fits": used / hull_a <= device["hull"]["hull_fill_max"].value,
+        # Area alone is not enough: the internal banks need volume too.
+        "section_volume_m3": sec_v,
+        "hull_slab_volume_m3": hull_a * device["hull"]["wall_thickness_m"].value,
+        "hull_shell_volume_m3": shell_v,
+        "interior_volume_m3": interior_v,
+        "hull_sections": hull_sections,
+        "internal_sections": internal_sections,
+        "hull_volume_fraction": hull_sections * sec_v / shell_v,
+        "internal_volume_fraction": internal_sections * sec_v / interior_v,
+        "volume_fits": (hull_sections * sec_v <= device["hull"]["hull_fill_max"].value * shell_v
+                        and internal_sections * sec_v <= interior_v),
         "tank_capacity_o2_at_target": capacity,
         "tank_cushion_o2": cushion,
         "deliverable_o2": capacity - cushion,
@@ -329,17 +359,25 @@ def static_budget(device: dict) -> dict:
     return out
 
 
-def _rates(device: dict, n_o2: list[float], water: float, phase: str, scale: float):
+def _rates(device: dict, n_o2: list[float], water: float, tank_water: float,
+           phase: str, scale: float):
     """O2 transfer rates between compartments, water rates and power.
 
     Compartments: 0 blood (infinite), 1..n_stages-1 chambers, n_stages tank.
-    Returns (dN per compartment, dWater of chamber 1, power W, per-bank info).
+    Water is tracked in two places: the chamber-1 sump (fed by the loading
+    pockets, drained by the water rotor) and the tank (fed by the seal leak,
+    drained by the discharge rotor). The cascade banks carry no water: that
+    path is not measured.
+
+    Returns (dN per compartment, dWater of chamber 1, dWater of the tank,
+    power W, per-bank info).
     """
     ns = device["n_stages"]
     vols = [0.0] + [device["tank"]["chamber_volume_m3"].value] * (ns - 1) + [device["tank"]["volume_m3"].value]
     rho = [0.0] + [n_o2[k] * NM3 / vols[k] for k in range(1, ns + 1)]
     dn = [0.0] * (ns + 1)
     dw = 0.0
+    dwt = device["tank"]["seal_leak_water_per_s"].value
     power = 0.0
     info = []
     for b in device["banks"]:
@@ -364,10 +402,14 @@ def _rates(device: dict, n_o2: list[float], water: float, phase: str, scale: flo
                 dw += passes * occ * pr["water_per_pass"].value
         elif b.kind == "discharge":
             # Loads in the tank gas, releases into blood; the free gas a
-            # loaded pocket carries leaves too.
+            # loaded pocket carries leaves too, and so does the water the
+            # pocket picked up. The removal is limited by the tank water.
             occ = gas_occupancy(pr, rho[ns], rev)
             flow = passes * (occ + pr["s_fwd_nm3"].value * rho[ns])
             dn[ns] -= flow
+            full = passes * pr["water_per_pass"].value
+            frac = min(1.0, max(tank_water, 0.0) / max(full * 1e-3, 1e-30))
+            dwt -= full * frac
             info.append((b.kind, b.stage, passes, flow))
             power += passes * e
             continue
@@ -381,7 +423,7 @@ def _rates(device: dict, n_o2: list[float], water: float, phase: str, scale: flo
             flow = 0.0
         power += passes * e
         info.append((b.kind, b.stage, passes, flow))
-    return dn, dw, power, info
+    return dn, dw, dwt, power, info
 
 
 def _solve_linear(a: list[list[float]], b: list[float]) -> list[float]:
@@ -448,35 +490,40 @@ def time_course(device: dict, t_fill_max_s: float = 600.0, t_discharge_max_s: fl
     def full_state(y):
         return [0.0] + [max(v, 0.0) for v in y[:ns]], max(y[ns], 0.0)
 
+    def tank_water(y):
+        return max(y[ns + 3], 0.0)
+
     def evaluate(y, phase):
         nn, w = full_state(y)
-        _, _, demand, _ = _rates(device, nn, w, phase, 1.0)
+        _, _, _, demand, _ = _rates(device, nn, w, tank_water(y), phase, 1.0)
         scale = min(1.0, peak_w / demand) if demand > 0 else 1.0
-        dn, dw, pw, _ = _rates(device, nn, w, phase, scale)
-        return dn, dw, pw, scale
+        dn, dw, dwt, pw, _ = _rates(device, nn, w, tank_water(y), phase, scale)
+        return dn, dw, dwt, pw, scale
 
     def rhs(phase):
         def f(_t, y):
-            dn, dw, pw, _ = evaluate(y, phase)
-            return dn[1:] + [dw, pw, -dn[ns] if phase == "discharge" else 0.0]
+            dn, dw, dwt, pw, _ = evaluate(y, phase)
+            return dn[1:] + [dw, pw, -dn[ns] if phase == "discharge" else 0.0, dwt]
         return f
 
-    y = [rho_of_p(cushion_atm) * vols[k] / NM3 for k in range(1, ns + 1)] + [0.0, 0.0, 0.0]
+    y = [rho_of_p(cushion_atm) * vols[k] / NM3 for k in range(1, ns + 1)] + [0.0, 0.0, 0.0, 0.0]
     log = {"t_s": [], "phase": [], "tank_atm": [], "chamber_atm": [], "water": [], "power_w": [],
-           "duty": [], "tank_o2": []}
+           "duty": [], "tank_o2": [], "tank_water": []}
     events = {}
     t = 0.0
     water_peak = 0.0
+    tank_water_peak = 0.0
     log_every = (t_fill_max_s + t_discharge_max_s) / samples
 
     def record(tt, yy, phase):
         nn, w = full_state(yy)
-        _, _, pw, scale = evaluate(yy, phase)
+        _, _, _, pw, scale = evaluate(yy, phase)
         log["t_s"].append(tt)
         log["phase"].append(phase)
         log["tank_atm"].append(p_atm(ns, nn))
         log["chamber_atm"].append([p_atm(k, nn) for k in range(1, ns)])
         log["water"].append(w)
+        log["tank_water"].append(tank_water(yy))
         log["power_w"].append(pw)
         log["duty"].append(scale)
         log["tank_o2"].append(nn[ns])
@@ -517,6 +564,7 @@ def time_course(device: dict, t_fill_max_s: float = 600.0, t_discharge_max_s: fl
                     break
             y, t = y_new, t + dt
             water_peak = max(water_peak, full_state(y)[1])
+            tank_water_peak = max(tank_water_peak, tank_water(y))
         record(t, y, phase)
         nn, _ = full_state(y)
         if phase == "fill":
@@ -535,6 +583,8 @@ def time_course(device: dict, t_fill_max_s: float = 600.0, t_discharge_max_s: fl
             events["o2_delivered"] = y[ns + 2]
         y[ns + 2] = 0.0
     events["water_peak"] = water_peak
+    events["tank_water_peak"] = tank_water_peak
+    events["tank_water_peak_fraction_of_tank"] = tank_water_peak * 0.0299 * NM3 / vols[ns]
     # Liquid water takes 0.0299 nm^3 per molecule; the sump must hold it.
     events["water_peak_fraction_of_chamber"] = water_peak * 0.0299 * NM3 / vols[1]
     events["energy_j"] = y[ns + 1]
@@ -691,6 +741,9 @@ def _summary(rep: dict) -> str:
         lines.append(f"[{case}]")
         lines.append(f"  hull: {b['sections_that_fit']} sections fit; {100 * b['hull_fraction_used']:.1f}% used "
                      f"(allowed {100 * b['hull_fraction_allowed']:.0f}%)")
+        lines.append(f"  volume: interior {b['internal_sections']} sections, "
+                     f"{100 * b['internal_volume_fraction']:.1f}% of the free interior "
+                     f"(fits: {b['volume_fits']})")
         lines.append(f"  tank capacity at target {b['tank_capacity_o2_at_target']:.3g} O2, deliverable {b['deliverable_o2']:.3g}")
         lines.append("  stage stall (atm): " + ", ".join(f"{s:.0f}" for s in b["stage_stall_atm"]))
         lines.append(f"  power demand at design speed {b['power_demand_at_design_w']:.3g} W vs peak {b['power_peak_w']:.3g} W")
@@ -698,7 +751,8 @@ def _summary(rep: dict) -> str:
                      + ", ".join(f"{k[7:-2]} at {v:.1f} s" for k, v in e.items() if k.startswith("t_tank_")))
         lines.append(f"  discharge: {e['discharge_end']} after {e['discharge_time_s']:.1f} s, delivered {e['o2_delivered']:.3g} O2")
         lines.append(f"  energy {e['energy_j']:.3g} J, mean power {e['mean_power_w']:.3g} W, min duty {e['min_duty']:.2f}, "
-                     f"water peak {e['water_peak']:.3g} ({100 * e['water_peak_fraction_of_chamber']:.1f}% of chamber 1)")
+                     f"water peak {e['water_peak']:.3g} ({100 * e['water_peak_fraction_of_chamber']:.1f}% of chamber 1), "
+                     f"tank water {e['tank_water_peak']:.3g} ({100 * e['tank_water_peak_fraction_of_tank']:.1f}% of the tank)")
         lines.append(f"  energy per delivered O2 {e['energy_per_delivered_o2_j']:.3g} J; "
                      f"infinite-cascade net per pass at target {b['infinite_cascade_net_at_target']:.2f}")
     return "\n".join(lines)
